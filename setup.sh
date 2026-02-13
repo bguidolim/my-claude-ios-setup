@@ -5,7 +5,8 @@
 # Portable, interactive setup script for Claude Code with iOS development tools.
 # Installs MCP servers, plugins, skills, hooks, and configuration.
 #
-# Usage: ./setup.sh
+# Usage: ./setup.sh                      # Full interactive setup
+#        ./setup.sh --configure-project   # Configure CLAUDE.local.md for a project
 # =============================================================================
 
 set -euo pipefail
@@ -59,11 +60,16 @@ INSTALL_PLUGIN_CLAUDE_MD=0
 # Skills
 INSTALL_SKILL_LEARNING=0
 INSTALL_SKILL_XCODEBUILD=0
-INSTALL_SKILL_SWIFTUI=0
+
+# Commands
+INSTALL_CMD_PR=0
 
 # Configuration
 INSTALL_HOOKS=0
 INSTALL_SETTINGS=0
+
+# User identity (used in commands and project config)
+USER_NAME=""
 
 # Track what was installed
 INSTALLED_ITEMS=()
@@ -149,6 +155,141 @@ ensure_brew_in_path() {
 # Run claude CLI without nesting check
 claude_cli() {
     CLAUDECODE="" claude "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Configure CLAUDE.local.md for a project
+# ---------------------------------------------------------------------------
+configure_project() {
+    echo ""
+    echo -e "  ${BOLD}Enter the path to your iOS project:${NC}"
+    echo -ne "  > "
+    read -e -r project_path
+    # Expand ~ to $HOME
+    project_path="${project_path/#\~/$HOME}"
+    # Remove trailing slash
+    project_path="${project_path%/}"
+
+    if [[ ! -d "$project_path" ]]; then
+        error "Directory not found: $project_path"
+        return 1
+    fi
+
+    # --- Auto-detect Xcode project/workspace ---
+    local xcode_files=()
+
+    # Find .xcworkspace at root (skip internal ones inside .xcodeproj bundles)
+    while IFS= read -r -d '' f; do
+        xcode_files+=("$(basename "$f")")
+    done < <(find "$project_path" -maxdepth 1 -name "*.xcworkspace" -not -path "*.xcodeproj/*" -print0 2>/dev/null)
+
+    # Find .xcodeproj at root
+    while IFS= read -r -d '' f; do
+        xcode_files+=("$(basename "$f")")
+    done < <(find "$project_path" -maxdepth 1 -name "*.xcodeproj" -print0 2>/dev/null)
+
+    local xcode_project=""
+    if [[ ${#xcode_files[@]} -eq 0 ]]; then
+        warn "No .xcodeproj or .xcworkspace found in $project_path"
+        echo -ne "  Enter project file name (e.g. MyApp.xcodeproj): "
+        read -r xcode_project
+    elif [[ ${#xcode_files[@]} -eq 1 ]]; then
+        xcode_project="${xcode_files[0]}"
+        echo -e "  Found: ${BOLD}${xcode_project}${NC}"
+        if ! ask_yn "Use this?"; then
+            echo -ne "  Enter project file name: "
+            read -r xcode_project
+        fi
+    else
+        echo -e "  Found multiple Xcode projects:"
+        for i in "${!xcode_files[@]}"; do
+            echo -e "    $((i+1)). ${xcode_files[$i]}"
+        done
+        local selection
+        echo -ne "  Select [1-${#xcode_files[@]}]: "
+        read -r selection
+        if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#xcode_files[@]} )); then
+            xcode_project="${xcode_files[$((selection-1))]}"
+        else
+            error "Invalid selection."
+            return 1
+        fi
+    fi
+    echo ""
+
+    # --- Ask for user name (branch naming) — reuse if already provided ---
+    local user_name="$USER_NAME"
+    if [[ -n "$user_name" ]]; then
+        echo -e "  Branch naming prefix: ${BOLD}${user_name}${NC}"
+    else
+        echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC}):"
+        echo -ne "  > "
+        read -r user_name
+        if [[ -z "$user_name" ]]; then
+            warn "No name entered — template will keep the placeholder."
+            user_name='<your-name>'
+        else
+            # Store globally for subsequent project configs
+            USER_NAME="$user_name"
+        fi
+    fi
+    echo ""
+
+    # --- Detect CLAUDE.md → AGENTS.md symlink ---
+    local has_symlink=false
+    if [[ -L "$project_path/CLAUDE.md" ]]; then
+        local link_target
+        link_target="$(readlink "$project_path/CLAUDE.md")"
+        if [[ "$link_target" == *"AGENTS.md"* ]]; then
+            has_symlink=true
+            info "Detected CLAUDE.md → AGENTS.md symlink"
+        fi
+    fi
+
+    # --- Copy template ---
+    local dest="$project_path/CLAUDE.local.md"
+    if [[ -f "$dest" ]]; then
+        if ask_yn "CLAUDE.local.md already exists. Overwrite?" "N"; then
+            backup_file "$dest"
+        else
+            warn "Skipped project configuration."
+            return 0
+        fi
+    fi
+
+    cp "$SCRIPT_DIR/templates/CLAUDE.local.md" "$dest"
+
+    # --- Apply edits ---
+
+    # 1. Xcode project: remove EDIT comment, replace placeholder
+    sed -i '' '/<!-- EDIT: Set your .xcodeproj and default scheme below -->/d' "$dest"
+    # Escape dots in xcode_project for sed replacement (e.g. MyApp.xcodeproj)
+    local xcode_escaped="${xcode_project//./\\.}"
+    sed -i '' "s/__PROJECT__\.xcodeproj/${xcode_escaped}/g" "$dest"
+
+    # 2. Branch naming: remove EDIT comment, replace placeholder
+    sed -i '' '/<!-- EDIT: Set your branch naming convention below -->/d' "$dest"
+    sed -i '' "s/<your-name>/${user_name}/g" "$dest"
+
+    # 3. CLAUDE.md symlink
+    if [[ "$has_symlink" == true ]]; then
+        # Remove the EDIT comment line
+        sed -i '' '/<!-- EDIT: If your project has CLAUDE.md as a symlink/d' "$dest"
+        # Uncomment the note: remove leading "<!-- " and trailing " -->"
+        sed -i '' 's/^<!-- \(> \*\*Note:\*\*.*\) -->$/\1/' "$dest"
+    else
+        # Remove both the EDIT comment and the commented-out note
+        sed -i '' '/<!-- EDIT: If your project has CLAUDE.md as a symlink/d' "$dest"
+        sed -i '' '/<!-- > \*\*Note:\*\* .CLAUDE\.md. is a symlink/d' "$dest"
+    fi
+
+    echo ""
+    success "Created ${dest}"
+    echo -e "    Xcode project: ${BOLD}${xcode_project}${NC}"
+    echo -e "    Branch prefix:  ${BOLD}${user_name}/{ticket-and-small-title}${NC}"
+    if [[ "$has_symlink" == true ]]; then
+        echo -e "    Symlink note:   ${GREEN}enabled${NC} (CLAUDE.md → AGENTS.md)"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -310,13 +451,18 @@ phase_selection() {
     fi
     echo ""
 
-    echo -e "  ${BOLD}3. swiftui-expert-skill${NC}"
-    echo -e "     SwiftUI best practices: state management, performance, modern APIs, Liquid Glass."
-    if ask_yn "Install swiftui-expert-skill?"; then
-        INSTALL_SKILL_SWIFTUI=1
+    # === Category D: Commands ===
+    header "⌨️  Commands"
+    echo -e "  ${DIM}Custom slash commands for Claude Code (installed to ~/.claude/commands/).${NC}"
+    echo ""
+
+    echo -e "  ${BOLD}1. /pr${NC} — Create Pull Request"
+    echo -e "     Automates stage → commit → push → PR creation with ticket extraction."
+    if ask_yn "Install /pr command?"; then
+        INSTALL_CMD_PR=1
     fi
 
-    # === Category D: Configuration ===
+    # === Category E: Configuration ===
     header "⚙️  Configuration"
     echo -e "  ${DIM}Hooks and settings that enhance every Claude Code session.${NC}"
     echo ""
@@ -333,6 +479,17 @@ phase_selection() {
     echo -e "     Plan mode by default, always-thinking enabled, MCP timeouts, Haiku→Sonnet override."
     if ask_yn "Apply recommended settings?"; then
         INSTALL_SETTINGS=1
+    fi
+
+    # === Ask for user name if needed by commands or project config ===
+    if [[ $INSTALL_CMD_PR -eq 1 ]]; then
+        echo ""
+        echo -e "  ${BOLD}Your name${NC} (used for branch naming in commands, e.g. ${DIM}bruno${NC}):"
+        echo -ne "  > "
+        read -r USER_NAME
+        if [[ -z "$USER_NAME" ]]; then
+            warn "No name entered — you can set it later in the command files."
+        fi
     fi
 
     # === Resolve dependencies ===
@@ -363,8 +520,7 @@ resolve_dependencies() {
 
     # Node.js is needed for any npx-based MCP server or skill
     if [[ $INSTALL_MCP_XCODEBUILD -eq 1 || $INSTALL_MCP_DOCS -eq 1 || \
-          $INSTALL_MCP_OMNISEARCH -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 || \
-          $INSTALL_SKILL_SWIFTUI -eq 1 ]]; then
+          $INSTALL_MCP_OMNISEARCH -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 ]]; then
         needs_node=true
     fi
 
@@ -421,6 +577,7 @@ phase_summary() {
     local has_mcps=false
     local has_plugins=false
     local has_skills=false
+    local has_commands=false
     local has_config=false
 
     # Dependencies
@@ -469,14 +626,20 @@ phase_summary() {
     fi
 
     # Skills
-    if [[ $INSTALL_SKILL_LEARNING -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 || \
-          $INSTALL_SKILL_SWIFTUI -eq 1 ]]; then
+    if [[ $INSTALL_SKILL_LEARNING -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 ]]; then
         has_skills=true
         echo ""
         echo -e "  ${BOLD}Skills:${NC}"
         [[ $INSTALL_SKILL_LEARNING -eq 1 ]]    && echo -e "    ✅ continuous-learning (custom)"
         [[ $INSTALL_SKILL_XCODEBUILD -eq 1 ]]  && echo -e "    ✅ xcodebuildmcp"
-        [[ $INSTALL_SKILL_SWIFTUI -eq 1 ]]     && echo -e "    ✅ swiftui-expert-skill"
+    fi
+
+    # Commands
+    if [[ $INSTALL_CMD_PR -eq 1 ]]; then
+        has_commands=true
+        echo ""
+        echo -e "  ${BOLD}Commands:${NC}"
+        [[ $INSTALL_CMD_PR -eq 1 ]] && echo -e "    ✅ /pr (create pull request)"
     fi
 
     # Configuration
@@ -488,7 +651,7 @@ phase_summary() {
         [[ $INSTALL_SETTINGS -eq 1 ]] && echo -e "    ✅ Settings (plan mode, always-thinking, env vars, timeouts)"
     fi
 
-    if ! $has_deps && ! $has_mcps && ! $has_plugins && ! $has_skills && ! $has_config; then
+    if ! $has_deps && ! $has_mcps && ! $has_plugins && ! $has_skills && ! $has_commands && ! $has_config; then
         warn "Nothing selected to install."
         exit 0
     fi
@@ -518,8 +681,8 @@ phase_install() {
     [[ $INSTALL_PLUGIN_EXPLANATORY -eq 1 || $INSTALL_PLUGIN_PR_REVIEW -eq 1 || \
        $INSTALL_PLUGIN_SIMPLIFIER -eq 1 || $INSTALL_PLUGIN_RALPH -eq 1 || \
        $INSTALL_PLUGIN_HUD -eq 1 || $INSTALL_PLUGIN_CLAUDE_MD -eq 1 ]] && ((total_steps++))
-    [[ $INSTALL_SKILL_LEARNING -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 || \
-       $INSTALL_SKILL_SWIFTUI -eq 1 ]] && ((total_steps++))
+    [[ $INSTALL_SKILL_LEARNING -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 ]] && ((total_steps++))
+    [[ $INSTALL_CMD_PR -eq 1 ]] && ((total_steps++))
     [[ $INSTALL_HOOKS -eq 1 ]] && ((total_steps++))
     [[ $INSTALL_SETTINGS -eq 1 ]] && ((total_steps++))
 
@@ -578,21 +741,24 @@ phase_install() {
 
         if ! check_command ollama; then
             info "Installing Ollama..."
-            brew install --cask ollama
+            brew install ollama
             INSTALLED_ITEMS+=("Ollama")
             success "Ollama installed"
         fi
 
-        # Start Ollama if not running
+        # Register Ollama as a brew service (auto-starts on login)
+        if ! brew services list 2>/dev/null | grep -q "ollama.*started"; then
+            info "Starting Ollama as a brew service..."
+            brew services start ollama
+        fi
+
+        # Wait for Ollama to be ready
         if ! curl -s --max-time 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
-            info "Starting Ollama service..."
-            open -a Ollama
-            # Wait for Ollama to be ready
             local attempts=0
             while ! curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1; do
                 ((attempts++))
                 if [[ $attempts -ge 30 ]]; then
-                    warn "Ollama did not start in time. You may need to start it manually."
+                    warn "Ollama did not start in time. Check with: brew services info ollama"
                     break
                 fi
                 sleep 1
@@ -748,8 +914,7 @@ phase_install() {
     fi
 
     # --- Skills ---
-    if [[ $INSTALL_SKILL_LEARNING -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 || \
-          $INSTALL_SKILL_SWIFTUI -eq 1 ]]; then
+    if [[ $INSTALL_SKILL_LEARNING -eq 1 || $INSTALL_SKILL_XCODEBUILD -eq 1 ]]; then
         ((current_step++))
         step $current_step $total_steps "Installing Skills"
 
@@ -777,17 +942,25 @@ phase_install() {
             success "xcodebuildmcp skill installed"
         fi
 
-        if [[ $INSTALL_SKILL_SWIFTUI -eq 1 ]]; then
-            info "Installing swiftui-expert-skill..."
-            npx skills add avdlee/swiftui-agent-skill 2>/dev/null || {
-                warn "Failed to install swiftui-expert-skill via npx. You can try manually: npx skills add avdlee/swiftui-agent-skill"
-            }
-            # Symlink into claude skills if installed in ~/.agents/skills
-            if [[ -d "$HOME/.agents/skills/swiftui-expert-skill" ]] && [[ ! -e "$CLAUDE_SKILLS_DIR/swiftui-expert-skill" ]]; then
-                ln -sf "$HOME/.agents/skills/swiftui-expert-skill" "$CLAUDE_SKILLS_DIR/swiftui-expert-skill"
+    fi
+
+    # --- Commands ---
+    if [[ $INSTALL_CMD_PR -eq 1 ]]; then
+        ((current_step++))
+        step $current_step $total_steps "Installing Commands"
+
+        local commands_dir="$HOME/.claude/commands"
+        mkdir -p "$commands_dir"
+
+        if [[ $INSTALL_CMD_PR -eq 1 ]]; then
+            info "Installing /pr command..."
+            cp "$SCRIPT_DIR/commands/pr.md" "$commands_dir/pr.md"
+            # Replace user name placeholder if provided
+            if [[ -n "$USER_NAME" ]]; then
+                sed -i '' "s/__USER_NAME__/${USER_NAME}/g" "$commands_dir/pr.md"
             fi
-            INSTALLED_ITEMS+=("Skill: swiftui-expert-skill")
-            success "swiftui-expert-skill installed"
+            INSTALLED_ITEMS+=("Command: /pr")
+            success "/pr command installed"
         fi
     fi
 
@@ -861,29 +1034,46 @@ phase_summary_post() {
     echo ""
     echo -e "  ${BOLD}Next Steps:${NC}"
     echo ""
-    echo -e "    1. ${BOLD}Restart your terminal${NC} to pick up PATH changes"
+
+    local step_num=1
+
+    echo -e "    ${step_num}. ${BOLD}Restart your terminal${NC} to pick up PATH changes"
     echo ""
+    ((step_num++))
 
     if [[ "$CLAUDE_FRESH_INSTALL" == "true" ]]; then
-        echo -e "    2. Run ${BOLD}claude${NC} and authenticate with your Anthropic account"
+        echo -e "    ${step_num}. Run ${BOLD}claude${NC} and authenticate with your Anthropic account"
         echo ""
+        ((step_num++))
     fi
 
-    echo -e "    3. For each iOS project, set up per-project config:"
-    echo ""
-    echo -e "       ${DIM}# Copy CLAUDE.local.md template${NC}"
-    echo -e "       cp ${SCRIPT_DIR}/templates/CLAUDE.local.md /path/to/project/CLAUDE.local.md"
-    echo ""
-
+    echo -e "    ${step_num}. Configure ${BOLD}CLAUDE.local.md${NC} for your iOS project(s)"
+    echo -e "       ${DIM}Detects your Xcode project, sets branch naming, and applies the template.${NC}"
     if [[ $INSTALL_MCP_SERENA -eq 1 ]]; then
-        echo -e "       ${DIM}# Serena config is auto-generated on first run in each project${NC}"
-        echo ""
+        echo -e "       ${DIM}ℹ  Serena config is auto-generated on first run in each project.${NC}"
     fi
+    echo ""
+
+    if ask_yn "Configure a project now?"; then
+        configure_project
+        # Offer to configure additional projects
+        while ask_yn "Configure another project?" "N"; do
+            configure_project
+        done
+    else
+        echo ""
+        echo -e "       ${DIM}You can configure projects later by re-running:${NC}"
+        echo -e "       ${SCRIPT_DIR}/setup.sh --configure-project"
+    fi
+    echo ""
+
+    ((step_num++))
 
     if [[ "$PERPLEXITY_API_KEY" == "__ADD_YOUR_PERPLEXITY_API_KEY__" ]]; then
-        echo -e "    4. Add your Perplexity API key to mcp-omnisearch:"
+        echo -e "    ${step_num}. Add your Perplexity API key to mcp-omnisearch:"
         echo -e "       Edit ${BOLD}~/.claude.json${NC} → mcpServers → mcp-omnisearch → env → PERPLEXITY_API_KEY"
         echo ""
+        ((step_num++))
     fi
 
     echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -895,6 +1085,18 @@ phase_summary_post() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+# Support --configure-project flag for standalone project setup
+if [[ "${1:-}" == "--configure-project" ]]; then
+    header "📱 Configure Project"
+    configure_project
+    while ask_yn "Configure another project?" "N"; do
+        configure_project
+    done
+    echo ""
+    exit 0
+fi
+
 main() {
     phase_welcome
     phase_selection

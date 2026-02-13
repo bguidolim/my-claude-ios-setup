@@ -51,7 +51,12 @@ The script lets you pick from the following components:
 |-------|-------------|
 | **continuous-learning** | Extracts learnings and decisions into Serena memory |
 | **xcodebuildmcp** | Official skill with guidance for 190+ iOS dev tools |
-| **swiftui-expert-skill** | SwiftUI best practices, state management, Liquid Glass |
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| **/pr** | Automates stage → commit → push → PR creation with ticket extraction |
 
 ### Configuration
 
