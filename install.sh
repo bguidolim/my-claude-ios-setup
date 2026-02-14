@@ -39,4 +39,6 @@ fi
 echo ""
 echo -e "${BOLD}Running setup...${NC}"
 echo ""
-exec "$INSTALL_DIR/setup.sh" "$@"
+# Redirect stdin from terminal so setup.sh can prompt interactively
+# (curl pipe consumes stdin, leaving EOF for read calls)
+exec "$INSTALL_DIR/setup.sh" "$@" </dev/tty
