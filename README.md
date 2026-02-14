@@ -27,8 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/bguidolim/my-claude-ios-setup/main/
 Or clone manually:
 
 ```bash
-git clone https://github.com/bguidolim/my-claude-ios-setup.git ~/Developer/my-claude-ios-setup
-cd ~/Developer/my-claude-ios-setup
+git clone https://github.com/bguidolim/my-claude-ios-setup.git
+cd my-claude-ios-setup
 ./setup.sh
 ```
 
