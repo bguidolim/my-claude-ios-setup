@@ -391,7 +391,7 @@ schemaVersion: 1
 enabledWorkflows:
   - xcode-ide
   - simulator
-  - ui-testing
+  - ui-automation
   - project-discovery
   - utilities
   - session-management
