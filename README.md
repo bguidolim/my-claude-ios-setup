@@ -39,8 +39,9 @@ The script is interactive — it will ask what you want to install before making
 ```bash
 ./setup.sh                      # Interactive setup (pick components)
 ./setup.sh --all                # Install everything (minimal prompts)
-./setup.sh --doctor             # Diagnose installation health
-./setup.sh --configure-project  # Configure CLAUDE.local.md for a project
+./setup.sh doctor               # Diagnose installation health
+./setup.sh doctor --fix         # Diagnose and auto-fix issues
+./setup.sh configure-project    # Configure CLAUDE.local.md for a project
 ./setup.sh --help               # Show usage
 ```
 
@@ -110,7 +111,7 @@ If you cloned the repo:
 
 ```bash
 cd my-claude-ios-setup
-./setup.sh --configure-project
+./setup.sh configure-project
 ```
 
 If you used the one-line installer, clone and run:
@@ -118,7 +119,7 @@ If you used the one-line installer, clone and run:
 ```bash
 git clone https://github.com/bguidolim/my-claude-ios-setup.git
 cd my-claude-ios-setup
-./setup.sh --configure-project
+./setup.sh configure-project
 ```
 
 This auto-detects your Xcode project, asks for your name, generates `CLAUDE.local.md` with placeholders filled in, and creates `.xcodebuildmcp/config.yaml`.
@@ -228,7 +229,7 @@ xcrun sourcekit-lsp --help
 The script creates timestamped backups before modifying existing files:
 - `~/.claude/settings.json.backup.YYYYMMDD_HHMMSS`
 - `~/.claude.json.backup.YYYYMMDD_HHMMSS`
-- `<project>/CLAUDE.local.md.backup.YYYYMMDD_HHMMSS` (when `--configure-project` overwrites)
+- `<project>/CLAUDE.local.md.backup.YYYYMMDD_HHMMSS` (when `configure-project` overwrites)
 
 ## License
 

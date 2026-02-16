@@ -1,0 +1,12 @@
+schemaVersion: 1
+enabledWorkflows:
+  - xcode-ide
+  - simulator
+  - ui-automation
+  - project-discovery
+  - utilities
+  - session-management
+sessionDefaults:
+  projectPath: ./__PROJECT__
+  suppressWarnings: false
+  platform: iOS

@@ -7,8 +7,8 @@
 #
 # Usage: ./setup.sh                      # Interactive setup (pick components)
 #        ./setup.sh --all                 # Install everything (minimal prompts)
-#        ./setup.sh --doctor              # Diagnose installation health
-#        ./setup.sh --configure-project   # Configure CLAUDE.local.md for a project
+#        ./setup.sh doctor [--fix]        # Diagnose installation health
+#        ./setup.sh configure-project     # Configure CLAUDE.local.md for a project
 # =============================================================================
 
 set -euo pipefail
@@ -30,6 +30,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m' # No Color
@@ -382,24 +383,32 @@ configure_project() {
     # --- Generate XcodeBuildMCP config ---
     local xbm_dir="$project_path/.xcodebuildmcp"
     local xbm_config="$xbm_dir/config.yaml"
+    local xbm_template="$SCRIPT_DIR/templates/xcodebuildmcp.yaml"
+
+    # Build expected config from template
+    local xcode_escaped_xbm
+    xcode_escaped_xbm=$(sed_escape "$xcode_project")
+    local expected_config
+    expected_config=$(sed "s/__PROJECT__/${xcode_escaped_xbm}/g" "$xbm_template")
+
     if [[ -f "$xbm_config" ]]; then
-        info "XcodeBuildMCP config already exists — skipping"
+        local current_config
+        current_config=$(<"$xbm_config")
+        if [[ "$current_config" == "$expected_config" ]]; then
+            info "XcodeBuildMCP config is up to date — skipping"
+        else
+            warn "XcodeBuildMCP config differs from template"
+            if ask_yn "Overwrite .xcodebuildmcp/config.yaml with updated template?" "Y"; then
+                backup_file "$xbm_config"
+                echo "$expected_config" > "$xbm_config"
+                success "Updated ${xbm_config}"
+            else
+                info "Kept existing XcodeBuildMCP config"
+            fi
+        fi
     else
         mkdir -p "$xbm_dir"
-        cat > "$xbm_config" <<XBMEOF
-schemaVersion: 1
-enabledWorkflows:
-  - xcode-ide
-  - simulator
-  - ui-automation
-  - project-discovery
-  - utilities
-  - session-management
-sessionDefaults:
-  projectPath: ./${xcode_project}
-  suppressWarnings: false
-  platform: iOS
-XBMEOF
+        echo "$expected_config" > "$xbm_config"
         success "Created ${xbm_config}"
     fi
 
@@ -1362,7 +1371,7 @@ phase_summary_post() {
     else
         echo ""
         echo -e "       ${DIM}You can configure projects later by re-running:${NC}"
-        echo -e "       ${SCRIPT_DIR}/setup.sh --configure-project"
+        echo -e "       ${SCRIPT_DIR}/setup.sh configure-project"
     fi
     echo ""
 
@@ -1385,20 +1394,27 @@ phase_summary_post() {
 # Doctor — Diagnose installation health
 # ---------------------------------------------------------------------------
 phase_doctor() {
+    local doctor_fix="${1:-false}"
+
     echo ""
     echo -e "${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}║   🩺 Claude Code iOS Setup — Doctor                     ║${NC}"
     echo -e "${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
+    if [[ "$doctor_fix" == "true" ]]; then
+        echo -e "  ${DIM}Running in fix mode — will auto-fix issues where possible${NC}"
+    fi
     echo ""
 
     local pass=0
     local fail=0
     local warn_count=0
+    local fixed=0
 
     doc_pass()  { echo -e "  ${GREEN}✓${NC} $1"; pass=$((pass + 1)); }
     doc_fail()  { echo -e "  ${RED}✗${NC} $1"; fail=$((fail + 1)); }
     doc_warn()  { echo -e "  ${YELLOW}!${NC} $1"; warn_count=$((warn_count + 1)); }
     doc_skip()  { echo -e "  ${DIM}○ $1${NC}"; }
+    doc_fixed() { echo -e "  ${GREEN}✓${NC} $1 ${CYAN}(fixed)${NC}"; fixed=$((fixed + 1)); pass=$((pass + 1)); }
 
     # ===== Dependencies =====
     echo -e "${BOLD}  Dependencies${NC}"
@@ -1701,20 +1717,66 @@ phase_doctor() {
         if [[ -f "$project_dir/CLAUDE.local.md" ]]; then
             doc_pass "CLAUDE.local.md"
         else
-            doc_fail "CLAUDE.local.md — not found. Run: ${SCRIPT_DIR}/setup.sh --configure-project"
+            doc_fail "CLAUDE.local.md — not found. Run: ${SCRIPT_DIR}/setup.sh configure-project"
         fi
 
         # .xcodebuildmcp/config.yaml
-        if [[ -f "$project_dir/.xcodebuildmcp/config.yaml" ]]; then
+        local xbm_project_config="$project_dir/.xcodebuildmcp/config.yaml"
+        local xbm_template="$SCRIPT_DIR/templates/xcodebuildmcp.yaml"
+        if [[ -f "$xbm_project_config" ]]; then
             doc_pass ".xcodebuildmcp/config.yaml"
             # Check if xcode-ide workflow is enabled
-            if grep -q "xcode-ide" "$project_dir/.xcodebuildmcp/config.yaml" 2>/dev/null; then
+            if grep -q "xcode-ide" "$xbm_project_config" 2>/dev/null; then
                 doc_pass "xcode-ide workflow enabled"
             else
                 doc_warn "xcode-ide workflow not enabled — xcode_tools_* unavailable"
             fi
+
+            # Compare workflows against template
+            if [[ -f "$xbm_template" ]]; then
+                local template_workflows config_workflows
+                template_workflows=$(grep "^  - " "$xbm_template" | sed 's/^  - //' | sort)
+                config_workflows=$(grep "^  - " "$xbm_project_config" | sed 's/^  - //' | sort)
+
+                local missing_wf extra_wf xbm_diffs=""
+                missing_wf=$(comm -23 <(echo "$template_workflows") <(echo "$config_workflows"))
+                extra_wf=$(comm -13 <(echo "$template_workflows") <(echo "$config_workflows"))
+
+                if [[ -n "$missing_wf" ]]; then
+                    xbm_diffs="missing: $(echo "$missing_wf" | tr '\n' ', ' | sed 's/,$//')"
+                fi
+                if [[ -n "$extra_wf" ]]; then
+                    local extra_list="extra: $(echo "$extra_wf" | tr '\n' ', ' | sed 's/,$//')"
+                    xbm_diffs="${xbm_diffs:+$xbm_diffs; }$extra_list"
+                fi
+
+                if [[ -n "$xbm_diffs" ]]; then
+                    if [[ "$doctor_fix" == "true" ]]; then
+                        # Detect the Xcode project to fill in the template placeholder
+                        local xcode_proj=""
+                        xcode_proj=$(ls -1 "$project_dir"/*.xcodeproj 2>/dev/null | head -1)
+                        if [[ -z "$xcode_proj" ]]; then
+                            xcode_proj=$(ls -1 "$project_dir"/*.xcworkspace 2>/dev/null | head -1)
+                        fi
+                        if [[ -n "$xcode_proj" ]]; then
+                            xcode_proj=$(basename "$xcode_proj")
+                            local xbm_escaped
+                            xbm_escaped=$(sed_escape "$xcode_proj")
+                            local expected
+                            expected=$(sed "s/__PROJECT__/${xbm_escaped}/g" "$xbm_template")
+                            backup_file "$xbm_project_config"
+                            echo "$expected" > "$xbm_project_config"
+                            doc_fixed ".xcodebuildmcp/config.yaml — $xbm_diffs"
+                        else
+                            doc_fail ".xcodebuildmcp/config.yaml — $xbm_diffs (could not detect Xcode project to auto-fix)"
+                        fi
+                    else
+                        doc_fail ".xcodebuildmcp/config.yaml — $xbm_diffs"
+                    fi
+                fi
+            fi
         else
-            doc_fail ".xcodebuildmcp/config.yaml — not found. Run: ${SCRIPT_DIR}/setup.sh --configure-project"
+            doc_fail ".xcodebuildmcp/config.yaml — not found. Run: ${SCRIPT_DIR}/setup.sh configure-project"
         fi
 
         # Serena config (auto-generated on first run)
@@ -1733,6 +1795,9 @@ phase_doctor() {
     echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -ne "  "
     echo -ne "${GREEN}${pass} passed${NC}"
+    if [[ $fixed -gt 0 ]]; then
+        echo -ne "  ${CYAN}${fixed} fixed${NC}"
+    fi
     if [[ $warn_count -gt 0 ]]; then
         echo -ne "  ${YELLOW}${warn_count} warnings${NC}"
     fi
@@ -1746,7 +1811,11 @@ phase_doctor() {
     elif [[ $fail -eq 0 ]]; then
         echo -e "  ${YELLOW}No critical issues, but some warnings to review.${NC}"
     else
-        echo -e "  ${RED}Some issues found. Run ${BOLD}./setup.sh${NC}${RED} to fix them.${NC}"
+        if [[ "$doctor_fix" != "true" ]]; then
+            echo -e "  ${RED}Some issues found. Run ${BOLD}./setup.sh doctor --fix${NC}${RED} to auto-fix.${NC}"
+        else
+            echo -e "  ${RED}Some issues could not be auto-fixed. Run ${BOLD}./setup.sh${NC}${RED} to resolve.${NC}"
+        fi
     fi
     echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
@@ -1756,17 +1825,21 @@ phase_doctor() {
 # Main
 # ---------------------------------------------------------------------------
 
-# Handle flags
+# Handle subcommands and flags
 case "${1:-}" in
-    --doctor)
-        phase_doctor
+    doctor|--doctor)
+        local_fix="false"
+        if [[ "${2:-}" == "--fix" ]]; then
+            local_fix="true"
+        fi
+        phase_doctor "$local_fix"
         exit 0
         ;;
     --all)
         # Set all install flags — phase_selection will detect this and skip prompts
         INSTALL_ALL=1
         ;;
-    --configure-project)
+    configure-project|--configure-project)
         header "📱 Configure Project"
         configure_project
         while ask_yn "Configure another project?" "N"; do
@@ -1778,8 +1851,8 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: ./setup.sh                      # Interactive setup (pick components)"
         echo "       ./setup.sh --all                 # Install everything (minimal prompts)"
-        echo "       ./setup.sh --doctor              # Diagnose installation health"
-        echo "       ./setup.sh --configure-project   # Configure CLAUDE.local.md for a project"
+        echo "       ./setup.sh doctor [--fix]        # Diagnose installation health"
+        echo "       ./setup.sh configure-project     # Configure CLAUDE.local.md for a project"
         exit 0
         ;;
     "")
