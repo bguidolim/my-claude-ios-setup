@@ -495,28 +495,28 @@ phase_install() {
 
         if [[ $INSTALL_NODE -eq 1 ]]; then
             info "Installing Node.js..."
-            brew install node
+            fix_brew_package node
             INSTALLED_ITEMS+=("Node.js")
             success "Node.js installed"
         fi
 
         if [[ $INSTALL_JQ -eq 1 ]]; then
             info "Installing jq..."
-            brew install jq
+            fix_brew_package jq
             INSTALLED_ITEMS+=("jq")
             success "jq installed"
         fi
 
         if [[ $INSTALL_GH -eq 1 ]]; then
             info "Installing GitHub CLI..."
-            brew install gh
+            fix_brew_package gh
             INSTALLED_ITEMS+=("gh")
             success "GitHub CLI installed"
         fi
 
         if [[ $INSTALL_UV -eq 1 ]]; then
             info "Installing uv..."
-            brew install uv
+            fix_brew_package uv
             INSTALLED_ITEMS+=("uv")
             success "uv installed"
         fi
@@ -546,35 +546,18 @@ phase_install() {
         # Start Ollama if not already responding
         local ollama_ready=true
         if ! curl -s --max-time 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
-            # Try brew services only if Ollama was installed via Homebrew
-            if brew list ollama &>/dev/null; then
-                if ! brew services list 2>/dev/null | grep -q "ollama.*started"; then
-                    info "Starting Ollama as a brew service..."
-                    brew services start ollama
-                fi
-            else
-                warn "Ollama is installed but not running."
-                warn "Start it manually (e.g. 'ollama serve') and re-run setup."
+            info "Starting Ollama..."
+            if ! fix_ollama_start; then
+                warn "Ollama did not start. Start it manually (e.g. 'ollama serve') and re-run setup."
+                ollama_ready=false
             fi
-
-            # Wait for Ollama to be ready
-            local attempts=0
-            while ! curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1; do
-                attempts=$((attempts + 1))
-                if [[ $attempts -ge 30 ]]; then
-                    warn "Ollama did not start in time."
-                    ollama_ready=false
-                    break
-                fi
-                sleep 1
-            done
         fi
 
         # Pull embedding model (skip if Ollama didn't start)
         if [[ "$ollama_ready" == true ]]; then
             if ! ollama list 2>/dev/null | grep -q "nomic-embed-text"; then
                 info "Pulling nomic-embed-text model..."
-                if ollama pull nomic-embed-text; then
+                if fix_ollama_model "nomic-embed-text"; then
                     INSTALLED_ITEMS+=("nomic-embed-text model")
                     success "Ollama ready with nomic-embed-text"
                 else
@@ -677,18 +660,10 @@ phase_install() {
         if ! check_command claude; then
             warn "Claude Code CLI not found. Skipping plugin installation."
         else
-            # Add required marketplaces
-            info "Adding plugin marketplaces..."
-            claude_cli plugin marketplace add anthropics/claude-plugins-official 2>/dev/null || true
-
-            if [[ $INSTALL_PLUGIN_HUD -eq 1 ]]; then
-                claude_cli plugin marketplace add jarrodwatts/claude-hud 2>/dev/null || true
-            fi
-
             if [[ $INSTALL_PLUGIN_EXPLANATORY -eq 1 ]]; then
                 info "Installing explanatory-output-style..."
                 if try_install "Plugin: explanatory-output-style" \
-                    claude_cli plugin install explanatory-output-style@claude-plugins-official; then
+                    fix_plugin explanatory-output-style@claude-plugins-official; then
                     success "explanatory-output-style installed"
                 fi
             fi
@@ -696,7 +671,7 @@ phase_install() {
             if [[ $INSTALL_PLUGIN_PR_REVIEW -eq 1 ]]; then
                 info "Installing pr-review-toolkit..."
                 if try_install "Plugin: pr-review-toolkit" \
-                    claude_cli plugin install pr-review-toolkit@claude-plugins-official; then
+                    fix_plugin pr-review-toolkit@claude-plugins-official; then
                     success "pr-review-toolkit installed"
                 fi
             fi
@@ -704,7 +679,7 @@ phase_install() {
             if [[ $INSTALL_PLUGIN_SIMPLIFIER -eq 1 ]]; then
                 info "Installing code-simplifier..."
                 if try_install "Plugin: code-simplifier" \
-                    claude_cli plugin install code-simplifier@claude-plugins-official; then
+                    fix_plugin code-simplifier@claude-plugins-official; then
                     success "code-simplifier installed"
                 fi
             fi
@@ -712,7 +687,7 @@ phase_install() {
             if [[ $INSTALL_PLUGIN_RALPH -eq 1 ]]; then
                 info "Installing ralph-loop..."
                 if try_install "Plugin: ralph-loop" \
-                    claude_cli plugin install ralph-loop@claude-plugins-official; then
+                    fix_plugin ralph-loop@claude-plugins-official; then
                     success "ralph-loop installed"
                 fi
             fi
@@ -720,7 +695,7 @@ phase_install() {
             if [[ $INSTALL_PLUGIN_HUD -eq 1 ]]; then
                 info "Installing claude-hud..."
                 if try_install "Plugin: claude-hud" \
-                    claude_cli plugin install claude-hud@claude-hud; then
+                    fix_plugin claude-hud@claude-hud; then
                     success "claude-hud installed"
                 fi
             fi
@@ -728,7 +703,7 @@ phase_install() {
             if [[ $INSTALL_PLUGIN_CLAUDE_MD -eq 1 ]]; then
                 info "Installing claude-md-management..."
                 if try_install "Plugin: claude-md-management" \
-                    claude_cli plugin install claude-md-management@claude-plugins-official; then
+                    fix_plugin claude-md-management@claude-plugins-official; then
                     success "claude-md-management installed"
                 fi
             fi
@@ -742,21 +717,14 @@ phase_install() {
 
         if [[ $INSTALL_SKILL_LEARNING -eq 1 ]]; then
             info "Installing continuous-learning skill..."
-            mkdir -p "$CLAUDE_SKILLS_DIR/continuous-learning/references"
-            cp "$SCRIPT_DIR/skills/continuous-learning/SKILL.md" \
-               "$CLAUDE_SKILLS_DIR/continuous-learning/SKILL.md"
-            manifest_record "skills/continuous-learning/SKILL.md"
-            cp "$SCRIPT_DIR/skills/continuous-learning/references/templates.md" \
-               "$CLAUDE_SKILLS_DIR/continuous-learning/references/templates.md"
-            manifest_record "skills/continuous-learning/references/templates.md"
+            fix_skill_learning
             INSTALLED_ITEMS+=("Skill: continuous-learning")
             success "continuous-learning skill installed"
         fi
 
         if [[ $INSTALL_SKILL_XCODEBUILD -eq 1 ]]; then
             info "Installing xcodebuildmcp skill..."
-            if try_install "Skill: xcodebuildmcp" \
-                npx -y skills add cameroncooke/xcodebuildmcp -g -a claude-code -y; then
+            if try_install "Skill: xcodebuildmcp" fix_skill_xcodebuild; then
                 success "xcodebuildmcp skill installed"
             else
                 info "You can try manually: npx -y skills add cameroncooke/xcodebuildmcp -g -a claude-code -y"
@@ -770,22 +738,10 @@ phase_install() {
         current_step=$((current_step + 1))
         step $current_step $total_steps "Installing Commands"
 
-        local commands_dir="$HOME/.claude/commands"
-        mkdir -p "$commands_dir"
-
-        if [[ $INSTALL_CMD_PR -eq 1 ]]; then
-            info "Installing /pr command..."
-            cp "$SCRIPT_DIR/commands/pr.md" "$commands_dir/pr.md"
-            # Replace user name placeholder if provided
-            if [[ -n "$USER_NAME" ]]; then
-                local safe_user
-                safe_user=$(sed_escape "$USER_NAME")
-                sed -i '' "s/__USER_NAME__/${safe_user}/g" "$commands_dir/pr.md"
-            fi
-            manifest_record "commands/pr.md"
-            INSTALLED_ITEMS+=("Command: /pr")
-            success "/pr command installed"
-        fi
+        info "Installing /pr command..."
+        fix_cmd_pr "$USER_NAME"
+        INSTALLED_ITEMS+=("Command: /pr")
+        success "/pr command installed"
     fi
 
     # --- Hooks ---
@@ -793,15 +749,8 @@ phase_install() {
         current_step=$((current_step + 1))
         step $current_step $total_steps "Installing Hooks"
 
-        mkdir -p "$CLAUDE_HOOKS_DIR"
-
-        cp "$SCRIPT_DIR/hooks/session_start.sh" "$CLAUDE_HOOKS_DIR/session_start.sh"
-        chmod +x "$CLAUDE_HOOKS_DIR/session_start.sh"
-        manifest_record "hooks/session_start.sh"
-
-        cp "$SCRIPT_DIR/hooks/continuous-learning-activator.sh" "$CLAUDE_HOOKS_DIR/continuous-learning-activator.sh"
-        chmod +x "$CLAUDE_HOOKS_DIR/continuous-learning-activator.sh"
-        manifest_record "hooks/continuous-learning-activator.sh"
+        fix_hook_copy "session_start.sh"
+        fix_hook_copy "continuous-learning-activator.sh"
 
         INSTALLED_ITEMS+=("Hooks: session_start + continuous-learning-activator")
         success "Hooks installed"
@@ -812,49 +761,14 @@ phase_install() {
         current_step=$((current_step + 1))
         step $current_step $total_steps "Applying Settings"
 
-        if [[ -f "$CLAUDE_SETTINGS" ]]; then
-            backup_file "$CLAUDE_SETTINGS"
-            # Merge settings: our config on top of existing
-            if check_command jq; then
-                local merged
-                local merge_err
-                # Deep merge objects, but for hooks arrays: append new entries
-                # (deduplicated by command string) instead of replacing.
-                if merge_err=$(jq -s '
-                  (.[0] | del(.hooks)) * (.[1] | del(.hooks)) +
-                  { hooks: (
-                    (.[0].hooks // {}) as $a | (.[1].hooks // {}) as $b |
-                    (($a | keys) + ($b | keys) | unique) | reduce .[] as $k ({};
-                      . + {($k): (
-                        ($a[$k] // []) as $existing |
-                        ($b[$k] // []) |
-                        reduce .[] as $entry ($existing;
-                          if (map(.hooks[0].command) | index($entry.hooks[0].command)) then .
-                          else . + [$entry] end
-                        )
-                      )}
-                    )
-                  )}
-                ' "$CLAUDE_SETTINGS" "$SCRIPT_DIR/config/settings.json" 2>&1); then
-                    merged="$merge_err"
-                else
-                    warn "Failed to merge settings: $merge_err"
-                    warn "Previous settings backed up. Overwriting with new settings."
-                    merged=$(cat "$SCRIPT_DIR/config/settings.json")
-                fi
-                echo "$merged" > "$CLAUDE_SETTINGS"
-            else
-                cp "$SCRIPT_DIR/config/settings.json" "$CLAUDE_SETTINGS"
-            fi
-        else
+        if ! fix_settings_merge; then
+            warn "Failed to merge settings. Previous settings backed up. Overwriting with new settings."
             cp "$SCRIPT_DIR/config/settings.json" "$CLAUDE_SETTINGS"
         fi
 
         # Disable built-in auto-memory when Serena continuous-learning replaces it
-        if [[ $INSTALL_MCP_SERENA -eq 1 || $INSTALL_SKILL_LEARNING -eq 1 ]] && check_command jq; then
-            local tmp_settings
-            tmp_settings=$(jq '.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"' "$CLAUDE_SETTINGS")
-            echo "$tmp_settings" > "$CLAUDE_SETTINGS"
+        if [[ $INSTALL_MCP_SERENA -eq 1 || $INSTALL_SKILL_LEARNING -eq 1 ]]; then
+            fix_settings_auto_memory || true
         fi
 
         INSTALLED_ITEMS+=("Settings: env vars, plan mode, hooks config, plugins")
@@ -862,13 +776,10 @@ phase_install() {
     fi
 
     # --- Global gitignore ---
-    local git_ignore_dir="$HOME/.config/git"
-    local git_ignore="$git_ignore_dir/ignore"
+    fix_gitignore_file
+    local git_ignore="$HOME/.config/git/ignore"
     local gitignore_entries=(".claude" "*.local.*" ".serena" ".xcodebuildmcp")
     local added_entries=()
-
-    mkdir -p "$git_ignore_dir"
-    touch "$git_ignore"
 
     for entry in "${gitignore_entries[@]}"; do
         if ! grep -qxF "$entry" "$git_ignore" 2>/dev/null; then
@@ -877,13 +788,12 @@ phase_install() {
     done
 
     if [[ ${#added_entries[@]} -gt 0 ]]; then
-        {
-            echo ""
-            echo "# Added by Claude Code iOS Setup"
-            for entry in "${added_entries[@]}"; do
-                echo "$entry"
-            done
-        } >> "$git_ignore"
+        # Add a comment header before the first entry
+        echo "" >> "$git_ignore"
+        echo "# Added by Claude Code iOS Setup" >> "$git_ignore"
+        for entry in "${added_entries[@]}"; do
+            fix_gitignore_entry "$entry"
+        done
         INSTALLED_ITEMS+=("Global gitignore: ${added_entries[*]}")
         success "Global gitignore updated (${#added_entries[@]} entries added)"
     fi

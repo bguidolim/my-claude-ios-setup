@@ -1,8 +1,9 @@
 # ---------------------------------------------------------------------------
-# Shared Fix Functions — used by doctor --fix (and eventually phase_install)
+# Shared Fix Functions — used by doctor --fix and phase_install
 # ---------------------------------------------------------------------------
 # Each function performs the fix, returns 0 on success / 1 on failure.
-# No user-facing output — the caller handles doc_fixed / doc_fix_failed.
+# No user-facing output — the caller handles UI (info/success/warn or
+# doc_fixed/doc_fix_failed).
 # All functions assume globals from setup.sh are available (SCRIPT_DIR,
 # CLAUDE_DIR, CLAUDE_HOOKS_DIR, CLAUDE_SKILLS_DIR, CLAUDE_SETTINGS, etc.)
 
@@ -41,7 +42,7 @@ fix_hook_executable() {
 }
 
 # Deep-merge config/settings.json into ~/.claude/settings.json
-# Reuses the same jq logic from phases.sh: deep-merge objects, deduplicate hook arrays
+# Deep-merges objects and deduplicates hook arrays by command string
 fix_settings_merge() {
     check_command jq || return 1
     mkdir -p "$CLAUDE_DIR"
@@ -82,6 +83,29 @@ fix_skill_learning() {
     cp "$SCRIPT_DIR/skills/continuous-learning/references/templates.md" \
        "$CLAUDE_SKILLS_DIR/continuous-learning/references/templates.md"
     manifest_record "skills/continuous-learning/references/templates.md"
+}
+
+# Copy /pr command and substitute user name placeholder
+fix_cmd_pr() {
+    local user_name=${1:-}
+    local commands_dir="$HOME/.claude/commands"
+    mkdir -p "$commands_dir"
+    cp "$SCRIPT_DIR/commands/pr.md" "$commands_dir/pr.md"
+    if [[ -n "$user_name" ]]; then
+        local safe_user
+        safe_user=$(sed_escape "$user_name")
+        sed -i '' "s/__USER_NAME__/${safe_user}/g" "$commands_dir/pr.md"
+    fi
+    manifest_record "commands/pr.md"
+}
+
+# Set CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in settings.json
+fix_settings_auto_memory() {
+    check_command jq || return 1
+    [[ -f "$CLAUDE_SETTINGS" ]] || return 1
+    local tmp_settings
+    tmp_settings=$(jq '.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"' "$CLAUDE_SETTINGS")
+    echo "$tmp_settings" > "$CLAUDE_SETTINGS"
 }
 
 # Re-copy a plain-copy file from source to its installed location

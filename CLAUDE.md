@@ -30,9 +30,10 @@ There are no tests, linting, or build steps — this is a pure Bash project.
 ### Library modules (`lib/`)
 All sourced by `setup.sh` to share global state (flags, paths, color constants) without subshell overhead:
 - `utils.sh` — logging (`info`, `success`, `warn`, `error`, `header`, `step`), `ask_yn` prompts, `backup_file`, manifest tracking (SHA-256), `try_install`, brew path detection, `claude_cli` wrapper, `sed_escape`
-- `phases.sh` — the 5 installation phases; each phase function handles one stage
+- `fixes.sh` — shared `fix_*` functions (brew packages, Ollama, hooks, skills, plugins, settings, gitignore) used by both `phase_install()` and `doctor --fix`; no UI output, returns 0/1
+- `phases.sh` — the 5 installation phases; `phase_install()` delegates to `fix_*` functions for actual work, adds UI (progress steps, info/success/warn) and tracking (`INSTALLED_ITEMS`, `SKIPPED_ITEMS`)
 - `configure.sh` — `configure_project()`: auto-detects Xcode projects, fills `__PLACEHOLDER__` tokens in templates, writes `CLAUDE.local.md` and `.xcodebuildmcp/config.yaml`
-- `doctor.sh` — `phase_doctor()`: health checks (deps, MCP servers, plugins, skills, hooks, file freshness via manifest)
+- `doctor.sh` — `phase_doctor()`: health checks (deps, MCP servers, plugins, skills, hooks, file freshness via manifest); `--fix` mode calls `fix_*` functions from `fixes.sh`
 - `cleanup.sh` — backup file management (end-of-run prompt + `cleanup` subcommand)
 
 ### Templates (`templates/`)
