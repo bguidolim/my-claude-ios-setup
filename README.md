@@ -39,6 +39,8 @@ The script is interactive — it will ask what you want to install before making
 ```bash
 ./setup.sh                      # Interactive setup (pick components)
 ./setup.sh --all                # Install everything (minimal prompts)
+./setup.sh --dry-run            # Show what would be installed (no changes)
+./setup.sh --all --dry-run      # Preview full install without changes
 ./setup.sh doctor               # Diagnose installation health
 ./setup.sh doctor --fix         # Diagnose and auto-fix issues
 ./setup.sh configure-project    # Configure CLAUDE.local.md for a project
@@ -139,6 +141,7 @@ If this is a fresh install, run `claude` and follow the authentication prompts.
 | `skills/continuous-learning/` | Custom continuous-learning skill |
 | `commands/pr.md` | /pr custom command template |
 | `templates/CLAUDE.local.md` | Per-project Claude instructions template |
+| `templates/xcodebuildmcp.yaml` | XcodeBuildMCP per-project config template |
 
 ## Customization
 

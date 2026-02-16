@@ -21,6 +21,7 @@ error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 # --- Prerequisites ---
 command -v git >/dev/null 2>&1 || error "git is required. Install Xcode CLT: xcode-select --install"
+[ -c /dev/tty ] || error "No terminal available. This installer must be run interactively."
 
 # --- Clone to temp dir ---
 TMPDIR_SETUP=$(mktemp -d)

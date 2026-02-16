@@ -106,11 +106,13 @@ main() {
                 # Redirect subshell stdout/stderr to /dev/null so the hook's
                 # output pipe closes immediately (Claude Code waits for the
                 # pipe to close, not just the parent process).
+                # A watchdog kills the subshell after 120s to prevent hangs.
                 (
+                    trap 'kill 0 2>/dev/null' TERM
                     export OPENAI_API_KEY=ollama
                     export OPENAI_API_BASE=http://localhost:11434/v1
 
-                    local embedding_model="openai:nomic-embed-text"
+                    embedding_model="openai:nomic-embed-text"
 
                     if npx -y @arabold/docs-mcp-server list --silent 2>/dev/null | grep -q "$repo_name"; then
                         npx -y @arabold/docs-mcp-server refresh "$repo_name" \
@@ -123,6 +125,8 @@ main() {
                             --silent >/dev/null 2>&1
                     fi
                 ) >/dev/null 2>&1 &
+                local sync_pid=$!
+                ( sleep 120 && kill "$sync_pid" 2>/dev/null ) >/dev/null 2>&1 &
             fi
         else
             context+="\n⚠️ Ollama not running — docs-mcp semantic search will fail"
