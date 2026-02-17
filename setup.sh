@@ -76,8 +76,8 @@ INSTALL_CMD_PR=0
 INSTALL_HOOKS=0
 INSTALL_SETTINGS=0
 
-# User identity (used in commands and project config)
-USER_NAME=""
+# Branch prefix (used in commands and project config, e.g. "bruno" or "feature")
+BRANCH_PREFIX=""
 
 # Full install mode (--all flag)
 INSTALL_ALL=0

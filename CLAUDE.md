@@ -37,7 +37,7 @@ All sourced by `setup.sh` to share global state (flags, paths, color constants) 
 - `cleanup.sh` — backup file management (end-of-run prompt + `cleanup` subcommand)
 
 ### Templates (`templates/`)
-- `CLAUDE.local.md` — per-project Claude instructions; placeholders: `__PROJECT__`, `__REPO_NAME__`, `__USER_NAME__`
+- `CLAUDE.local.md` — per-project Claude instructions; placeholders: `__PROJECT__`, `__REPO_NAME__`, `__BRANCH_PREFIX__`
 - `xcodebuildmcp.yaml` — XcodeBuildMCP workflow config
 
 ### Installed artifacts

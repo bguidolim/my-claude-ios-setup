@@ -72,10 +72,10 @@ phase_selection() {
         echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC} → ${DIM}bruno/ABC-123-fix-login${NC})"
         echo -e "  Leave empty for ${DIM}feature/ABC-123-fix-login${NC}"
         echo -ne "  > "
-        read -r USER_NAME
-        if [[ -z "$USER_NAME" ]]; then
-            USER_NAME='feature'
-            info "Defaulting branch prefix to: ${BOLD}${USER_NAME}${NC}"
+        read -r BRANCH_PREFIX
+        if [[ -z "$BRANCH_PREFIX" ]]; then
+            BRANCH_PREFIX='feature'
+            info "Defaulting branch prefix to: ${BOLD}${BRANCH_PREFIX}${NC}"
         fi
 
         echo ""
@@ -269,10 +269,10 @@ phase_selection() {
         echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC} → ${DIM}bruno/ABC-123-fix-login${NC})"
         echo -e "  Leave empty for ${DIM}feature/ABC-123-fix-login${NC}"
         echo -ne "  > "
-        read -r USER_NAME
-        if [[ -z "$USER_NAME" ]]; then
-            USER_NAME='feature'
-            info "Defaulting branch prefix to: ${BOLD}${USER_NAME}${NC}"
+        read -r BRANCH_PREFIX
+        if [[ -z "$BRANCH_PREFIX" ]]; then
+            BRANCH_PREFIX='feature'
+            info "Defaulting branch prefix to: ${BOLD}${BRANCH_PREFIX}${NC}"
         fi
     fi
 
@@ -746,7 +746,7 @@ phase_install() {
         step $current_step $total_steps "Installing Commands"
 
         info "Installing /pr command..."
-        fix_cmd_pr "$USER_NAME"
+        fix_cmd_pr "$BRANCH_PREFIX"
         INSTALLED_ITEMS+=("Command: /pr")
         success "/pr command installed"
     fi

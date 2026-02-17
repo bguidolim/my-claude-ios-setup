@@ -62,21 +62,21 @@ configure_project() {
     fi
     echo ""
 
-    # --- Ask for user name (branch naming) — reuse if already provided ---
-    local user_name="$USER_NAME"
-    if [[ -n "$user_name" ]]; then
-        echo -e "  Branch naming prefix: ${BOLD}${user_name}${NC}"
+    # --- Ask for branch prefix — reuse if already provided ---
+    local branch_prefix="$BRANCH_PREFIX"
+    if [[ -n "$branch_prefix" ]]; then
+        echo -e "  Branch naming prefix: ${BOLD}${branch_prefix}${NC}"
     else
         echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC} → ${DIM}bruno/ABC-123-fix-login${NC})"
         echo -e "  Leave empty for ${DIM}feature/ABC-123-fix-login${NC}"
         echo -ne "  > "
-        read -r user_name
-        if [[ -z "$user_name" ]]; then
-            user_name='feature'
-            info "Defaulting branch prefix to: ${BOLD}${user_name}${NC}"
+        read -r branch_prefix
+        if [[ -z "$branch_prefix" ]]; then
+            branch_prefix='feature'
+            info "Defaulting branch prefix to: ${BOLD}${branch_prefix}${NC}"
         else
             # Store globally for subsequent project configs
-            USER_NAME="$user_name"
+            BRANCH_PREFIX="$branch_prefix"
         fi
     fi
     echo ""
@@ -129,8 +129,8 @@ configure_project() {
     # 2. Branch naming: remove EDIT comment, replace placeholder
     sed -i '' '/<!-- EDIT: Set your branch naming convention below -->/d' "$dest"
     local safe_name
-    safe_name=$(sed_escape "$user_name")
-    sed -i '' "s/__USER_NAME__/${safe_name}/g" "$dest"
+    safe_name=$(sed_escape "$branch_prefix")
+    sed -i '' "s/__BRANCH_PREFIX__/${safe_name}/g" "$dest"
 
     # 3. CLAUDE.md symlink
     if [[ "$has_symlink" == true ]]; then
@@ -180,7 +180,7 @@ configure_project() {
     success "Project configured: ${project_path}"
     echo -e "    Xcode project:      ${BOLD}${xcode_project}${NC}"
     echo -e "    Docs library:       ${BOLD}${repo_name}${NC}"
-    echo -e "    Branch prefix:      ${BOLD}${user_name}/{ticket-and-small-title}${NC}"
+    echo -e "    Branch prefix:      ${BOLD}${branch_prefix}/{ticket-and-small-title}${NC}"
     echo -e "    XcodeBuildMCP:      ${BOLD}.xcodebuildmcp/config.yaml${NC}"
     if [[ "$has_symlink" == true ]]; then
         echo -e "    Symlink note:       ${GREEN}enabled${NC} (CLAUDE.md → AGENTS.md)"

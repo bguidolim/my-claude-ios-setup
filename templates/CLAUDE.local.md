@@ -46,7 +46,7 @@ The `xcode-ide` workflow is enabled via `.xcodebuildmcp/config.yaml`, providing 
 
 ## Git & GitHub
 <!-- EDIT: Set your branch naming convention below -->
-- Branch naming: `__USER_NAME__/{ticket-and-small-title}`
+- Branch naming: `__BRANCH_PREFIX__/{ticket-and-small-title}`
 - **Never commit without being asked**
 - Use `gh` command for GitHub queries (auth already configured)
 

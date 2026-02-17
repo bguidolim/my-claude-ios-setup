@@ -85,16 +85,16 @@ fix_skill_learning() {
     manifest_record "skills/continuous-learning/references/templates.md"
 }
 
-# Copy /pr command and substitute user name placeholder
+# Copy /pr command and substitute branch prefix placeholder
 fix_cmd_pr() {
-    local user_name=${1:-}
+    local branch_prefix=${1:-}
     local commands_dir="$HOME/.claude/commands"
     mkdir -p "$commands_dir"
     cp "$SCRIPT_DIR/commands/pr.md" "$commands_dir/pr.md"
-    if [[ -n "$user_name" ]]; then
+    if [[ -n "$branch_prefix" ]]; then
         local safe_user
-        safe_user=$(sed_escape "$user_name")
-        sed -i '' "s/__USER_NAME__/${safe_user}/g" "$commands_dir/pr.md"
+        safe_user=$(sed_escape "$branch_prefix")
+        sed -i '' "s/__BRANCH_PREFIX__/${safe_user}/g" "$commands_dir/pr.md"
     fi
     manifest_record "commands/pr.md"
 }

@@ -240,8 +240,8 @@ phase_doctor() {
     echo -e "  ${DIM}──────────────────────────────────────────${NC}"
 
     if [[ -f "$HOME/.claude/commands/pr.md" ]]; then
-        if grep -q "__USER_NAME__" "$HOME/.claude/commands/pr.md" 2>/dev/null; then
-            doc_warn "/pr — installed but user name placeholder not replaced"
+        if grep -q "__BRANCH_PREFIX__" "$HOME/.claude/commands/pr.md" 2>/dev/null; then
+            doc_warn "/pr — installed but branch prefix placeholder not replaced"
         else
             doc_pass "/pr"
         fi
@@ -497,7 +497,7 @@ phase_doctor() {
             local claude_local_ok=true
 
             # Check for unsubstituted placeholders
-            if grep -qE '__REPO_NAME__|__PROJECT__|__USER_NAME__' "$project_dir/CLAUDE.local.md" 2>/dev/null; then
+            if grep -qE '__REPO_NAME__|__PROJECT__|__BRANCH_PREFIX__' "$project_dir/CLAUDE.local.md" 2>/dev/null; then
                 doc_warn "CLAUDE.local.md — has unsubstituted placeholders"
                 claude_local_ok=false
             fi
