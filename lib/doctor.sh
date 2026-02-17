@@ -345,19 +345,22 @@ phase_doctor() {
     echo ""
 
     # ===== Global Gitignore =====
-    echo -e "${BOLD}  Global Gitignore${NC} ${DIM}(~/.config/git/ignore)${NC}"
+    local git_ignore
+    git_ignore=$(resolve_git_excludes_file)
+    local git_ignore_display
+    git_ignore_display=$(echo "$git_ignore" | sed "s|^$HOME|~|")
+    echo -e "${BOLD}  Global Gitignore${NC} ${DIM}($git_ignore_display)${NC}"
     echo -e "  ${DIM}──────────────────────────────────────────${NC}"
 
-    local git_ignore="$HOME/.config/git/ignore"
     if [[ ! -f "$git_ignore" ]]; then
         if [[ "$doctor_fix" == "true" ]]; then
             if fix_gitignore_file; then
-                doc_fixed "~/.config/git/ignore created"
+                doc_fixed "$git_ignore_display created"
             else
-                doc_fix_failed "~/.config/git/ignore — could not create"
+                doc_fix_failed "$git_ignore_display — could not create"
             fi
         else
-            doc_fail "~/.config/git/ignore not found"
+            doc_fail "$git_ignore_display not found"
         fi
     fi
 

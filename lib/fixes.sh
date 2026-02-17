@@ -9,18 +9,33 @@
 
 # === Tier 1: File operations only (always safe) ===
 
+# Resolve the Git global excludes file path.
+# Checks core.excludesFile, falls back to ~/.config/git/ignore (Git's default).
+resolve_git_excludes_file() {
+    local git_ignore=""
+    git_ignore=$(git config --global core.excludesFile 2>/dev/null || true)
+    if [[ -z "$git_ignore" ]]; then
+        git_ignore="$HOME/.config/git/ignore"
+    else
+        git_ignore="${git_ignore/#\~/$HOME}"
+    fi
+    echo "$git_ignore"
+}
+
 # Create global gitignore file if missing
 fix_gitignore_file() {
-    local git_ignore_dir="$HOME/.config/git"
-    mkdir -p "$git_ignore_dir"
-    touch "$git_ignore_dir/ignore"
+    local git_ignore
+    git_ignore=$(resolve_git_excludes_file)
+    mkdir -p "$(dirname "$git_ignore")"
+    touch "$git_ignore"
 }
 
 # Append an entry to global gitignore (idempotent)
 fix_gitignore_entry() {
     local entry=$1
-    local git_ignore="$HOME/.config/git/ignore"
     fix_gitignore_file
+    local git_ignore
+    git_ignore=$(resolve_git_excludes_file)
     if ! grep -qxF "$entry" "$git_ignore" 2>/dev/null; then
         echo "$entry" >> "$git_ignore"
     fi

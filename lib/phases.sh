@@ -784,7 +784,8 @@ phase_install() {
 
     # --- Global gitignore ---
     fix_gitignore_file
-    local git_ignore="$HOME/.config/git/ignore"
+    local git_ignore
+    git_ignore=$(resolve_git_excludes_file)
     local gitignore_entries=(".claude" "*.local.*" ".serena" ".xcodebuildmcp")
     local added_entries=()
 
