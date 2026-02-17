@@ -67,7 +67,8 @@ configure_project() {
     if [[ -n "$user_name" ]]; then
         echo -e "  Branch naming prefix: ${BOLD}${user_name}${NC}"
     else
-        echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC}):"
+        echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC} → ${DIM}bruno/ABC-123-fix-login${NC})"
+        echo -e "  Leave empty for ${DIM}feature/ABC-123-fix-login${NC}"
         echo -ne "  > "
         read -r user_name
         if [[ -z "$user_name" ]]; then
@@ -94,7 +95,7 @@ configure_project() {
     # --- Copy template ---
     local dest="$project_path/CLAUDE.local.md"
     if [[ -f "$dest" ]]; then
-        if ask_yn "CLAUDE.local.md already exists. Overwrite?" "N"; then
+        if ask_yn "CLAUDE.local.md already exists. Overwrite? (a backup will be created)" "N"; then
             backup_file "$dest"
         else
             warn "Skipped project configuration."
@@ -161,7 +162,7 @@ configure_project() {
             info "XcodeBuildMCP config is up to date — skipping"
         else
             warn "XcodeBuildMCP config differs from template"
-            if ask_yn "Overwrite .xcodebuildmcp/config.yaml with updated template?" "Y"; then
+            if ask_yn "Overwrite .xcodebuildmcp/config.yaml with updated template? (a backup will be created)" "Y"; then
                 backup_file "$xbm_config"
                 echo "$expected_config" > "$xbm_config"
                 success "Updated ${xbm_config}"

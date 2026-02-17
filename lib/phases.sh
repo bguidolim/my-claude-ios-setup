@@ -69,9 +69,14 @@ phase_selection() {
 
         # Still need the API key and user name
         echo ""
-        echo -e "  ${BOLD}Your name${NC} (used for branch naming, e.g. ${DIM}bruno${NC}):"
+        echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC} → ${DIM}bruno/ABC-123-fix-login${NC})"
+        echo -e "  Leave empty for ${DIM}feature/ABC-123-fix-login${NC}"
         echo -ne "  > "
         read -r USER_NAME
+        if [[ -z "$USER_NAME" ]]; then
+            USER_NAME='feature'
+            info "Defaulting branch prefix to: ${BOLD}${USER_NAME}${NC}"
+        fi
 
         echo ""
         local existing_pplx_key
@@ -261,11 +266,13 @@ phase_selection() {
     # === Ask for user name if needed by commands or project config ===
     if [[ $INSTALL_CMD_PR -eq 1 ]]; then
         echo ""
-        echo -e "  ${BOLD}Your name${NC} (used for branch naming in commands, e.g. ${DIM}bruno${NC}):"
+        echo -e "  ${BOLD}Your name for branch naming${NC} (e.g. ${DIM}bruno${NC} → ${DIM}bruno/ABC-123-fix-login${NC})"
+        echo -e "  Leave empty for ${DIM}feature/ABC-123-fix-login${NC}"
         echo -ne "  > "
         read -r USER_NAME
         if [[ -z "$USER_NAME" ]]; then
-            warn "No name entered — you can set it later in the command files."
+            USER_NAME='feature'
+            info "Defaulting branch prefix to: ${BOLD}${USER_NAME}${NC}"
         fi
     fi
 
