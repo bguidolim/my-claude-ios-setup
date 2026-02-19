@@ -206,7 +206,7 @@ WRAPPER_EOF
 
     # Write wrapper (compare before writing to detect changes)
     if [[ ! -f "$CLI_WRAPPER_PATH" ]] || [[ "$(cat "$CLI_WRAPPER_PATH")" != "$wrapper_content" ]]; then
-        echo "$wrapper_content" > "$CLI_WRAPPER_PATH"
+        printf '%s\n' "$wrapper_content" > "$CLI_WRAPPER_PATH"
         changed=true
     fi
     chmod +x "$CLI_WRAPPER_PATH"
@@ -220,8 +220,8 @@ WRAPPER_EOF
 
     if [[ -n "$shell_rc" ]]; then
         # Check if PATH already contains our bin dir
-        # Use literal string since rc files contain $HOME unexpanded
-        if ! grep -qF '.claude/bin' "$shell_rc" 2>/dev/null; then
+        # Use literal $HOME since rc files contain it unexpanded
+        if ! grep -qF '$HOME/.claude/bin' "$shell_rc" 2>/dev/null; then
             echo "" >> "$shell_rc"
             echo "# Added by Claude Code iOS Setup" >> "$shell_rc"
             echo "export PATH=\"\$HOME/.claude/bin:\$PATH\"" >> "$shell_rc"
@@ -229,7 +229,9 @@ WRAPPER_EOF
         fi
     fi
 
-    $changed && return 0 || return 1
+    # Always return 0 — the state is correct when we exit.
+    # $changed is not exposed; callers should pre-check if they need to distinguish.
+    return 0
 }
 
 # === Tier 2: Needs brew/network ===

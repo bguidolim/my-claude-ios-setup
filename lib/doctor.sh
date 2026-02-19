@@ -565,7 +565,7 @@ phase_doctor() {
         bash) shell_rc="$HOME/.bash_profile" ;;
     esac
     if [[ -n "$shell_rc" ]]; then
-        if grep -qF '.claude/bin' "$shell_rc" 2>/dev/null; then
+        if grep -qF '$HOME/.claude/bin' "$shell_rc" 2>/dev/null; then
             doc_pass "PATH configured in $(basename "$shell_rc")"
         else
             if [[ "$doctor_fix" == "true" ]]; then

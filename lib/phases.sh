@@ -740,7 +740,12 @@ phase_install() {
     current_step=$((current_step + 1))
     step $current_step $total_steps "Installing CLI wrapper"
 
-    if fix_cli_wrapper; then
+    local cli_existed=false
+    [[ -f "$CLI_WRAPPER_PATH" ]] && cli_existed=true
+
+    fix_cli_wrapper
+
+    if [[ "$cli_existed" == false ]]; then
         INSTALLED_ITEMS+=("CLI: claude-ios-setup")
         success "CLI wrapper installed to $CLI_WRAPPER_PATH"
         # Check if we need to tell the user about PATH

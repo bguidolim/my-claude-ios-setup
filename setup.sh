@@ -140,6 +140,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         update|--update)
             info "Checking for updates..."
+            # Refuse to update if there are local modifications
+            if ! git -C "$SCRIPT_DIR" diff --quiet 2>/dev/null || \
+               ! git -C "$SCRIPT_DIR" diff --cached --quiet 2>/dev/null; then
+                error "Local changes detected in $SCRIPT_DIR. Stash or commit them first."
+                exit 1
+            fi
             if [[ "$SCRIPT_DIR" == "$DEFAULT_INSTALL_DIR" ]]; then
                 # Default install location: always update from main
                 git -C "$SCRIPT_DIR" fetch origin main 2>/dev/null
