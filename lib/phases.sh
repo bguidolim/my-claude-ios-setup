@@ -762,6 +762,13 @@ phase_install() {
         SKIPPED_ITEMS+=("CLI wrapper (already up to date)")
     fi
 
+    # Warn if PATH could not be configured (unsupported shell)
+    local shell_rc
+    shell_rc=$(resolve_shell_rc)
+    if [[ -z "$shell_rc" ]]; then
+        warn "Unsupported shell ($(basename "${SHELL:-unknown}")) — add ~/.claude/bin to your PATH manually"
+    fi
+
 }
 
 # ---------------------------------------------------------------------------

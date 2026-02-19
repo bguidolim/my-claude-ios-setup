@@ -183,10 +183,11 @@ if [[ ! -d "$REPO_DIR" ]]; then
         exit 1
     fi
     REPO_DIR="$DEFAULT_DIR"
-    # Update this wrapper to point to new location
+    # Update this wrapper to point to new location (non-fatal: clone already succeeded)
     # Resolve own path via BASH_SOURCE (reliable even when invoked via PATH)
     WRAPPER_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-    sed -i '' "s|^REPO_DIR=.*|REPO_DIR=\"$DEFAULT_DIR\"|" "$WRAPPER_SELF"
+    sed -i '' "s|^REPO_DIR=.*|REPO_DIR=\"$DEFAULT_DIR\"|" "$WRAPPER_SELF" 2>/dev/null || \
+        echo -e "\033[1;33m[WARN]\033[0m Could not update wrapper. Next run will re-clone."
 fi
 
 # Check for staleness (warn if last fetch was >7 days ago)
