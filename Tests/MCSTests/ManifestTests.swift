@@ -167,6 +167,35 @@ struct ManifestTests {
 
     // MARK: - Persistence round-trip
 
+    @Test("Metadata heuristic classifies file paths correctly")
+    func metadataHeuristic() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+
+        // Write a manifest with metadata and a file path that could confuse heuristics
+        let content = """
+        SCRIPT_DIR=/test/path
+        INSTALLED_PACKS=ios,web
+        hooks/session_start.sh=abc123
+        skills/continuous-learning=def456
+        config/settings.json=ghi789
+        """
+        try content.write(to: manifestFile, atomically: true, encoding: .utf8)
+
+        let manifest = Manifest(path: manifestFile)
+
+        // Metadata should be recognized
+        #expect(manifest.scriptDir == "/test/path")
+        #expect(manifest.installedPacks == Set(["ios", "web"]))
+
+        // File entries should not be treated as metadata
+        #expect(manifest.trackedPaths.contains("hooks/session_start.sh"))
+        #expect(manifest.trackedPaths.contains("skills/continuous-learning"))
+        #expect(manifest.trackedPaths.contains("config/settings.json"))
+    }
+
     @Test("Manifest save and reload preserves all entries")
     func saveReloadRoundTrip() throws {
         let tmpDir = try makeTmpDir()

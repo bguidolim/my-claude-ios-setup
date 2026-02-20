@@ -98,6 +98,9 @@ struct Manifest: Sendable {
 
     // MARK: - Internal
 
+    /// Known metadata key names. Everything else is treated as a file hash entry.
+    private static let metadataKeys: Set<String> = ["SCRIPT_DIR", "INSTALLED_PACKS"]
+
     private mutating func load() {
         guard let content = try? String(contentsOf: path, encoding: .utf8) else { return }
         for line in content.components(separatedBy: .newlines) {
@@ -107,8 +110,7 @@ struct Manifest: Sendable {
             let key = String(trimmed[trimmed.startIndex..<eqIndex])
             let value = String(trimmed[trimmed.index(after: eqIndex)...])
 
-            // Metadata keys are uppercase (e.g. SCRIPT_DIR)
-            if key == key.uppercased() && key.contains("_") {
+            if Self.metadataKeys.contains(key) {
                 metadata[key] = value
             } else {
                 entries[key] = value

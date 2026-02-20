@@ -185,4 +185,56 @@ struct SettingsMergeTests {
         #expect(settings.hooks == nil)
         #expect(settings.enabledPlugins == nil)
     }
+
+    // MARK: - Unknown key preservation
+
+    @Test("Save preserves unknown top-level JSON keys")
+    func preserveUnknownKeys() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("settings.json")
+
+        // Write a file with an unknown top-level key
+        let rawJSON: [String: Any] = [
+            "env": ["MY_VAR": "value"],
+            "unknownField": "important-data",
+            "anotherUnknown": 42,
+            "alwaysThinkingEnabled": true,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: rawJSON, options: .prettyPrinted)
+        try data.write(to: file)
+
+        // Load, modify, and save
+        var settings = try Settings.load(from: file)
+        settings.env?["NEW_VAR"] = "new"
+        try settings.save(to: file)
+
+        // Read raw JSON to verify unknown keys survived
+        let savedData = try Data(contentsOf: file)
+        let savedJSON = try JSONSerialization.jsonObject(with: savedData) as! [String: Any]
+
+        #expect(savedJSON["unknownField"] as? String == "important-data")
+        #expect(savedJSON["anotherUnknown"] as? Int == 42)
+        #expect((savedJSON["env"] as? [String: String])?["MY_VAR"] == "value")
+        #expect((savedJSON["env"] as? [String: String])?["NEW_VAR"] == "new")
+    }
+
+    @Test("Save to new file works without existing unknown keys")
+    func saveNewFile() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("settings.json")
+        let settings = Settings(env: ["KEY": "val"], alwaysThinkingEnabled: true)
+        try settings.save(to: file)
+
+        let loaded = try Settings.load(from: file)
+        #expect(loaded.env?["KEY"] == "val")
+        #expect(loaded.alwaysThinkingEnabled == true)
+    }
 }

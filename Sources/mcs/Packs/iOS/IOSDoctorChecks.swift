@@ -52,7 +52,7 @@ struct XcodeBuildMCPServerCheck: DoctorCheck, Sendable {
               let servers = json["mcpServers"] as? [String: Any],
               servers["XcodeBuildMCP"] != nil
         else {
-            return .fail("XcodeBuildMCP not registered in settings.json")
+            return .fail("XcodeBuildMCP not registered in ~/.claude.json")
         }
         return .pass("Registered")
     }
@@ -86,7 +86,7 @@ struct SosumiServerCheck: DoctorCheck, Sendable {
               let servers = json["mcpServers"] as? [String: Any],
               servers["sosumi"] != nil
         else {
-            return .fail("Sosumi not registered in settings.json")
+            return .fail("Sosumi not registered in ~/.claude.json")
         }
         return .pass("Registered")
     }
@@ -94,11 +94,11 @@ struct SosumiServerCheck: DoctorCheck, Sendable {
     func fix() -> FixResult {
         let settingsURL = Environment().claudeJSON
 
-        // Sosumi uses HTTP transport — need to add it directly to settings.json
+        // Sosumi uses HTTP transport — need to add it directly to ~/.claude.json
         guard let data = try? Data(contentsOf: settingsURL),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return .failed("Cannot read settings.json")
+            return .failed("Cannot read ~/.claude.json")
         }
 
         var servers = json["mcpServers"] as? [String: Any] ?? [:]
@@ -112,14 +112,14 @@ struct SosumiServerCheck: DoctorCheck, Sendable {
             withJSONObject: json,
             options: [.prettyPrinted, .sortedKeys]
         ) else {
-            return .failed("Cannot serialize settings.json")
+            return .failed("Cannot serialize ~/.claude.json")
         }
 
         do {
             try updated.write(to: settingsURL, options: .atomic)
             return .fixed("Registered Sosumi MCP server")
         } catch {
-            return .failed("Cannot write settings.json: \(error.localizedDescription)")
+            return .failed("Cannot write ~/.claude.json: \(error.localizedDescription)")
         }
     }
 }

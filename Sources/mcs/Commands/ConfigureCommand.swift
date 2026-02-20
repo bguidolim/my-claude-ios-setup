@@ -167,7 +167,13 @@ struct ConfigureCommand: ParsableCommand {
 
         // Write with backup
         var backup = Backup()
-        _ = try? backup.backupFile(at: claudeLocalPath)
+        if FileManager.default.fileExists(atPath: claudeLocalPath.path) {
+            do {
+                try backup.backupFile(at: claudeLocalPath)
+            } catch {
+                output.warn("Could not create backup: \(error.localizedDescription)")
+            }
+        }
         try composed.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
         output.success("Generated CLAUDE.local.md")
 

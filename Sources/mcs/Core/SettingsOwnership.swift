@@ -102,6 +102,17 @@ struct SettingsOwnership: Sendable {
         return managedKeys.filter { !currentPaths.contains($0) }
     }
 
+    // MARK: - Ownership queries
+
+    /// Check if a key path is owned by mcs, bootstrapping from legacy manifest if needed.
+    static func isOwnedByMCS(keyPath: String, env: Environment) -> Bool {
+        var ownership = SettingsOwnership(path: env.settingsKeys)
+        if ownership.managedKeys.isEmpty {
+            ownership.bootstrapFromLegacyManifest(at: env.setupManifest)
+        }
+        return ownership.owns(keyPath: keyPath)
+    }
+
     // MARK: - Legacy migration
 
     /// Bootstrap ownership from an existing old bash installer manifest.

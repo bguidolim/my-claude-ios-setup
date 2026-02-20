@@ -11,7 +11,11 @@ enum DependencyResolver {
         selectedIDs: Set<String>,
         allComponents: [ComponentDefinition]
     ) throws -> ResolvedPlan {
-        let componentMap = Dictionary(uniqueKeysWithValues: allComponents.map { ($0.id, $0) })
+        // Build map safely — last definition wins if there are duplicate IDs
+        var componentMap: [String: ComponentDefinition] = [:]
+        for component in allComponents {
+            componentMap[component.id] = component
+        }
 
         var resolved: [String] = []
         var visited: Set<String> = []

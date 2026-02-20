@@ -96,12 +96,14 @@ struct Installer {
         let allComponents = registry.allComponents(includingCore: coreComponents)
 
         if installAll {
-            state.selectAll(from: allComponents)
-            // Also select all pack components
+            state.selectAllCore(from: allComponents)
+            // --all explicitly includes all packs
             for pack in allPacks {
-                for component in pack.components where component.type != .brewPackage {
-                    state.select(component.id)
-                }
+                state.selectPack(
+                    pack.identifier,
+                    coreComponents: coreComponents,
+                    packComponents: pack.components
+                )
             }
             askBranchPrefix(&state)
             return state
@@ -125,24 +127,22 @@ struct Installer {
 
         // Interactive selection
         output.plain("")
-        if output.askYesNo("Install everything? (skip individual prompts)", default: false) {
-            state.selectAll(from: allComponents)
-            for pack in allPacks {
-                for component in pack.components where component.type != .brewPackage {
-                    state.select(component.id)
-                }
-            }
-            askBranchPrefix(&state)
-            return state
+        let installAllCore = output.askYesNo(
+            "Install all core components? (skip individual prompts)",
+            default: false
+        )
+
+        if installAllCore {
+            state.selectAllCore(from: allComponents)
+        } else {
+            // Select required core components
+            state.selectRequiredCore(from: coreComponents)
+
+            // Interactive category selection
+            interactiveSelectByCategory(&state, coreComponents: coreComponents)
         }
 
-        // Select required core components
-        state.selectRequiredCore(from: coreComponents)
-
-        // Interactive category selection
-        interactiveSelectByCategory(&state, coreComponents: coreComponents)
-
-        // Available tech packs
+        // Always ask about tech packs individually
         if !allPacks.isEmpty {
             output.header("Tech Packs")
             output.dimmed("Tech packs add platform-specific components.")
@@ -228,7 +228,12 @@ struct Installer {
             environment.commandsDirectory,
         ]
         for dir in dirs {
-            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            do {
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            } catch {
+                output.error("Could not create \(dir.lastPathComponent): \(error.localizedDescription)")
+                return
+            }
         }
 
         for (index, component) in components.enumerated() {
@@ -265,18 +270,16 @@ struct Installer {
         }
 
         // Save manifest
-        try? manifest.save()
+        do {
+            try manifest.save()
+        } catch {
+            output.warn("Could not save manifest: \(error.localizedDescription)")
+        }
 
-        // Post-processing: inject pack hook contributions into installed hooks
+        // Post-processing: inject pack hook contributions and gitignore entries
         for packID in installedPackIDs {
             if let pack = TechPackRegistry.shared.pack(for: packID) {
                 injectHookContributions(from: pack)
-            }
-        }
-
-        // Post-processing: add pack gitignore entries
-        for packID in installedPackIDs {
-            if let pack = TechPackRegistry.shared.pack(for: packID) {
                 addPackGitignoreEntries(from: pack)
             }
         }
@@ -335,7 +338,7 @@ struct Installer {
         case .shellCommand(let command):
             let result = shell.shell(command)
             if !result.succeeded {
-                output.dimmed(String(result.stderr.prefix(200)))
+                output.warn(String(result.stderr.prefix(200)))
             }
             return result.succeeded
 
@@ -369,6 +372,10 @@ struct Installer {
     }
 
     private func installBrewPackage(_ package: String) -> Bool {
+        // Already available (installed via any method — Homebrew, macOS app, nvm, etc.)
+        if shell.commandExists(package) {
+            return true
+        }
         let brew = Homebrew(shell: shell, environment: environment)
         guard brew.isInstalled else {
             output.warn("Homebrew not found, cannot install \(package)")
@@ -379,7 +386,7 @@ struct Installer {
         }
         let result = brew.install(package)
         if !result.succeeded {
-            output.dimmed(String(result.stderr.prefix(200)))
+            output.warn(String(result.stderr.prefix(200)))
         }
         return result.succeeded
     }
@@ -437,48 +444,35 @@ struct Installer {
         let destURL = environment.skillsDirectory.appendingPathComponent(destination)
 
         do {
-            try? fm.createDirectory(
-                at: destURL,
-                withIntermediateDirectories: true
-            )
-            // Copy all files in the skill directory
-            if fm.fileExists(atPath: sourceURL.path) {
-                let contents = try fm.contentsOfDirectory(
-                    at: sourceURL,
-                    includingPropertiesForKeys: nil
-                )
-                for file in contents {
-                    let destFile = destURL.appendingPathComponent(file.lastPathComponent)
-                    _ = try? backup.backupFile(at: destFile)
-                    if fm.fileExists(atPath: destFile.path) {
-                        try fm.removeItem(at: destFile)
-                    }
-                    try fm.copyItem(at: file, to: destFile)
+            try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
 
-                    // Recurse into subdirectories
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: file.path, isDirectory: &isDir), isDir.boolValue {
-                        let subContents = try fm.contentsOfDirectory(
-                            at: file,
-                            includingPropertiesForKeys: nil
-                        )
-                        for subFile in subContents {
-                            let subDest = destFile.appendingPathComponent(subFile.lastPathComponent)
-                            if fm.fileExists(atPath: subDest.path) {
-                                try fm.removeItem(at: subDest)
-                            }
-                            try fm.copyItem(at: subFile, to: subDest)
-                        }
-                    }
+            guard fm.fileExists(atPath: sourceURL.path) else {
+                output.warn("Source not found: \(source)")
+                return false
+            }
+
+            let contents = try fm.contentsOfDirectory(
+                at: sourceURL,
+                includingPropertiesForKeys: nil
+            )
+            for file in contents {
+                let destFile = destURL.appendingPathComponent(file.lastPathComponent)
+                _ = try? backup.backupFile(at: destFile)
+                if fm.fileExists(atPath: destFile.path) {
+                    try fm.removeItem(at: destFile)
                 }
-                try? manifest.record(
-                    relativePath: source,
-                    sourceFile: sourceURL
-                )
+                // copyItem handles directories recursively
+                try fm.copyItem(at: file, to: destFile)
+            }
+
+            do {
+                try manifest.record(relativePath: source, sourceFile: sourceURL)
+            } catch {
+                output.warn("Could not record manifest entry for \(source)")
             }
             return true
         } catch {
-            output.dimmed(error.localizedDescription)
+            output.warn(error.localizedDescription)
             return false
         }
     }
@@ -501,7 +495,7 @@ struct Installer {
         let destURL = environment.hooksDirectory.appendingPathComponent(destination)
 
         do {
-            try? fm.createDirectory(
+            try fm.createDirectory(
                 at: destURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
@@ -517,10 +511,14 @@ struct Installer {
                 ofItemAtPath: destURL.path
             )
 
-            try? manifest.record(relativePath: source, sourceFile: sourceURL)
+            do {
+                try manifest.record(relativePath: source, sourceFile: sourceURL)
+            } catch {
+                output.warn("Could not record manifest entry for \(source)")
+            }
             return true
         } catch {
-            output.dimmed(error.localizedDescription)
+            output.warn(error.localizedDescription)
             return false
         }
     }
@@ -544,7 +542,7 @@ struct Installer {
         let destURL = environment.commandsDirectory.appendingPathComponent(destination)
 
         do {
-            try? fm.createDirectory(
+            try fm.createDirectory(
                 at: destURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
@@ -553,10 +551,14 @@ struct Installer {
 
             _ = try? backup.backupFile(at: destURL)
             try content.write(to: destURL, atomically: true, encoding: .utf8)
-            try? manifest.record(relativePath: source, sourceFile: sourceURL)
+            do {
+                try manifest.record(relativePath: source, sourceFile: sourceURL)
+            } catch {
+                output.warn("Could not record manifest entry for \(source)")
+            }
             return true
         } catch {
-            output.dimmed(error.localizedDescription)
+            output.warn(error.localizedDescription)
             return false
         }
     }
@@ -604,34 +606,19 @@ struct Installer {
 
             // Record ownership of all template keys
             ownership.recordAll(from: template, version: MCSVersion.current)
-            try? ownership.save()
+            do {
+                try ownership.save()
+            } catch {
+                output.warn("Could not save settings ownership: \(error.localizedDescription)")
+            }
 
             return true
         } catch {
-            // Fallback: just copy the template settings
-            let fm = FileManager.default
-            do {
-                try? fm.createDirectory(
-                    at: destURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                if fm.fileExists(atPath: sourceURL.path) {
-                    _ = try? backup.backupFile(at: destURL)
-                    try fm.copyItem(at: sourceURL, to: destURL)
-                }
-
-                // Record ownership even in fallback
-                if let template = try? Settings.load(from: sourceURL) {
-                    var ownership = SettingsOwnership(path: environment.settingsKeys)
-                    ownership.recordAll(from: template, version: MCSVersion.current)
-                    try? ownership.save()
-                }
-
-                return true
-            } catch {
-                output.dimmed(error.localizedDescription)
-                return false
-            }
+            // Merge failed — report the error instead of silently overwriting user settings
+            output.warn("Settings merge failed: \(error.localizedDescription)")
+            output.warn("Your existing settings at \(destURL.path) were preserved.")
+            output.warn("Run 'mcs install' again or manually merge settings.")
+            return false
         }
     }
 
@@ -639,16 +626,7 @@ struct Installer {
     private func postInstall(_ component: ComponentDefinition) {
         switch component.id {
         case "core.ollama":
-            let brew = Homebrew(shell: shell, environment: environment)
-            // Start Ollama service
-            output.dimmed("Starting Ollama service...")
-            brew.startService("ollama")
-            // Wait briefly for service to be ready
-            for _ in 0..<10 {
-                let r = shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags")
-                if r.succeeded { break }
-                Thread.sleep(forTimeInterval: 1)
-            }
+            startOllamaIfNeeded()
             // Pull the embedding model
             output.dimmed("Pulling nomic-embed-text model...")
             let modelResult = shell.run("/usr/bin/env", arguments: ["ollama", "list"], quiet: true)
@@ -658,6 +636,41 @@ struct Installer {
         default:
             break
         }
+    }
+
+    /// Try multiple methods to start Ollama, handling both Homebrew and macOS app installs.
+    private func startOllamaIfNeeded() {
+        // Already running?
+        if shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags").succeeded {
+            output.dimmed("Ollama already running")
+            return
+        }
+        output.dimmed("Starting Ollama...")
+
+        // Try brew services (Homebrew install)
+        let brew = Homebrew(shell: shell, environment: environment)
+        if brew.isPackageInstalled("ollama") {
+            brew.startService("ollama")
+            if waitForOllama(seconds: 10) { return }
+        }
+
+        // Try opening the macOS app (app install)
+        shell.shell("open -a Ollama")
+        if waitForOllama(seconds: 10) { return }
+
+        output.warn("Could not start Ollama automatically.")
+        output.warn("Start it manually with 'ollama serve' or open the Ollama app, then re-run.")
+    }
+
+    /// Poll the Ollama API endpoint, returning true if it responds within the timeout.
+    private func waitForOllama(seconds: Int) -> Bool {
+        for _ in 0..<seconds {
+            if shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags").succeeded {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
     }
 
     private func addGitignoreEntries(_ entries: [String]) -> Bool {
@@ -737,8 +750,12 @@ struct Installer {
             }
 
             _ = try? backup.backupFile(at: hookFile)
-            try? content.write(to: hookFile, atomically: true, encoding: .utf8)
-            output.success("Injected \(pack.displayName) hook fragment into \(contribution.hookName)")
+            do {
+                try content.write(to: hookFile, atomically: true, encoding: .utf8)
+                output.success("Injected \(pack.displayName) hook fragment into \(contribution.hookName)")
+            } catch {
+                output.warn("Could not write hook file \(contribution.hookName): \(error.localizedDescription)")
+            }
         }
     }
 
@@ -764,6 +781,9 @@ struct Installer {
 
         switch component.installAction {
         case .brewInstall(let package):
+            // Check PATH first — handles non-Homebrew installs (e.g. Ollama macOS app,
+            // Node via nvm, jq via nix). Only fall back to brew list if not on PATH.
+            if shell.commandExists(package) { return true }
             return Homebrew(shell: shell, environment: environment).isPackageInstalled(package)
 
         case .mcpServer(let config):

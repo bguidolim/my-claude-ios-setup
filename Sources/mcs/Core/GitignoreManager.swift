@@ -50,7 +50,7 @@ struct GitignoreManager: Sendable {
     func addEntry(_ entry: String) throws {
         try ensureFileExists()
         let path = resolveGlobalGitignorePath()
-        let content = (try? String(contentsOf: path, encoding: .utf8)) ?? ""
+        let content = try String(contentsOf: path, encoding: .utf8)
         let lines = content.components(separatedBy: .newlines)
 
         if !lines.contains(entry) {

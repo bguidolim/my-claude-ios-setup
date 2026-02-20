@@ -51,16 +51,24 @@ struct ShellRunner: Sendable {
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        // Prevent subprocesses from blocking on stdin.
+        // Without this, interactive commands (e.g. npx prompts) inherit the
+        // parent's TTY and can deadlock: the child waits for stdin while
+        // readDataToEndOfFile blocks waiting for stdout EOF.
+        process.standardInput = FileHandle.nullDevice
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return ShellResult(exitCode: 1, stdout: "", stderr: error.localizedDescription)
         }
 
+        // Read pipe data BEFORE waitUntilExit to avoid deadlock.
+        // If a child process fills the pipe buffer (~64KB), waitUntilExit blocks
+        // because the child can't write more, creating a circular wait.
         let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
 
         let stdout = String(data: stdoutData, encoding: .utf8)?
             .trimmingCharacters(in: .newlines) ?? ""

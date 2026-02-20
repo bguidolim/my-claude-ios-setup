@@ -34,13 +34,37 @@ struct IOSTechPack: TechPack {
     }
 
     func configureProject(at path: URL, context: ProjectContext) throws {
-        // Write .xcodebuildmcp/config.yaml with placeholder for the user to fill in
         let configDir = path.appendingPathComponent(".xcodebuildmcp")
         let configFile = configDir.appendingPathComponent("config.yaml")
 
-        let configContent = IOSTemplates.xcodeBuildMCPConfig(projectFile: "__PROJECT__")
+        // Auto-detect Xcode project file, preferring .xcworkspace over .xcodeproj
+        let projectFile = Self.detectXcodeProject(in: path) ?? "__PROJECT__"
+
+        let configContent = IOSTemplates.xcodeBuildMCPConfig(projectFile: projectFile)
 
         try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
         try configContent.write(to: configFile, atomically: true, encoding: .utf8)
+    }
+
+    /// Find the first .xcworkspace or .xcodeproj in the directory.
+    /// Prefers workspace over project, ignores nested ones (e.g., inside Pods/).
+    static func detectXcodeProject(in directory: URL) -> String? {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        // Prefer workspace (used by CocoaPods, SPM-generated workspaces)
+        if let workspace = contents.first(where: { $0.pathExtension == "xcworkspace" }) {
+            return workspace.lastPathComponent
+        }
+        if let project = contents.first(where: { $0.pathExtension == "xcodeproj" }) {
+            return project.lastPathComponent
+        }
+        return nil
     }
 }

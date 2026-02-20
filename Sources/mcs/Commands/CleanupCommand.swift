@@ -54,11 +54,12 @@ struct CleanupCommand: ParsableCommand {
         output.plain("")
 
         if force || output.askYesNo("Delete all \(unique.count) backup file(s)?", default: false) {
-            do {
-                try Backup.deleteBackups(unique)
-                output.success("Deleted \(unique.count) backup file(s).")
-            } catch {
-                output.error("Failed to delete some backups: \(error.localizedDescription)")
+            let failures = Backup.deleteBackups(unique)
+            let deleted = unique.count - failures.count
+            if failures.isEmpty {
+                output.success("Deleted \(deleted) backup file(s).")
+            } else {
+                output.warn("Deleted \(deleted) backup(s), \(failures.count) could not be deleted.")
             }
         } else {
             output.info("No backups deleted.")

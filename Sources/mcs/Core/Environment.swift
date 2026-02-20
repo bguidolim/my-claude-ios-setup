@@ -83,9 +83,13 @@ struct Environment: Sendable {
             try fm.moveItem(at: legacyManifest, to: setupManifest)
             return true
         } catch {
-            // Fall back to copy if move fails
-            try? fm.copyItem(at: legacyManifest, to: setupManifest)
-            return true
+            // Fall back to copy if move fails (e.g., cross-volume)
+            do {
+                try fm.copyItem(at: legacyManifest, to: setupManifest)
+                return true
+            } catch {
+                return false
+            }
         }
     }
 

@@ -24,11 +24,13 @@ struct SelectionState {
 
     // MARK: - Bulk Selection
 
-    /// Select all components (for --all mode).
-    mutating func selectAll(from components: [ComponentDefinition]) {
+    /// Select all core components (excludes pack components).
+    /// Pack components must be selected explicitly via selectPack.
+    mutating func selectAllCore(from components: [ComponentDefinition]) {
         for component in components {
             // Skip dependency-only components — they get auto-resolved
-            if component.type != .brewPackage {
+            // Skip pack components — they require explicit pack selection
+            if component.type != .brewPackage && component.packIdentifier == nil {
                 selectedIDs.insert(component.id)
             }
         }

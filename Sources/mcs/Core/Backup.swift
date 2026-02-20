@@ -29,7 +29,7 @@ struct Backup {
         guard let enumerator = fm.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             return []
         }
@@ -43,11 +43,18 @@ struct Backup {
         return backups
     }
 
-    /// Delete the given backup files.
-    static func deleteBackups(_ backups: [URL]) throws {
+    /// Delete the given backup files. Returns paths that could not be deleted.
+    @discardableResult
+    static func deleteBackups(_ backups: [URL]) -> [URL] {
         let fm = FileManager.default
+        var failures: [URL] = []
         for backup in backups {
-            try fm.removeItem(at: backup)
+            do {
+                try fm.removeItem(at: backup)
+            } catch {
+                failures.append(backup)
+            }
         }
+        return failures
     }
 }

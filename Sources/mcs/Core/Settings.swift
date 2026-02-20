@@ -111,6 +111,13 @@ struct Settings: Codable, Sendable {
 
     // MARK: - File I/O
 
+    /// Top-level JSON keys modeled by this struct. Keys outside this set
+    /// are preserved during round-trips to avoid dropping unknown fields
+    /// that Claude Code or other tools may have written.
+    private static let knownTopLevelKeys: Set<String> = [
+        "env", "permissions", "hooks", "enabledPlugins", "alwaysThinkingEnabled",
+    ]
+
     /// Load settings from a JSON file. Returns empty settings if file doesn't exist.
     static func load(from url: URL) throws -> Settings {
         let fm = FileManager.default
@@ -123,15 +130,43 @@ struct Settings: Codable, Sendable {
     }
 
     /// Save settings to a JSON file, creating parent directories as needed.
+    /// Preserves unknown top-level keys already present in the file.
     func save(to url: URL) throws {
         let fm = FileManager.default
         let dir = url.deletingLastPathComponent()
         if !fm.fileExists(atPath: dir.path) {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+
+        // Read existing JSON to preserve unknown top-level keys
+        var preserved: [String: Any] = [:]
+        if let existingData = try? Data(contentsOf: url),
+           let existingJSON = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any]
+        {
+            for (key, value) in existingJSON where !Self.knownTopLevelKeys.contains(key) {
+                preserved[key] = value
+            }
+        }
+
+        // Encode our known fields
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(self)
-        try data.write(to: url)
+        let knownData = try encoder.encode(self)
+
+        guard var json = try JSONSerialization.jsonObject(with: knownData) as? [String: Any] else {
+            try knownData.write(to: url)
+            return
+        }
+
+        // Merge preserved unknown keys back
+        for (key, value) in preserved {
+            json[key] = value
+        }
+
+        let mergedData = try JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try mergedData.write(to: url, options: .atomic)
     }
 }

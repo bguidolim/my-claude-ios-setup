@@ -150,27 +150,55 @@ struct OllamaCheck: DoctorCheck, Sendable {
         let brew = Homebrew(shell: shell, environment: env)
 
         guard shell.commandExists("ollama") else {
-            return .notFixable("Install Ollama via: brew install ollama")
+            return .notFixable("Install Ollama via 'brew install ollama' or https://ollama.com/download")
         }
 
         // Try to start if not running
-        let curlResult = shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags")
-        if !curlResult.succeeded {
-            brew.startService("ollama")
-            // Wait for Ollama to start
-            for _ in 0..<30 {
-                let r = shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags")
-                if r.succeeded { break }
+        var ollamaRunning = shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags").succeeded
+        if !ollamaRunning {
+            // Try brew services (Homebrew install)
+            if brew.isPackageInstalled("ollama") {
+                brew.startService("ollama")
+                for _ in 0..<10 {
+                    if shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags").succeeded {
+                        ollamaRunning = true
+                        break
+                    }
+                    Thread.sleep(forTimeInterval: 1)
+                }
+            }
+        }
+        if !ollamaRunning {
+            // Try opening the macOS app (app install)
+            shell.shell("open -a Ollama")
+            for _ in 0..<10 {
+                if shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags").succeeded {
+                    ollamaRunning = true
+                    break
+                }
                 Thread.sleep(forTimeInterval: 1)
             }
+        }
+
+        guard ollamaRunning else {
+            return .failed("Ollama did not start — try 'ollama serve' or open the Ollama app manually")
         }
 
         // Pull model if missing
         let modelResult = shell.run("/usr/bin/env", arguments: ["ollama", "list"])
         if !modelResult.stdout.contains("nomic-embed-text") {
-            shell.run("/usr/bin/env", arguments: ["ollama", "pull", "nomic-embed-text"])
+            let pullResult = shell.run("/usr/bin/env", arguments: ["ollama", "pull", "nomic-embed-text"])
+            if !pullResult.succeeded {
+                return .failed("Could not pull nomic-embed-text: \(pullResult.stderr)")
+            }
         }
-        return .fixed("Ollama started and model pulled")
+
+        // Verify final state
+        let verifyResult = check()
+        if case .pass = verifyResult {
+            return .fixed("Ollama running with nomic-embed-text")
+        }
+        return .failed("Ollama fix attempted but verification failed")
     }
 }
 
@@ -446,8 +474,7 @@ struct DeprecatedMCPServerCheck: DoctorCheck, Sendable {
             return .pass("not present (good)")
         }
 
-        // Only warn if we own it (old installer or mcs installed it)
-        guard isOwnedByMCS(env: env) else {
+        guard SettingsOwnership.isOwnedByMCS(keyPath: "mcpServers.\(identifier)", env: env) else {
             return .pass("present (user-managed, not flagged)")
         }
 
@@ -462,15 +489,6 @@ struct DeprecatedMCPServerCheck: DoctorCheck, Sendable {
             return .fixed("removed deprecated \(identifier)")
         }
         return .failed(result.stderr)
-    }
-
-    private func isOwnedByMCS(env: Environment) -> Bool {
-        var ownership = SettingsOwnership(path: env.settingsKeys)
-        // If sidecar doesn't exist yet, try bootstrapping from legacy manifest
-        if ownership.managedKeys.isEmpty {
-            ownership.bootstrapFromLegacyManifest(at: env.setupManifest)
-        }
-        return ownership.owns(keyPath: "mcpServers.\(identifier)")
     }
 }
 
@@ -489,8 +507,7 @@ struct DeprecatedPluginCheck: DoctorCheck, Sendable {
             return .pass("not present (good)")
         }
 
-        // Only warn if we own it (old installer or mcs installed it)
-        guard isOwnedByMCS(env: env) else {
+        guard SettingsOwnership.isOwnedByMCS(keyPath: "enabledPlugins.\(pluginName)", env: env) else {
             return .pass("present (user-managed, not flagged)")
         }
 
@@ -505,14 +522,6 @@ struct DeprecatedPluginCheck: DoctorCheck, Sendable {
             return .fixed("removed deprecated \(pluginName)")
         }
         return .failed(result.stderr)
-    }
-
-    private func isOwnedByMCS(env: Environment) -> Bool {
-        var ownership = SettingsOwnership(path: env.settingsKeys)
-        if ownership.managedKeys.isEmpty {
-            ownership.bootstrapFromLegacyManifest(at: env.setupManifest)
-        }
-        return ownership.owns(keyPath: "enabledPlugins.\(pluginName)")
     }
 }
 
