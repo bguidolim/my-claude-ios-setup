@@ -4,66 +4,83 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Portable, interactive Bash setup script that configures Claude Code with MCP servers, plugins, skills, hooks, and settings optimized for iOS development on macOS. Installs to `~/.claude/` and configures per-project files via templates.
+Swift CLI tool (`mcs`) that configures Claude Code with MCP servers, plugins, skills, hooks, and settings. Technology-agnostic core with a "tech pack" extension model. Currently ships with an iOS tech pack. Distributed via Homebrew.
 
 ## Commands
 
 ```bash
-./setup.sh                      # Interactive setup (pick components)
-./setup.sh --all                # Install everything (minimal prompts)
-./setup.sh --dry-run            # Preview what would be installed
-./setup.sh --all --dry-run      # Preview full install
-./setup.sh doctor               # Diagnose installation health
-./setup.sh doctor --fix         # Diagnose and auto-fix issues
-./setup.sh configure-project    # Generate CLAUDE.local.md for a project
-./setup.sh cleanup              # Find and delete backup files
-./setup.sh update               # Pull latest from remote
+# Development
+swift build                      # Build the CLI
+swift test                       # Run tests
+swift build -c release --arch arm64 --arch x86_64  # Universal binary
+
+# CLI usage (after install)
+mcs install                      # Interactive setup (pick components)
+mcs install --all                # Install everything
+mcs install --dry-run            # Preview what would be installed
+mcs install --pack ios           # Install iOS pack components
+mcs doctor                       # Diagnose installation health
+mcs doctor --fix                 # Diagnose and auto-fix issues
+mcs configure-project [path]     # Generate CLAUDE.local.md for a project
+mcs cleanup                      # Find and delete backup files
+mcs update                       # Update via Homebrew
 ```
-
-After installation, these are also available globally as `claude-ios-setup <command>`.
-
-There are no tests, linting, or build steps — this is a pure Bash project.
 
 ## Architecture
 
-### Entry points
-- `setup.sh` — main orchestrator; parses args, sources lib modules, dispatches to subcommands or runs the 5-phase install flow (welcome → selection → summary → install → post-summary)
-- `install.sh` — one-line web installer that clones to `~/.claude-ios-setup/` (persistent) and runs `setup.sh` with stdin from `/dev/tty`
+### Swift Package Structure
+- **Package.swift** — swift-tools-version: 6.0, macOS 13+, deps: swift-argument-parser, Yams
+- **Sources/mcs/** — main executable target
 
-### Library modules (`lib/`)
-All sourced by `setup.sh` to share global state (flags, paths, color constants) without subshell overhead:
-- `utils.sh` — logging (`info`, `success`, `warn`, `error`, `header`, `step`), `ask_yn` prompts, `backup_file`, manifest tracking (SHA-256), `try_install`, brew path detection, `claude_cli` wrapper, `sed_escape`
-- `fixes.sh` — shared `fix_*` functions (brew packages, Ollama, hooks, skills, plugins, settings, gitignore) used by both `phase_install()` and `doctor --fix`; no UI output, returns 0/1
-- `phases.sh` — the 5 installation phases; `phase_install()` delegates to `fix_*` functions for actual work, adds UI (progress steps, info/success/warn) and tracking (`INSTALLED_ITEMS`, `SKIPPED_ITEMS`)
-- `configure.sh` — `configure_project()`: auto-detects Xcode projects, fills `__PLACEHOLDER__` tokens in templates, writes `CLAUDE.local.md` and `.xcodebuildmcp/config.yaml`
-- `doctor.sh` — `phase_doctor()`: health checks (deps, MCP servers, plugins, skills, hooks, file freshness via manifest); `--fix` mode calls `fix_*` functions from `fixes.sh`
-- `cleanup.sh` — backup file management (end-of-run prompt + `cleanup` subcommand)
+### Core (`Sources/mcs/Core/`)
+- `Environment.swift` — paths, arch detection, brew path, shell RC
+- `CLIOutput.swift` — ANSI colors, logging, prompts
+- `ShellRunner.swift` — Process execution wrapper
+- `Settings.swift` — Codable model, deep-merge (replaces jq)
+- `Manifest.swift` — SHA-256 tracking via CryptoKit
+- `Backup.swift` — timestamped backups before file writes
+- `GitignoreManager.swift` — global gitignore management
+- `ClaudeIntegration.swift` — `claude mcp add`, `claude plugin install`
+- `Homebrew.swift` — brew detection, package install
 
-### Templates (`templates/`)
-- `CLAUDE.local.md` — per-project Claude instructions; placeholders: `__PROJECT__`, `__REPO_NAME__`, `__BRANCH_PREFIX__`
-- `xcodebuildmcp.yaml` — XcodeBuildMCP workflow config
+### TechPack System (`Sources/mcs/TechPack/`)
+- `TechPack.swift` — protocol for tech packs (components, templates, hooks, doctor checks)
+- `Component.swift` — ComponentDefinition with install actions
+- `TechPackRegistry.swift` — registry of available packs
+- `DependencyResolver.swift` — topological sort of component dependencies
 
-### Installed artifacts
-- `config/settings.json` → `~/.claude/settings.json` (merged via jq)
-- `hooks/` → `~/.claude/hooks/` (session_start, continuous-learning-activator)
-- `skills/continuous-learning/` → `~/.claude/skills/continuous-learning/`
-- `commands/pr.md` → `~/.claude/commands/pr.md`
+### Commands (`Sources/mcs/Commands/`)
+- `InstallCommand.swift` — 5-phase install flow with interactive selection
+- `DoctorCommand.swift` — health checks with optional --fix
+- `ConfigureCommand.swift` — project configuration with memory migration
+- `CleanupCommand.swift` — backup file management
+- `UpdateCommand.swift` — Homebrew upgrade wrapper
 
-## Bash Conventions
+### Templates (`Sources/mcs/Templates/`)
+- `TemplateEngine.swift` — `__PLACEHOLDER__` substitution
+- `TemplateComposer.swift` — section markers for composed files (`<!-- mcs:begin core v2.0.0 -->`)
 
-- All scripts use `set -euo pipefail`; hooks use `trap 'exit 0' ERR` so failures don't crash Claude Code
-- Idempotent design: `*_needed` flags and `check_command` skip already-completed steps on re-runs
-- Global state via variables (`INSTALL_*`, `DRY_RUN`, `INSTALL_ALL`, tracking arrays `INSTALLED_ITEMS`, `SKIPPED_ITEMS`, `CREATED_BACKUPS`)
-- Template substitution uses `sed` with `sed_escape()` for safe path handling
-- JSON merging uses `jq` (array merge replaces rather than appends — see Serena memory `learning_jq_array_merge_silent_replacement`)
-- Dependencies are auto-resolved: selecting a component adds its required deps (e.g., Serena → uv, docs-mcp → Ollama)
-- `try_install` wraps installations: captures stderr, warns on failure, records in `SKIPPED_ITEMS`
-- Backups are always created before overwriting existing files
+### iOS Pack (`Sources/mcs/Packs/iOS/`)
+- `IOSTechPack.swift` — TechPack conformance
+- `IOSComponents.swift` — XcodeBuildMCP, Sosumi, xcodebuildmcp skill
+- `IOSProjectDetector.swift` — .xcodeproj/.xcworkspace detection
+- `IOSDoctorChecks.swift` — Xcode CLT, MCP server checks
+
+### Resources (`Sources/mcs/Resources/`)
+Bundled with the binary via SwiftPM `.copy()`:
+- `config/settings.json` — Claude settings template
+- `hooks/` — session_start.sh, continuous-learning-activator.sh
+- `skills/continuous-learning/` — knowledge extraction skill
+- `commands/pr.md` — /pr slash command
+- `templates/core/` — core CLAUDE.local.md template
+- `templates/packs/ios/` — iOS CLAUDE.local.md section, xcodebuildmcp.yaml
 
 ## Key Design Decisions
 
-- **Sourced modules over subshells**: `lib/*.sh` are sourced (not executed) so they share the parent's global variables
-- **Subcommands over flags**: `doctor`, `configure-project`, `cleanup` are positional subcommands, not `--flags`
-- **Template-driven config**: templates use `__PLACEHOLDER__` tokens filled at runtime; `<!-- EDIT: ... -->` comments are stripped after substitution
-- **Two-tier backup cleanup**: prompt at end of run for fresh backups + dedicated `cleanup` subcommand for old ones
-- **Manifest tracking**: `~/.claude/.setup-manifest` stores SHA-256 hashes of source files for freshness checks in `doctor`
+- **Tech pack protocol**: all platform-specific components (MCP servers, templates, doctor checks) live in tech packs; core is technology-agnostic
+- **Compiled-in packs**: packs are Swift targets in the same package, shipped as a single binary
+- **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
+- **File-based memory**: memories stored in `<project>/.claude/memories/*.md`, indexed by docs-mcp-server for semantic search
+- **Settings deep-merge**: native Swift Codable replaces jq; hooks deduplicate by command, plugins merge additively
+- **Backup on every write**: timestamped backup created before any file modification
+- **Manifest tracking**: SHA-256 hashes in `~/.claude/.setup-manifest` for doctor freshness checks

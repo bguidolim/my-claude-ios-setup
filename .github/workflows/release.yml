@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal binary
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Prepare artifacts
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          BINARY_PATH=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/mcs
+          TARBALL="mcs-${TAG_NAME}-macos-universal.tar.gz"
+          tar -czf "${TARBALL}" -C "$(dirname "${BINARY_PATH}")" mcs
+          shasum -a 256 "${TARBALL}" > SHA256SUMS
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          TARBALL: ${{ env.TARBALL }}
+        run: |
+          gh release create "${TAG_NAME}" \
+            --title "My Claude Setup ${TAG_NAME}" \
+            --generate-notes \
+            "${TARBALL}" SHA256SUMS
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          TARBALL: ${{ env.TARBALL }}
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        run: |
+          SHA=$(shasum -a 256 "${TARBALL}" | cut -d' ' -f1)
+          VERSION="${TAG_NAME#v}"
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/bguidolim/homebrew-tap.git" tap
+          cd tap
+
+          cat > Formula/my-claude-setup.rb << FORMULA
+          class MyClaudeSetup < Formula
+            desc "Configure Claude Code with MCP servers, plugins, skills, and hooks"
+            homepage "https://github.com/bguidolim/my-claude-setup"
+            url "https://github.com/bguidolim/my-claude-setup/releases/download/${TAG_NAME}/mcs-${TAG_NAME}-macos-universal.tar.gz"
+            sha256 "${SHA}"
+            version "${VERSION}"
+            license "MIT"
+
+            def install
+              bin.install "mcs"
+              bin.install_symlink "mcs" => "my-claude-setup"
+            end
+
+            test do
+              assert_match "My Claude Setup", shell_output("#{bin}/mcs --help")
+            end
+          end
+          FORMULA
+
+          git add Formula/my-claude-setup.rb
+          git commit -m "Update my-claude-setup to ${VERSION}"
+          git push
