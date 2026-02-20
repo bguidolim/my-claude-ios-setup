@@ -300,8 +300,11 @@ struct GitignoreCheck: DoctorCheck, Sendable {
         else {
             return .fail("global gitignore not found")
         }
+        // Check core entries + all pack gitignore entries
+        let allEntries = GitignoreManager.coreEntries
+            + TechPackRegistry.shared.allPackGitignoreEntries
         var missing: [String] = []
-        for entry in GitignoreManager.coreEntries {
+        for entry in allEntries {
             if !content.contains(entry) {
                 missing.append(entry)
             }
@@ -317,6 +320,10 @@ struct GitignoreCheck: DoctorCheck, Sendable {
         let gitignoreManager = GitignoreManager(shell: shell)
         do {
             try gitignoreManager.addCoreEntries()
+            // Also add pack entries
+            for entry in TechPackRegistry.shared.allPackGitignoreEntries {
+                try gitignoreManager.addEntry(entry)
+            }
             return .fixed("added missing entries")
         } catch {
             return .failed(error.localizedDescription)
@@ -400,5 +407,72 @@ struct DeprecatedPluginCheck: DoctorCheck, Sendable {
             return .fixed("removed deprecated \(pluginName)")
         }
         return .failed(result.stderr)
+    }
+}
+
+// MARK: - Pack migration adapter
+
+/// Wraps a PackMigration as a DoctorCheck for integration with the doctor flow.
+struct PackMigrationCheck: DoctorCheck, Sendable {
+    let migration: any PackMigration
+    let packName: String
+
+    var name: String { "\(packName): \(migration.displayName)" }
+    var section: String { "Migration" }
+
+    func check() -> CheckResult {
+        if migration.isNeeded() {
+            return .warn("migration available: \(migration.displayName) (v\(migration.version))")
+        }
+        return .pass("up to date")
+    }
+
+    func fix() -> FixResult {
+        guard migration.isNeeded() else {
+            return .fixed("already up to date")
+        }
+        do {
+            let description = try migration.perform()
+            return .fixed(description)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - Hook contribution check
+
+/// Checks that a pack's hook contribution has been injected into the installed hook file.
+struct HookContributionCheck: DoctorCheck, Sendable {
+    let packIdentifier: String
+    let packDisplayName: String
+    let contribution: HookContribution
+
+    var name: String { "\(packDisplayName) hook (\(contribution.hookName))" }
+    var section: String { "Hooks" }
+
+    func check() -> CheckResult {
+        let env = Environment()
+        let hookFile = env.hooksDirectory
+            .appendingPathComponent(contribution.hookName + ".sh")
+        let fm = FileManager.default
+
+        guard fm.fileExists(atPath: hookFile.path) else {
+            return .skip("hook file \(contribution.hookName).sh not installed")
+        }
+
+        guard let content = try? String(contentsOf: hookFile, encoding: .utf8) else {
+            return .fail("could not read \(contribution.hookName).sh")
+        }
+
+        let beginMarker = "# --- mcs:begin \(packIdentifier) ---"
+        if content.contains(beginMarker) {
+            return .pass("fragment injected")
+        }
+        return .fail("fragment not injected — run 'mcs install' to fix")
+    }
+
+    func fix() -> FixResult {
+        .notFixable("Run 'mcs install' to inject hook contributions")
     }
 }

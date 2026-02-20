@@ -236,6 +236,23 @@ struct Installer {
 
         // Save manifest
         try? manifest.save()
+
+        // Post-processing: inject pack hook contributions into installed hooks
+        let installedPackIDs = Set(
+            plan.orderedComponents.compactMap(\.packIdentifier)
+        )
+        for packID in installedPackIDs {
+            if let pack = TechPackRegistry.shared.pack(for: packID) {
+                injectHookContributions(from: pack)
+            }
+        }
+
+        // Post-processing: add pack gitignore entries
+        for packID in installedPackIDs {
+            if let pack = TechPackRegistry.shared.pack(for: packID) {
+                addPackGitignoreEntries(from: pack)
+            }
+        }
     }
 
     // MARK: - Phase 5: Post-Summary
@@ -558,6 +575,84 @@ struct Installer {
         } catch {
             output.dimmed(error.localizedDescription)
             return false
+        }
+    }
+
+    // MARK: - Pack Post-Processing
+
+    /// Inject a pack's hook contributions into installed hook files using section markers.
+    private mutating func injectHookContributions(from pack: any TechPack) {
+        let fm = FileManager.default
+
+        for contribution in pack.hookContributions {
+            let hookFile = environment.hooksDirectory
+                .appendingPathComponent(contribution.hookName + ".sh")
+
+            guard fm.fileExists(atPath: hookFile.path),
+                  var content = try? String(contentsOf: hookFile, encoding: .utf8)
+            else { continue }
+
+            let beginMarker = "# --- mcs:begin \(pack.identifier) ---"
+            let endMarker = "# --- mcs:end \(pack.identifier) ---"
+
+            // Remove existing section for idempotency
+            if let beginRange = content.range(of: beginMarker),
+               let endRange = content.range(of: endMarker) {
+                // Include trailing newline if present
+                var removeEnd = endRange.upperBound
+                if removeEnd < content.endIndex && content[removeEnd] == "\n" {
+                    removeEnd = content.index(after: removeEnd)
+                }
+                // Include leading newline if present
+                var removeStart = beginRange.lowerBound
+                if removeStart > content.startIndex {
+                    let before = content.index(before: removeStart)
+                    if content[before] == "\n" {
+                        removeStart = before
+                    }
+                }
+                content.removeSubrange(removeStart..<removeEnd)
+            }
+
+            // Build the marked section
+            let section = "\(beginMarker)\n\(contribution.scriptFragment)\n\(endMarker)"
+
+            // Insert at the specified position
+            switch contribution.position {
+            case .after:
+                if !content.hasSuffix("\n") { content += "\n" }
+                content += "\n\(section)\n"
+            case .before:
+                // Insert after the shebang and trap/setup lines (after first blank line)
+                if let blankRange = content.range(of: "\n\n") {
+                    let insertPoint = content.index(after: blankRange.lowerBound)
+                    content.insert(contentsOf: "\n\(section)\n", at: insertPoint)
+                } else if let firstNewline = content.firstIndex(of: "\n") {
+                    content.insert(
+                        contentsOf: "\n\(section)\n",
+                        at: content.index(after: firstNewline)
+                    )
+                } else {
+                    content = "\(section)\n\(content)"
+                }
+            }
+
+            _ = try? backup.backupFile(at: hookFile)
+            try? content.write(to: hookFile, atomically: true, encoding: .utf8)
+            output.success("Injected \(pack.displayName) hook fragment into \(contribution.hookName)")
+        }
+    }
+
+    /// Add a pack's gitignore entries to the global gitignore.
+    private func addPackGitignoreEntries(from pack: any TechPack) {
+        guard !pack.gitignoreEntries.isEmpty else { return }
+        let manager = GitignoreManager(shell: shell)
+        for entry in pack.gitignoreEntries {
+            do {
+                try manager.addEntry(entry)
+            } catch {
+                output.warn("Failed to add gitignore entry '\(entry)': \(error.localizedDescription)")
+            }
         }
     }
 

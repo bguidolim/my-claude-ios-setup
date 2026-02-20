@@ -46,9 +46,14 @@ protocol TechPack: Sendable {
     var hookContributions: [HookContribution] { get }
     var gitignoreEntries: [String] { get }
     var doctorChecks: [any DoctorCheck] { get }
+    var migrations: [any PackMigration] { get }
 
     func detectProject(at path: URL) -> ProjectDetectionResult?
     func configureProject(at path: URL, context: ProjectContext) throws
+}
+
+extension TechPack {
+    var migrations: [any PackMigration] { [] }
 }
 
 /// Protocol for doctor checks (used by both core and packs)
@@ -70,4 +75,19 @@ enum FixResult: Sendable {
     case fixed(String)
     case failed(String)
     case notFixable(String)
+}
+
+/// Protocol for versioned pack migrations.
+/// Migrations run in version order during `mcs doctor --fix`.
+protocol PackMigration: Sendable {
+    /// Short identifier, e.g., "config-yaml-v2".
+    var name: String { get }
+    /// Version this migration was introduced in, used for ordering.
+    var version: String { get }
+    /// Human-readable description shown in doctor output.
+    var displayName: String { get }
+    /// Returns true if this migration still needs to run.
+    func isNeeded() -> Bool
+    /// Perform the migration. Returns a description of what was done.
+    func perform() throws -> String
 }

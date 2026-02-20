@@ -17,9 +17,23 @@ struct DoctorRunner {
     mutating func run() throws {
         output.header("My Claude Setup — Doctor")
 
-        // Collect all checks: core + pack checks
+        // Collect all checks: core + pack checks + pack migrations + hook contribution checks
         var allChecks: [any DoctorCheck] = coreDoctorChecks()
         allChecks.append(contentsOf: TechPackRegistry.shared.allPackDoctorChecks)
+
+        // Wrap pack migrations as DoctorCheck adapters
+        for (pack, migration) in TechPackRegistry.shared.allPackMigrations {
+            allChecks.append(PackMigrationCheck(migration: migration, packName: pack.displayName))
+        }
+
+        // Check that hook contributions are injected
+        for (pack, contribution) in TechPackRegistry.shared.allPackHookContributions {
+            allChecks.append(HookContributionCheck(
+                packIdentifier: pack.identifier,
+                packDisplayName: pack.displayName,
+                contribution: contribution
+            ))
+        }
 
         // Group by section
         let grouped = Dictionary(grouping: allChecks, by: \.section)

@@ -55,4 +55,18 @@ final class TechPackRegistry: @unchecked Sendable {
     func templateContributions(for packIdentifier: String) -> [TemplateContribution] {
         pack(for: packIdentifier)?.templates ?? []
     }
+
+    /// Get all hook contributions from all packs
+    var allPackHookContributions: [(pack: any TechPack, contribution: HookContribution)] {
+        _packs.flatMap { pack in
+            pack.hookContributions.map { (pack: pack, contribution: $0) }
+        }
+    }
+
+    /// Get all migrations from all packs, sorted by version
+    var allPackMigrations: [(pack: any TechPack, migration: any PackMigration)] {
+        _packs.flatMap { pack in
+            pack.migrations.map { (pack: pack, migration: $0) }
+        }.sorted { $0.migration.version < $1.migration.version }
+    }
 }
