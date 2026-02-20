@@ -161,19 +161,19 @@ struct XcodeBuildMCPConfigCheck: DoctorCheck, Sendable {
             .appendingPathComponent(".xcodebuildmcp")
             .appendingPathComponent("config.yaml")
 
-        // Only relevant if this is an iOS project
-        guard IOSProjectDetector.detect(at: cwd) != nil else {
-            return .skip("Not an iOS project")
-        }
-
         if FileManager.default.fileExists(atPath: configFile.path) {
+            // Check if placeholder still needs to be replaced
+            if let content = try? String(contentsOf: configFile, encoding: .utf8),
+               content.contains("__PROJECT__") {
+                return .warn("Present but __PROJECT__ placeholder not filled in")
+            }
             return .pass("Present")
         }
-        return .fail("Missing — run 'mcs configure-project' to generate")
+        return .fail("Missing — run 'mcs configure --pack ios' to generate")
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs configure-project' to generate project configuration")
+        .notFixable("Run 'mcs configure --pack ios' to generate project configuration")
     }
 }
 
@@ -185,21 +185,17 @@ struct CLAUDELocalIOSSectionCheck: DoctorCheck, Sendable {
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let claudeLocal = cwd.appendingPathComponent("CLAUDE.local.md")
 
-        guard IOSProjectDetector.detect(at: cwd) != nil else {
-            return .skip("Not an iOS project")
-        }
-
         guard let content = try? String(contentsOf: claudeLocal, encoding: .utf8) else {
-            return .fail("CLAUDE.local.md not found")
+            return .skip("CLAUDE.local.md not found — run 'mcs configure --pack ios'")
         }
 
         if content.contains("<!-- mcs:begin ios") {
             return .pass("iOS section present")
         }
-        return .fail("iOS section missing — run 'mcs configure-project'")
+        return .warn("CLAUDE.local.md exists but has no iOS section — run 'mcs configure --pack ios'")
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs configure-project' to generate CLAUDE.local.md with iOS section")
+        .notFixable("Run 'mcs configure --pack ios' to generate CLAUDE.local.md with iOS section")
     }
 }

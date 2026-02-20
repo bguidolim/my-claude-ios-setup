@@ -10,6 +10,9 @@ struct ConfigureCommand: ParsableCommand {
     @Argument(help: "Path to the project directory (defaults to current directory)")
     var path: String?
 
+    @Option(name: .long, help: "Tech pack to apply (e.g. ios). Can be specified multiple times.")
+    var pack: [String] = []
+
     mutating func run() throws {
         let env = Environment()
         let output = CLIOutput()
@@ -32,10 +35,26 @@ struct ConfigureCommand: ParsableCommand {
         output.header("Configure Project")
         output.info("Project: \(projectPath.path)")
 
-        // Detect project type
-        let detections = TechPackRegistry.shared.detectProject(at: projectPath)
-        if let detection = detections.first {
-            output.success("Detected \(detection.packIdentifier) project: \(detection.projectName)")
+        // Determine which packs to apply:
+        // explicit --pack flags take priority, then fall back to installed packs from manifest
+        let manifest = Manifest(path: env.setupManifest)
+        let packIDs: [String]
+        if !pack.isEmpty {
+            packIDs = pack
+        } else {
+            packIDs = manifest.installedPacks.sorted()
+        }
+
+        let registry = TechPackRegistry.shared
+        let resolvedPacks = packIDs.compactMap { registry.pack(for: $0) }
+
+        if !resolvedPacks.isEmpty {
+            output.info("Tech packs: \(resolvedPacks.map(\.displayName).joined(separator: ", "))")
+        }
+
+        // Warn about unknown pack names
+        for id in packIDs where registry.pack(for: id) == nil {
+            output.warn("Unknown tech pack: \(id)")
         }
 
         // Get branch prefix
@@ -55,18 +74,13 @@ struct ConfigureCommand: ParsableCommand {
         }
 
         // Prepare template values
-        var values: [String: String] = [
+        let values: [String: String] = [
             "REPO_NAME": repoName,
             "BRANCH_PREFIX": branchPrefix,
         ]
 
-        // Add project name from detection
-        if let detection = detections.first {
-            values["PROJECT"] = detection.projectName
-        }
-
         // Load core template from resources
-        guard let resourceURL = Bundle.main.url(
+        guard let resourceURL = Bundle.module.url(
             forResource: "Resources",
             withExtension: nil
         ) else {
@@ -93,12 +107,10 @@ struct ConfigureCommand: ParsableCommand {
             .replacingOccurrences(of: "\n<!-- mcs:end core -->", with: "")
             .replacingOccurrences(of: "<!-- mcs:end core -->\n", with: "")
 
-        // Gather pack contributions
+        // Gather pack contributions from explicitly selected packs
         var packContributions: [TemplateContribution] = []
-        for detection in detections {
-            if let pack = TechPackRegistry.shared.pack(for: detection.packIdentifier) {
-                packContributions.append(contentsOf: pack.templates)
-            }
+        for resolvedPack in resolvedPacks {
+            packContributions.append(contentsOf: resolvedPack.templates)
         }
 
         let version = MCSVersion.current
@@ -203,17 +215,14 @@ struct ConfigureCommand: ParsableCommand {
         }
 
         // Run pack-specific configuration
-        for detection in detections {
-            if let pack = TechPackRegistry.shared.pack(for: detection.packIdentifier) {
-                let context = ProjectContext(
-                    projectPath: projectPath,
-                    branchPrefix: branchPrefix,
-                    repoName: repoName,
-                    detectionResult: detection
-                )
-                try pack.configureProject(at: projectPath, context: context)
-                output.success("Applied \(pack.displayName) configuration")
-            }
+        for resolvedPack in resolvedPacks {
+            let context = ProjectContext(
+                projectPath: projectPath,
+                branchPrefix: branchPrefix,
+                repoName: repoName
+            )
+            try resolvedPack.configureProject(at: projectPath, context: context)
+            output.success("Applied \(resolvedPack.displayName) configuration")
         }
 
         output.header("Done")

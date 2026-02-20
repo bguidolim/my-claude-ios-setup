@@ -59,6 +59,25 @@ struct Installer {
             throw MCSError.dependencyMissing("Xcode Command Line Tools")
         }
 
+        // Check Homebrew (required for dependency installation)
+        let brew = Homebrew(shell: shell, environment: environment)
+        if brew.isInstalled {
+            output.info("Homebrew: installed")
+        } else {
+            output.warn("Homebrew is required but not installed.")
+            output.plain("")
+            output.plain("  Install it with:")
+            output.plain("    /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"")
+            output.plain("")
+            output.plain("  Then re-run: mcs install")
+            throw MCSError.dependencyMissing("Homebrew")
+        }
+
+        // Migrate old manifest file name if present
+        if environment.migrateManifestIfNeeded() {
+            output.dimmed("Migrated .setup-manifest → .mcs-manifest")
+        }
+
         output.plain("")
         output.info("Required dependencies are auto-resolved based on your choices.")
     }
@@ -126,15 +145,18 @@ struct Installer {
         // Available tech packs
         if !allPacks.isEmpty {
             output.header("Tech Packs")
-            output.dimmed("Tech packs add components specialized for a platform or workflow.")
+            output.dimmed("Tech packs add platform-specific components.")
             output.plain("")
+
             for pack in allPacks {
                 output.plain("  \(pack.displayName)")
-                output.dimmed(pack.description)
+                output.dimmed("  \(pack.description)")
                 if output.askYesNo("Install \(pack.displayName) pack?") {
-                    for component in pack.components where component.type != .brewPackage {
-                        state.select(component.id)
-                    }
+                    state.selectPack(
+                        pack.identifier,
+                        coreComponents: coreComponents,
+                        packComponents: pack.components
+                    )
                 }
                 output.plain("")
             }
@@ -195,7 +217,7 @@ struct Installer {
 
         // Initialize manifest
         var manifest = Manifest(path: environment.setupManifest)
-        manifest.initialize(sourceDirectory: Bundle.main.bundlePath)
+        manifest.initialize(sourceDirectory: Bundle.module.bundlePath)
 
         // Ensure directories exist
         let fm = FileManager.default
@@ -234,13 +256,18 @@ struct Installer {
             }
         }
 
+        // Record which packs were installed
+        let installedPackIDs = Set(
+            plan.orderedComponents.compactMap(\.packIdentifier)
+        )
+        for packID in installedPackIDs {
+            manifest.recordInstalledPack(packID)
+        }
+
         // Save manifest
         try? manifest.save()
 
         // Post-processing: inject pack hook contributions into installed hooks
-        let installedPackIDs = Set(
-            plan.orderedComponents.compactMap(\.packIdentifier)
-        )
         for packID in installedPackIDs {
             if let pack = TechPackRegistry.shared.pack(for: packID) {
                 injectHookContributions(from: pack)
@@ -281,8 +308,12 @@ struct Installer {
         output.plain("")
         output.plain("    1. Restart your terminal to pick up PATH changes")
         output.plain("")
-        output.plain("    2. Configure CLAUDE.local.md for your project(s)")
-        output.dimmed("     Run: mcs configure <project-path>")
+        output.plain("    2. Configure CLAUDE.local.md for your project(s):")
+        output.plain("       cd /path/to/project && mcs configure --pack ios")
+        output.dimmed("       Generates a CLAUDE.local.md with project-specific instructions.")
+        output.plain("")
+        output.plain("    3. Verify your setup:")
+        output.plain("       mcs doctor")
         output.plain("")
     }
 
@@ -295,10 +326,18 @@ struct Installer {
     ) -> Bool {
         switch component.installAction {
         case .brewInstall(let package):
-            return installBrewPackage(package)
+            let success = installBrewPackage(package)
+            if success {
+                postInstall(component)
+            }
+            return success
 
         case .shellCommand(let command):
-            return shell.shell(command).succeeded
+            let result = shell.shell(command)
+            if !result.succeeded {
+                output.dimmed(String(result.stderr.prefix(200)))
+            }
+            return result.succeeded
 
         case .mcpServer(let config):
             return installMCPServer(config)
@@ -386,7 +425,7 @@ struct Installer {
         manifest: inout Manifest
     ) -> Bool {
         let fm = FileManager.default
-        guard let resourceURL = Bundle.main.url(
+        guard let resourceURL = Bundle.module.url(
             forResource: "Resources",
             withExtension: nil
         ) else {
@@ -450,7 +489,7 @@ struct Installer {
         manifest: inout Manifest
     ) -> Bool {
         let fm = FileManager.default
-        guard let resourceURL = Bundle.main.url(
+        guard let resourceURL = Bundle.module.url(
             forResource: "Resources",
             withExtension: nil
         ) else {
@@ -493,7 +532,7 @@ struct Installer {
         manifest: inout Manifest
     ) -> Bool {
         let fm = FileManager.default
-        guard let resourceURL = Bundle.main.url(
+        guard let resourceURL = Bundle.module.url(
             forResource: "Resources",
             withExtension: nil
         ) else {
@@ -523,7 +562,7 @@ struct Installer {
     }
 
     private mutating func mergeSettings() -> Bool {
-        guard let resourceURL = Bundle.main.url(
+        guard let resourceURL = Bundle.module.url(
             forResource: "Resources",
             withExtension: nil
         ) else {
@@ -593,6 +632,31 @@ struct Installer {
                 output.dimmed(error.localizedDescription)
                 return false
             }
+        }
+    }
+
+    /// Run post-install steps for specific components (e.g., start services, pull models).
+    private func postInstall(_ component: ComponentDefinition) {
+        switch component.id {
+        case "core.ollama":
+            let brew = Homebrew(shell: shell, environment: environment)
+            // Start Ollama service
+            output.dimmed("Starting Ollama service...")
+            brew.startService("ollama")
+            // Wait briefly for service to be ready
+            for _ in 0..<10 {
+                let r = shell.shell("curl -s --max-time 2 http://localhost:11434/api/tags")
+                if r.succeeded { break }
+                Thread.sleep(forTimeInterval: 1)
+            }
+            // Pull the embedding model
+            output.dimmed("Pulling nomic-embed-text model...")
+            let modelResult = shell.run("/usr/bin/env", arguments: ["ollama", "list"], quiet: true)
+            if !modelResult.stdout.contains("nomic-embed-text") {
+                shell.run("/usr/bin/env", arguments: ["ollama", "pull", "nomic-embed-text"])
+            }
+        default:
+            break
         }
     }
 
@@ -693,35 +757,42 @@ struct Installer {
 
     // MARK: - Already-installed detection
 
+    /// Check if a component is already installed.
+    /// Uses the same detection logic as the doctor checks to stay consistent.
     private func isAlreadyInstalled(_ component: ComponentDefinition) -> Bool {
+        let fm = FileManager.default
+
         switch component.installAction {
         case .brewInstall(let package):
-            return shell.commandExists(package)
+            return Homebrew(shell: shell, environment: environment).isPackageInstalled(package)
 
         case .mcpServer(let config):
-            // Check if it exists in ~/.claude.json
-            let fm = FileManager.default
-            guard fm.fileExists(atPath: environment.claudeJSON.path) else { return false }
-            guard let data = try? Data(contentsOf: environment.claudeJSON),
+            // Same check as MCPServerCheck in doctor
+            guard fm.fileExists(atPath: environment.claudeJSON.path),
+                  let data = try? Data(contentsOf: environment.claudeJSON),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let servers = json["mcpServers"] as? [String: Any]
             else { return false }
             return servers[config.name] != nil
 
-        case .plugin:
-            return false // No reliable way to check
+        case .plugin(let name):
+            // Same check as PluginCheck in doctor — look at settings.json
+            guard let settings = try? Settings.load(from: environment.claudeSettings) else {
+                return false
+            }
+            return settings.enabledPlugins?[name] == true
 
         case .copySkill(_, let destination):
             let dest = environment.skillsDirectory.appendingPathComponent(destination)
-            return FileManager.default.fileExists(atPath: dest.path)
+            return fm.fileExists(atPath: dest.path)
 
         case .copyHook(_, let destination):
             let dest = environment.hooksDirectory.appendingPathComponent(destination)
-            return FileManager.default.fileExists(atPath: dest.path)
+            return fm.fileExists(atPath: dest.path)
 
         case .copyCommand(_, let destination, _):
             let dest = environment.commandsDirectory.appendingPathComponent(destination)
-            return FileManager.default.fileExists(atPath: dest.path)
+            return fm.fileExists(atPath: dest.path)
 
         case .settingsMerge:
             return false // Always run merge to pick up new settings
@@ -730,7 +801,15 @@ struct Installer {
             return false // Idempotent, safe to re-run
 
         case .shellCommand:
-            return false
+            // Check known components by their expected command on PATH
+            switch component.id {
+            case "core.homebrew":
+                return Homebrew(shell: shell, environment: environment).isInstalled
+            case "core.claude-code":
+                return shell.commandExists("claude")
+            default:
+                return false
+            }
         }
     }
 

@@ -33,25 +33,12 @@ struct IOSTechPack: TechPack {
         IOSDoctorChecks.all
     }
 
-    func detectProject(at path: URL) -> ProjectDetectionResult? {
-        IOSProjectDetector.detect(at: path)
-    }
-
     func configureProject(at path: URL, context: ProjectContext) throws {
-        // Write .xcodebuildmcp/config.yaml with project-specific values
+        // Write .xcodebuildmcp/config.yaml with placeholder for the user to fill in
         let configDir = path.appendingPathComponent(".xcodebuildmcp")
         let configFile = configDir.appendingPathComponent("config.yaml")
 
-        let projectFile: String
-        if let detection = context.detectionResult {
-            projectFile = detection.projectFile.lastPathComponent
-        } else if let detected = IOSProjectDetector.detect(at: path) {
-            projectFile = detected.projectFile.lastPathComponent
-        } else {
-            projectFile = "__PROJECT__"
-        }
-
-        let configContent = IOSTemplates.xcodeBuildMCPConfig(projectFile: projectFile)
+        let configContent = IOSTemplates.xcodeBuildMCPConfig(projectFile: "__PROJECT__")
 
         try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
         try configContent.write(to: configFile, atomically: true, encoding: .utf8)

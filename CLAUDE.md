@@ -19,9 +19,11 @@ mcs install                      # Interactive setup (pick components)
 mcs install --all                # Install everything
 mcs install --dry-run            # Preview what would be installed
 mcs install --pack ios           # Install iOS pack components
-mcs doctor                       # Diagnose installation health
+mcs doctor                       # Diagnose installation health (core + installed packs)
 mcs doctor --fix                 # Diagnose and auto-fix issues
-mcs configure-project [path]     # Generate CLAUDE.local.md for a project
+mcs doctor --pack ios            # Only check a specific pack
+mcs configure [path]             # Generate CLAUDE.local.md (core + installed packs)
+mcs configure --pack ios         # Explicitly apply a pack's templates
 mcs cleanup                      # Find and delete backup files
 mcs update                       # Update via Homebrew
 ```
@@ -63,7 +65,6 @@ mcs update                       # Update via Homebrew
 ### iOS Pack (`Sources/mcs/Packs/iOS/`)
 - `IOSTechPack.swift` — TechPack conformance
 - `IOSComponents.swift` — XcodeBuildMCP, Sosumi, xcodebuildmcp skill
-- `IOSProjectDetector.swift` — .xcodeproj/.xcworkspace detection
 - `IOSDoctorChecks.swift` — Xcode CLT, MCP server checks
 
 ### Resources (`Sources/mcs/Resources/`)
@@ -78,9 +79,10 @@ Bundled with the binary via SwiftPM `.copy()`:
 ## Key Design Decisions
 
 - **Tech pack protocol**: all platform-specific components (MCP servers, templates, doctor checks) live in tech packs; core is technology-agnostic
+- **Explicit pack selection**: packs are installed and tracked explicitly (no auto-detection); doctor and configure only run pack logic for installed packs
 - **Compiled-in packs**: packs are Swift targets in the same package, shipped as a single binary
 - **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
 - **File-based memory**: memories stored in `<project>/.claude/memories/*.md`, indexed by docs-mcp-server for semantic search
 - **Settings deep-merge**: native Swift Codable replaces jq; hooks deduplicate by command, plugins merge additively
 - **Backup on every write**: timestamped backup created before any file modification
-- **Manifest tracking**: SHA-256 hashes in `~/.claude/.setup-manifest` for doctor freshness checks
+- **Manifest tracking**: SHA-256 hashes + installed pack IDs in `~/.claude/.mcs-manifest` for doctor scoping and freshness checks

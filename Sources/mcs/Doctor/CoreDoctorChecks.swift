@@ -336,7 +336,7 @@ struct SettingsOwnershipCheck: DoctorCheck, Sendable {
         }
 
         // Load current template to find stale keys
-        guard let resourceURL = Bundle.main.url(forResource: "Resources", withExtension: nil)
+        guard let resourceURL = Bundle.module.url(forResource: "Resources", withExtension: nil)
         else {
             return .skip("resources bundle not found")
         }
@@ -373,9 +373,10 @@ struct GitignoreCheck: DoctorCheck, Sendable {
         else {
             return .fail("global gitignore not found")
         }
-        // Check core entries + all pack gitignore entries
+        // Check core entries + installed pack gitignore entries
+        let manifest = Manifest(path: Environment().setupManifest)
         let allEntries = GitignoreManager.coreEntries
-            + TechPackRegistry.shared.allPackGitignoreEntries
+            + TechPackRegistry.shared.gitignoreEntries(installedPacks: manifest.installedPacks)
         var missing: [String] = []
         for entry in allEntries {
             if !content.contains(entry) {
@@ -393,8 +394,9 @@ struct GitignoreCheck: DoctorCheck, Sendable {
         let gitignoreManager = GitignoreManager(shell: shell)
         do {
             try gitignoreManager.addCoreEntries()
-            // Also add pack entries
-            for entry in TechPackRegistry.shared.allPackGitignoreEntries {
+            // Also add installed pack entries
+            let manifest = Manifest(path: Environment().setupManifest)
+            for entry in TechPackRegistry.shared.gitignoreEntries(installedPacks: manifest.installedPacks) {
                 try gitignoreManager.addEntry(entry)
             }
             return .fixed("added missing entries")

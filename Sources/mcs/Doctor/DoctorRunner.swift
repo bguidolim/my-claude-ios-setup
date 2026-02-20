@@ -3,6 +3,8 @@ import Foundation
 /// Orchestrates all doctor checks grouped by section, with optional fix mode.
 struct DoctorRunner {
     let fixMode: Bool
+    /// Explicit pack filter. If nil, uses packs recorded in the manifest.
+    let packFilter: String?
 
     private let output = CLIOutput()
     private var passCount = 0
@@ -10,24 +12,42 @@ struct DoctorRunner {
     private var warnCount = 0
     private var fixedCount = 0
 
-    init(fixMode: Bool) {
+    init(fixMode: Bool, packFilter: String? = nil) {
         self.fixMode = fixMode
+        self.packFilter = packFilter
     }
 
     mutating func run() throws {
         output.header("My Claude Setup — Doctor")
 
-        // Collect all checks: core + pack checks + pack migrations + hook contribution checks
+        let env = Environment()
+        env.migrateManifestIfNeeded()
+        let manifest = Manifest(path: env.setupManifest)
+        let registry = TechPackRegistry.shared
+
+        // Determine which packs to check
+        let installedPackIDs: Set<String>
+        if let filter = packFilter {
+            installedPackIDs = Set(filter.components(separatedBy: ","))
+        } else {
+            installedPackIDs = manifest.installedPacks
+        }
+
+        if !installedPackIDs.isEmpty {
+            output.dimmed("Installed packs: \(installedPackIDs.sorted().joined(separator: ", "))")
+        }
+
+        // Collect all checks: core + installed pack checks + migrations + hook contributions
         var allChecks: [any DoctorCheck] = coreDoctorChecks()
-        allChecks.append(contentsOf: TechPackRegistry.shared.allPackDoctorChecks)
+        allChecks.append(contentsOf: registry.doctorChecks(installedPacks: installedPackIDs))
 
         // Wrap pack migrations as DoctorCheck adapters
-        for (pack, migration) in TechPackRegistry.shared.allPackMigrations {
+        for (pack, migration) in registry.migrations(installedPacks: installedPackIDs) {
             allChecks.append(PackMigrationCheck(migration: migration, packName: pack.displayName))
         }
 
         // Check that hook contributions are injected
-        for (pack, contribution) in TechPackRegistry.shared.allPackHookContributions {
+        for (pack, contribution) in registry.hookContributions(installedPacks: installedPackIDs) {
             allChecks.append(HookContributionCheck(
                 packIdentifier: pack.identifier,
                 packDisplayName: pack.displayName,

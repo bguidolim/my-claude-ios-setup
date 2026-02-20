@@ -37,7 +37,7 @@ struct Environment: Sendable {
         self.skillsDirectory = claudeDir.appendingPathComponent("skills")
         self.commandsDirectory = claudeDir.appendingPathComponent("commands")
         self.memoriesDirectory = claudeDir.appendingPathComponent("memories")
-        self.setupManifest = claudeDir.appendingPathComponent(".setup-manifest")
+        self.setupManifest = claudeDir.appendingPathComponent(".mcs-manifest")
         self.binDirectory = claudeDir.appendingPathComponent("bin")
 
         #if arch(arm64)
@@ -62,6 +62,30 @@ struct Environment: Sendable {
             return home.appendingPathComponent(".bash_profile")
         default:
             return nil
+        }
+    }
+
+    /// The path where the old bash installer stored its manifest.
+    var legacyManifest: URL {
+        claudeDirectory.appendingPathComponent(".setup-manifest")
+    }
+
+    /// Migrate the old `.setup-manifest` to `.mcs-manifest` if needed.
+    /// Returns true if a migration was performed.
+    @discardableResult
+    func migrateManifestIfNeeded() -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacyManifest.path),
+              !fm.fileExists(atPath: setupManifest.path)
+        else { return false }
+
+        do {
+            try fm.moveItem(at: legacyManifest, to: setupManifest)
+            return true
+        } catch {
+            // Fall back to copy if move fails
+            try? fm.copyItem(at: legacyManifest, to: setupManifest)
+            return true
         }
     }
 

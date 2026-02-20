@@ -1,19 +1,10 @@
 import Foundation
 
-/// Result of project detection by a tech pack
-struct ProjectDetectionResult: Sendable {
-    let packIdentifier: String
-    let projectName: String
-    let projectFile: URL
-    let confidence: Double // 0.0...1.0
-}
-
 /// Context provided to tech packs during project configuration
 struct ProjectContext: Sendable {
     let projectPath: URL
     let branchPrefix: String
     let repoName: String
-    let detectionResult: ProjectDetectionResult?
 }
 
 /// Template contribution from a tech pack
@@ -35,7 +26,9 @@ struct HookContribution: Sendable {
     }
 }
 
-/// Protocol that all tech packs must conform to
+/// Protocol that all tech packs must conform to.
+/// Packs are explicitly installed via `mcs install --pack <id>`.
+/// Doctor and configure only run pack-specific logic for installed packs.
 protocol TechPack: Sendable {
     var identifier: String { get }
     var displayName: String { get }
@@ -47,7 +40,6 @@ protocol TechPack: Sendable {
     var doctorChecks: [any DoctorCheck] { get }
     var migrations: [any PackMigration] { get }
 
-    func detectProject(at path: URL) -> ProjectDetectionResult?
     func configureProject(at path: URL, context: ProjectContext) throws
 }
 

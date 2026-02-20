@@ -4,9 +4,12 @@ import Foundation
 enum MigrationDetector {
     static var checks: [any DoctorCheck] {
         [
+            LegacyBashInstallerCheck(),
+            LegacyManifestCheck(),
+            LegacyCLIWrapperCheck(),
+            LegacyShellRCPathCheck(),
             SerenaMemoryMigrationCheck(),
             DeprecatedUvCheck(),
-            CLIWrapperMigrationCheck(),
         ]
     }
 }
@@ -15,12 +18,17 @@ enum MigrationDetector {
 
 /// Detects .serena/memories/ files that should be migrated to .claude/memories/.
 struct SerenaMemoryMigrationCheck: DoctorCheck, Sendable {
+    let environment: Environment
+
+    init(environment: Environment = Environment()) {
+        self.environment = environment
+    }
+
     var name: String { "Serena memories" }
     var section: String { "Migration" }
 
     func check() -> CheckResult {
-        let env = Environment()
-        let serenaDir = env.homeDirectory.appendingPathComponent(".serena/memories")
+        let serenaDir = environment.homeDirectory.appendingPathComponent(".serena/memories")
         let fm = FileManager.default
 
         guard fm.fileExists(atPath: serenaDir.path) else {
@@ -39,10 +47,9 @@ struct SerenaMemoryMigrationCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let env = Environment()
         let fm = FileManager.default
-        let serenaDir = env.homeDirectory.appendingPathComponent(".serena/memories")
-        let claudeDir = env.memoriesDirectory
+        let serenaDir = environment.homeDirectory.appendingPathComponent(".serena/memories")
+        let claudeDir = environment.memoriesDirectory
 
         guard let contents = try? fm.contentsOfDirectory(atPath: serenaDir.path),
               !contents.isEmpty
@@ -102,35 +109,215 @@ struct DeprecatedUvCheck: DoctorCheck, Sendable {
     }
 }
 
-// MARK: - CLI wrapper migration
+// MARK: - Legacy bash installer cleanup
 
-/// Detects old bash CLI wrapper that should be replaced with the Swift binary.
-struct CLIWrapperMigrationCheck: DoctorCheck, Sendable {
-    var name: String { "CLI wrapper" }
+/// Detects ~/.claude-ios-setup/ (old repo clone) and offers to remove it.
+struct LegacyBashInstallerCheck: DoctorCheck, Sendable {
+    let environment: Environment
+
+    init(environment: Environment = Environment()) {
+        self.environment = environment
+    }
+
+    var name: String { "Legacy bash installer" }
     var section: String { "Migration" }
 
     func check() -> CheckResult {
-        let shell = ShellRunner(environment: Environment())
-        let whichResult = shell.run("/usr/bin/which", arguments: ["claude-ios-setup"])
-
-        guard whichResult.succeeded, !whichResult.stdout.isEmpty else {
-            // Old CLI not on PATH — no migration needed
-            return .pass("no legacy CLI wrapper found")
+        let legacyDir = environment.homeDirectory.appendingPathComponent(".claude-ios-setup")
+        if FileManager.default.fileExists(atPath: legacyDir.path) {
+            return .warn("~/.claude-ios-setup/ exists — old bash installer repo clone, safe to remove")
         }
-
-        let path = whichResult.stdout
-        // Check if it's a shell script (old bash version) vs compiled binary
-        let fileResult = shell.run("/usr/bin/file", arguments: [path])
-        if fileResult.stdout.contains("shell script") || fileResult.stdout.contains("text") {
-            return .warn(
-                "legacy bash CLI wrapper at \(path) — replace with 'brew install mcs' or remove it"
-            )
-        }
-        return .pass("CLI wrapper is not a legacy script")
+        return .pass("no legacy installer directory")
     }
 
     func fix() -> FixResult {
-        .notFixable("Remove the old bash wrapper manually, then install via: brew install mcs")
+        let legacyDir = environment.homeDirectory.appendingPathComponent(".claude-ios-setup")
+        do {
+            try FileManager.default.removeItem(at: legacyDir)
+            return .fixed("removed ~/.claude-ios-setup/")
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+}
+
+/// Detects old .setup-manifest that wasn't migrated to .mcs-manifest.
+struct LegacyManifestCheck: DoctorCheck, Sendable {
+    let environment: Environment
+
+    init(environment: Environment = Environment()) {
+        self.environment = environment
+    }
+
+    var name: String { "Legacy manifest file" }
+    var section: String { "Migration" }
+
+    func check() -> CheckResult {
+        if FileManager.default.fileExists(atPath: environment.legacyManifest.path) {
+            return .warn(".setup-manifest still exists — should be migrated to .mcs-manifest")
+        }
+        return .pass("no legacy manifest file")
+    }
+
+    func fix() -> FixResult {
+        let fm = FileManager.default
+        // If new manifest already exists, just remove the old one
+        if fm.fileExists(atPath: environment.setupManifest.path) {
+            do {
+                try fm.removeItem(at: environment.legacyManifest)
+                return .fixed("removed old .setup-manifest (already migrated)")
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+        }
+        // Otherwise migrate
+        if environment.migrateManifestIfNeeded() {
+            return .fixed("migrated .setup-manifest → .mcs-manifest")
+        }
+        return .failed("could not migrate manifest")
+    }
+}
+
+/// Detects old bash CLI wrapper at ~/.claude/bin/claude-ios-setup or on PATH.
+struct LegacyCLIWrapperCheck: DoctorCheck, Sendable {
+    let environment: Environment
+
+    init(environment: Environment = Environment()) {
+        self.environment = environment
+    }
+
+    var name: String { "Legacy CLI wrapper" }
+    var section: String { "Migration" }
+
+    func check() -> CheckResult {
+        let fm = FileManager.default
+
+        // Check the known wrapper location
+        let binWrapper = environment.binDirectory.appendingPathComponent("claude-ios-setup")
+        if fm.fileExists(atPath: binWrapper.path) {
+            return .warn("~/.claude/bin/claude-ios-setup exists — old bash wrapper, safe to remove")
+        }
+
+        // Also check if it's on PATH somewhere else
+        let shell = ShellRunner(environment: environment)
+        let whichResult = shell.run("/usr/bin/which", arguments: ["claude-ios-setup"])
+        if whichResult.succeeded, !whichResult.stdout.isEmpty {
+            return .warn("legacy 'claude-ios-setup' found at \(whichResult.stdout) — safe to remove")
+        }
+
+        return .pass("no legacy CLI wrapper")
+    }
+
+    func fix() -> FixResult {
+        let binWrapper = environment.binDirectory.appendingPathComponent("claude-ios-setup")
+        if FileManager.default.fileExists(atPath: binWrapper.path) {
+            do {
+                try FileManager.default.removeItem(at: binWrapper)
+                return .fixed("removed ~/.claude/bin/claude-ios-setup")
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+        }
+        return .notFixable("remove the legacy 'claude-ios-setup' from your PATH manually")
+    }
+}
+
+/// Detects the old PATH entry added to .zshrc/.bash_profile by the bash installer.
+/// The marker is: `# Added by Claude Code iOS Setup`
+/// Checks all known RC files (not just the current shell) in case the user switched shells.
+struct LegacyShellRCPathCheck: DoctorCheck, Sendable {
+    let environment: Environment
+
+    init(environment: Environment = Environment()) {
+        self.environment = environment
+    }
+
+    var name: String { "Shell RC PATH entry" }
+    var section: String { "Migration" }
+
+    static let marker = "# Added by Claude Code iOS Setup"
+    static let pathLine = "export PATH=\"$HOME/.claude/bin:$PATH\""
+
+    /// All RC files that the old bash installer might have written to.
+    static func allRCFiles(home: URL) -> [URL] {
+        [
+            home.appendingPathComponent(".zshrc"),
+            home.appendingPathComponent(".bash_profile"),
+            home.appendingPathComponent(".bashrc"),
+        ]
+    }
+
+    /// Returns RC files that contain the legacy marker.
+    static func affectedFiles(home: URL) -> [URL] {
+        allRCFiles(home: home).filter { file in
+            guard let content = try? String(contentsOf: file, encoding: .utf8) else { return false }
+            return content.contains(marker)
+        }
+    }
+
+    func check() -> CheckResult {
+        let affected = Self.affectedFiles(home: environment.homeDirectory)
+
+        if affected.isEmpty {
+            return .pass("no legacy PATH entry")
+        }
+
+        let names = affected.map(\.lastPathComponent).joined(separator: ", ")
+        return .warn(
+            "\(names) has old PATH entry for ~/.claude/bin — no longer needed"
+        )
+    }
+
+    func fix() -> FixResult {
+        let affected = Self.affectedFiles(home: environment.homeDirectory)
+
+        guard !affected.isEmpty else {
+            return .notFixable("no affected RC files found")
+        }
+
+        var fixedFiles: [String] = []
+        var errors: [String] = []
+
+        for rcFile in affected {
+            guard var content = try? String(contentsOf: rcFile, encoding: .utf8) else {
+                errors.append("could not read \(rcFile.lastPathComponent)")
+                continue
+            }
+
+            var lines = content.components(separatedBy: "\n")
+            var removed = false
+
+            lines.removeAll { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed == Self.marker || trimmed == Self.pathLine {
+                    removed = true
+                    return true
+                }
+                return false
+            }
+
+            guard removed else { continue }
+
+            // Clean up any resulting double blank lines
+            content = lines.joined(separator: "\n")
+            while content.contains("\n\n\n") {
+                content = content.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+            }
+
+            do {
+                var backup = Backup()
+                _ = try? backup.backupFile(at: rcFile)
+                try content.write(to: rcFile, atomically: true, encoding: .utf8)
+                fixedFiles.append(rcFile.lastPathComponent)
+            } catch {
+                errors.append("\(rcFile.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+
+        if !errors.isEmpty {
+            return .failed(errors.joined(separator: "; "))
+        }
+        return .fixed("removed PATH entry from \(fixedFiles.joined(separator: ", "))")
     }
 }
 

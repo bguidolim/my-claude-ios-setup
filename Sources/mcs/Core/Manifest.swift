@@ -1,8 +1,8 @@
 import Foundation
 import CryptoKit
 
-/// Tracks SHA-256 hashes of installed files to detect drift.
-/// Stored at ~/.claude/.setup-manifest.
+/// Tracks SHA-256 hashes of installed files, installed pack IDs, and metadata.
+/// Stored at ~/.claude/.mcs-manifest.
 struct Manifest: Sendable {
     private let path: URL
     private var entries: [String: String] // relativePath -> sha256
@@ -50,10 +50,28 @@ struct Manifest: Sendable {
         )
     }
 
+    /// The tech pack identifiers that were explicitly installed.
+    var installedPacks: Set<String> {
+        guard let raw = metadata["INSTALLED_PACKS"], !raw.isEmpty else { return [] }
+        return Set(raw.components(separatedBy: ","))
+    }
+
+    /// Record that a pack was installed.
+    mutating func recordInstalledPack(_ identifier: String) {
+        var packs = installedPacks
+        packs.insert(identifier)
+        metadata["INSTALLED_PACKS"] = packs.sorted().joined(separator: ",")
+    }
+
     /// Initialize the manifest with a source directory header.
     mutating func initialize(sourceDirectory: String) {
+        let previousPacks = metadata["INSTALLED_PACKS"]
         metadata["SCRIPT_DIR"] = sourceDirectory
         entries = [:]
+        // Preserve installed packs across re-initialization
+        if let previousPacks {
+            metadata["INSTALLED_PACKS"] = previousPacks
+        }
     }
 
     /// Save to disk.

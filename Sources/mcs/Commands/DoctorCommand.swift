@@ -10,8 +10,11 @@ struct DoctorCommand: ParsableCommand {
     @Flag(name: .long, help: "Attempt to automatically fix issues")
     var fix = false
 
+    @Option(name: .long, help: "Only check a specific tech pack (e.g. ios)")
+    var pack: String?
+
     mutating func run() throws {
-        var runner = DoctorRunner(fixMode: fix)
+        var runner = DoctorRunner(fixMode: fix, packFilter: pack)
         try runner.run()
     }
 }

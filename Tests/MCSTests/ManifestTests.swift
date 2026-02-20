@@ -120,6 +120,51 @@ struct ManifestTests {
         #expect(manifest.trackedPaths == ["a.txt", "b.txt"])
     }
 
+    // MARK: - Installed packs tracking
+
+    @Test("Record and retrieve installed packs")
+    func installedPacks() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/test")
+
+        #expect(manifest.installedPacks.isEmpty)
+
+        manifest.recordInstalledPack("ios")
+        manifest.recordInstalledPack("web")
+        #expect(manifest.installedPacks == Set(["ios", "web"]))
+
+        // Duplicate insert is idempotent
+        manifest.recordInstalledPack("ios")
+        #expect(manifest.installedPacks.count == 2)
+
+        try manifest.save()
+
+        // Reload preserves packs
+        let loaded = Manifest(path: manifestFile)
+        #expect(loaded.installedPacks == Set(["ios", "web"]))
+    }
+
+    @Test("Initialize preserves installed packs")
+    func initializePreservesPacks() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/v1")
+        manifest.recordInstalledPack("ios")
+        try manifest.save()
+
+        // Re-initialize (simulates re-running install)
+        var reloaded = Manifest(path: manifestFile)
+        reloaded.initialize(sourceDirectory: "/v2")
+        #expect(reloaded.installedPacks == Set(["ios"]))
+    }
+
     // MARK: - Persistence round-trip
 
     @Test("Manifest save and reload preserves all entries")
