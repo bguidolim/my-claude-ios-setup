@@ -25,7 +25,6 @@ mcs doctor --pack ios            # Only check a specific pack
 mcs configure [path]             # Generate CLAUDE.local.md (core + installed packs)
 mcs configure --pack ios         # Explicitly apply a pack's templates
 mcs cleanup                      # Find and delete backup files
-mcs update                       # Update via Homebrew
 ```
 
 ## Architecture
@@ -56,7 +55,6 @@ mcs update                       # Update via Homebrew
 - `DoctorCommand.swift` — health checks with optional --fix
 - `ConfigureCommand.swift` — project configuration with memory migration
 - `CleanupCommand.swift` — backup file management
-- `UpdateCommand.swift` — Homebrew upgrade wrapper
 
 ### Templates (`Sources/mcs/Templates/`)
 - `TemplateEngine.swift` — `__PLACEHOLDER__` substitution

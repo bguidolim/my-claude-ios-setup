@@ -19,17 +19,6 @@
           }
         ]
       }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/continuous-learning-activator.sh"
-          }
-        ]
-      }
     ]
   },
   "enabledPlugins": {

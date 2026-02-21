@@ -56,9 +56,10 @@ extension DoctorRunner {
 
         // Hooks
         checks.append(HookCheck(hookName: "session_start.sh"))
-        checks.append(HookCheck(hookName: "continuous-learning-activator.sh"))
+        checks.append(HookCheck(hookName: "continuous-learning-activator.sh", isOptional: true))
         checks.append(HookEventCheck(eventName: "SessionStart"))
-        checks.append(HookEventCheck(eventName: "UserPromptSubmit"))
+        checks.append(HookEventCheck(eventName: "UserPromptSubmit", isOptional: true))
+        checks.append(ContinuousLearningHookFragmentCheck())
 
         // Settings
         checks.append(SettingsCheck())
@@ -247,6 +248,7 @@ struct FileExistsCheck: DoctorCheck, Sendable {
 
 struct HookCheck: DoctorCheck, Sendable {
     let hookName: String
+    var isOptional: Bool = false
 
     var name: String { hookName }
     var section: String { "Hooks" }
@@ -254,7 +256,7 @@ struct HookCheck: DoctorCheck, Sendable {
     func check() -> CheckResult {
         let hookPath = Environment().hooksDirectory.appendingPathComponent(hookName)
         guard FileManager.default.fileExists(atPath: hookPath.path) else {
-            return .fail("missing")
+            return isOptional ? .skip("not installed (optional)") : .fail("missing")
         }
         guard FileManager.default.isExecutableFile(atPath: hookPath.path) else {
             return .fail("not executable")
@@ -281,6 +283,7 @@ struct HookCheck: DoctorCheck, Sendable {
 
 struct HookEventCheck: DoctorCheck, Sendable {
     let eventName: String
+    var isOptional: Bool = false
 
     var name: String { "\(eventName) hook event" }
     var section: String { "Hooks" }
@@ -297,7 +300,9 @@ struct HookEventCheck: DoctorCheck, Sendable {
             return .fail("settings.json is invalid: \(error.localizedDescription)")
         }
         guard let hooks = settings.hooks, hooks[eventName] != nil else {
-            return .fail("\(eventName) not registered in settings.json")
+            return isOptional
+                ? .skip("\(eventName) not registered (optional)")
+                : .fail("\(eventName) not registered in settings.json")
         }
         return .pass("registered in settings.json")
     }
@@ -511,6 +516,81 @@ struct DeprecatedPluginCheck: DoctorCheck, Sendable {
             return .fixed("removed deprecated \(pluginName)")
         }
         return .failed(result.stderr)
+    }
+}
+
+// MARK: - Continuous Learning hook fragment check
+
+/// Checks that the continuous learning fragment is injected into session_start.sh
+/// with the current version marker. Uses the same `# --- mcs:begin learning v<version> ---`
+/// section marker pattern used by tech pack hook contributions.
+struct ContinuousLearningHookFragmentCheck: DoctorCheck, Sendable {
+    var name: String { "Continuous learning hook fragment" }
+    var section: String { "Hooks" }
+
+    private let fragmentID = "learning"
+
+    func check() -> CheckResult {
+        let env = Environment()
+        let hookFile = env.hooksDirectory.appendingPathComponent("session_start.sh")
+
+        guard FileManager.default.fileExists(atPath: hookFile.path) else {
+            return .skip("session_start.sh not installed")
+        }
+
+        guard let content = try? String(contentsOf: hookFile, encoding: .utf8) else {
+            return .fail("could not read session_start.sh")
+        }
+
+        let expectedVersion = MCSVersion.current
+        let versionedMarker = "# --- mcs:begin \(fragmentID) v\(expectedVersion) ---"
+        let endMarker = "# --- mcs:end \(fragmentID) ---"
+
+        // Check for current-version marker
+        if content.contains(versionedMarker) {
+            // Version matches — check content for drift
+            if let beginRange = content.range(of: versionedMarker),
+               let endRange = content.range(of: endMarker) {
+                let installed = String(content[beginRange.upperBound..<endRange.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let expected = CoreComponents.continuousLearningHookFragment
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if installed == expected {
+                    return .pass("v\(expectedVersion) up to date")
+                }
+                return .warn("v\(expectedVersion) content drifted — run 'mcs install' to refresh")
+            }
+            return .pass("v\(expectedVersion) injected")
+        }
+
+        // Check for any version or unversioned marker (outdated or legacy)
+        let pattern = #"# --- mcs:begin learning( v[0-9]+\.[0-9]+\.[0-9]+)? ---"#
+        if content.range(of: pattern, options: .regularExpression) != nil {
+            if let installedVersion = parseInstalledVersion(from: content) {
+                return .warn("v\(installedVersion) installed, v\(expectedVersion) available — run 'mcs install'")
+            }
+            return .warn("unversioned fragment installed, v\(expectedVersion) available — run 'mcs install'")
+        }
+
+        // No marker at all — fragment was never injected (optional feature)
+        return .skip("not injected (continuous learning not selected)")
+    }
+
+    func fix() -> FixResult {
+        .notFixable("Run 'mcs install' and select Continuous Learning to inject the fragment")
+    }
+
+    private func parseInstalledVersion(from content: String) -> String? {
+        let pattern = #"# --- mcs:begin learning v([0-9]+\.[0-9]+\.[0-9]+) ---"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: content,
+                  range: NSRange(content.startIndex..., in: content)
+              ),
+              match.numberOfRanges >= 2,
+              let versionRange = Range(match.range(at: 1), in: content)
+        else { return nil }
+        return String(content[versionRange])
     }
 }
 

@@ -62,6 +62,6 @@ struct InstallCommand: ParsableCommand {
         installer.phaseInstall(plan: plan, state: state)
 
         // Phase 5: Post-summary
-        installer.phaseSummaryPost()
+        installer.phaseSummaryPost(installAll: all)
     }
 }

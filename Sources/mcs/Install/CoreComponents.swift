@@ -95,7 +95,7 @@ enum CoreComponents {
     static let docsMCPServer = ComponentDefinition(
         id: "core.docs-mcp-server",
         displayName: "docs-mcp-server",
-        description: "Semantic search over documentation using local Ollama embeddings",
+        description: "Semantic search over memories using local Ollama embeddings",
         type: .mcpServer,
         packIdentifier: nil,
         dependencies: ["core.node", "core.ollama"],
@@ -197,7 +197,7 @@ enum CoreComponents {
         type: .hookFile,
         packIdentifier: nil,
         dependencies: [],
-        isRequired: true,
+        isRequired: false,
         installAction: .copyHook(
             source: "hooks/continuous-learning-activator.sh",
             destination: "continuous-learning-activator.sh"
@@ -262,4 +262,99 @@ enum CoreComponents {
             return matching.isEmpty ? nil : (type, matching)
         }
     }
+
+    /// Components split into selectable (optional) and required for multi-select display.
+    /// Excludes components that are part of bundles.
+    static var groupedForSelection: (
+        selectable: [(type: ComponentType, components: [ComponentDefinition])],
+        required: [ComponentDefinition]
+    ) {
+        let bundledIDs = Set(bundles.flatMap(\.componentIDs))
+        let displayOrder: [ComponentType] = [
+            .mcpServer, .plugin, .skill, .command,
+        ]
+        let selectable = displayOrder.compactMap { type in
+            let matching = userFacing.filter {
+                $0.type == type && !$0.isRequired && !bundledIDs.contains($0.id)
+            }
+            return matching.isEmpty ? nil : (type, matching)
+        }
+        let required = userFacing.filter { $0.isRequired }
+        return (selectable, required)
+    }
+
+    // MARK: - Feature Bundles
+
+    /// Bundles group related components into a single selectable item.
+    static let bundles: [ComponentBundle] = [
+        ComponentBundle(
+            name: "Continuous Learning",
+            description: "Learns from sessions and provides semantic search over memories",
+            componentIDs: [
+                "core.docs-mcp-server",
+                "core.skill.continuous-learning",
+                "core.hook.continuous-learning-activator",
+            ]
+        ),
+    ]
+
+    // MARK: - Hook Fragments
+
+    /// Ollama status check + docs-mcp-server memory sync.
+    /// Injected into session_start.sh when Continuous Learning is selected.
+    static let continuousLearningHookFragment = """
+        # === OLLAMA STATUS & DOCS-MCP LIBRARY ===
+        local ollama_running=false
+        if curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1; then
+            ollama_running=true
+            context+="\\n🦙 Ollama: running"
+        fi
+
+        # If project has a memories directory, ensure docs-mcp-server library is synced
+        if [ -d ".claude/memories" ]; then
+            if [ "$ollama_running" = true ]; then
+                local repo_name
+                repo_name=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "")
+                if [ -n "$repo_name" ]; then
+                    local memories_path
+                    memories_path="$(git rev-parse --show-toplevel 2>/dev/null)/.claude/memories"
+
+                    # Background: ensure library exists and is up to date.
+                    # Redirect subshell stdout/stderr to /dev/null so the hook's
+                    # output pipe closes immediately (Claude Code waits for the
+                    # pipe to close, not just the parent process).
+                    # A watchdog kills the subshell after 120s to prevent hangs.
+                    (
+                        trap 'kill 0 2>/dev/null' TERM
+                        export OPENAI_API_KEY=ollama
+                        export OPENAI_API_BASE=http://localhost:11434/v1
+
+                        embedding_model="openai:nomic-embed-text"
+
+                        if npx -y @arabold/docs-mcp-server list --silent 2>/dev/null | grep -q "$repo_name"; then
+                            npx -y @arabold/docs-mcp-server refresh "$repo_name" \\
+                                --embedding-model "$embedding_model" \\
+                                --silent >/dev/null 2>&1
+                        else
+                            npx -y @arabold/docs-mcp-server scrape "$repo_name" \\
+                                "file://$memories_path" \\
+                                --embedding-model "$embedding_model" \\
+                                --silent >/dev/null 2>&1
+                        fi
+                    ) >/dev/null 2>&1 &
+                    local sync_pid=$!
+                    ( sleep 120 && kill "$sync_pid" 2>/dev/null ) >/dev/null 2>&1 &
+                fi
+            else
+                context+="\\n⚠️ Ollama not running — docs-mcp semantic search will fail"
+            fi
+        fi
+    """
+}
+
+/// A group of related components exposed as a single selectable item.
+struct ComponentBundle: Sendable {
+    let name: String
+    let description: String
+    let componentIDs: [String]
 }

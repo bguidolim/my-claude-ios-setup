@@ -2,13 +2,13 @@ import Foundation
 
 /// Types of components that can be installed
 enum ComponentType: String, Sendable, CaseIterable {
-    case mcpServer = "MCP Server"
-    case plugin = "Plugin"
-    case skill = "Skill"
-    case hookFile = "Hook"
-    case command = "Command"
-    case brewPackage = "Dependency"
-    case configuration = "Configuration"
+    case mcpServer = "MCP Servers"
+    case plugin = "Plugins"
+    case skill = "Skills"
+    case hookFile = "Hooks"
+    case command = "Commands"
+    case brewPackage = "Dependencies"
+    case configuration = "Configurations"
 }
 
 /// Definition of an installable component

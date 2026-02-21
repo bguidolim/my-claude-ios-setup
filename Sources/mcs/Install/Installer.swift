@@ -125,40 +125,76 @@ struct Installer {
             return state
         }
 
-        // Interactive selection
-        output.plain("")
-        let installAllCore = output.askYesNo(
-            "Install all core components? (skip individual prompts)",
-            default: false
-        )
+        // Interactive multi-select
+        output.header("Component Selection")
 
-        if installAllCore {
-            state.selectAllCore(from: allComponents)
-        } else {
-            // Select required core components
-            state.selectRequiredCore(from: coreComponents)
+        let selection = CoreComponents.groupedForSelection
+        var numberToComponentIDs: [Int: [String]] = [:]
+        var number = 1
 
-            // Interactive category selection
-            interactiveSelectByCategory(&state, coreComponents: coreComponents)
+        // Build selectable groups: bundles first, then individual components
+        var groups: [SelectableGroup] = []
+
+        // Feature bundles
+        let bundles = CoreComponents.bundles
+        if !bundles.isEmpty {
+            var bundleItems: [SelectableItem] = []
+            for bundle in bundles {
+                bundleItems.append(SelectableItem(
+                    number: number,
+                    name: bundle.name,
+                    description: bundle.description,
+                    isSelected: true
+                ))
+                numberToComponentIDs[number] = bundle.componentIDs
+                number += 1
+            }
+            groups.append(SelectableGroup(
+                title: "Features",
+                items: bundleItems,
+                requiredItems: []
+            ))
         }
 
-        // Always ask about tech packs individually
-        if !allPacks.isEmpty {
-            output.header("Tech Packs")
-            output.dimmed("Tech packs add platform-specific components.")
-            output.plain("")
+        // Individual components (excludes bundled ones)
+        for (type, components) in selection.selectable {
+            var items: [SelectableItem] = []
+            for component in components {
+                items.append(SelectableItem(
+                    number: number,
+                    name: component.displayName,
+                    description: component.description,
+                    isSelected: true
+                ))
+                numberToComponentIDs[number] = [component.id]
+                number += 1
+            }
+            groups.append(SelectableGroup(
+                title: type.rawValue,
+                items: items,
+                requiredItems: []
+            ))
+        }
 
-            for pack in allPacks {
-                output.plain("  \(pack.displayName)")
-                output.dimmed("  \(pack.description)")
-                if output.askYesNo("Install \(pack.displayName) pack?") {
-                    state.selectPack(
-                        pack.identifier,
-                        coreComponents: coreComponents,
-                        packComponents: pack.components
-                    )
+        // Add required items to a dedicated group
+        let requiredItems = selection.required.map { RequiredItem(name: $0.displayName) }
+        if !requiredItems.isEmpty {
+            groups.append(SelectableGroup(
+                title: "",
+                items: [],
+                requiredItems: requiredItems
+            ))
+        }
+
+        let selectedNumbers = output.multiSelect(groups: &groups)
+
+        // Translate selections back to component IDs
+        state.selectRequiredCore(from: coreComponents)
+        for (num, componentIDs) in numberToComponentIDs {
+            if selectedNumbers.contains(num) {
+                for id in componentIDs {
+                    state.select(id)
                 }
-                output.plain("")
             }
         }
 
@@ -184,7 +220,7 @@ struct Installer {
             guard let components = grouped[type], !components.isEmpty else { continue }
             hasContent = true
             output.plain("")
-            output.plain("  \(type.rawValue)s:")
+            output.sectionHeader("\(type.rawValue)")
             for component in components {
                 let autoAdded = plan.addedDependencies.contains(where: { $0.id == component.id })
                 let suffix = autoAdded ? " (auto-resolved)" : ""
@@ -283,11 +319,17 @@ struct Installer {
                 addPackGitignoreEntries(from: pack)
             }
         }
+
+        // Post-processing: continuous learning hook fragment + settings entry
+        if state.isSelected("core.docs-mcp-server") {
+            injectContinuousLearningHook()
+            registerContinuousLearningSettings()
+        }
     }
 
     // MARK: - Phase 5: Post-Summary
 
-    func phaseSummaryPost() {
+    func phaseSummaryPost(installAll: Bool) {
         output.header("Setup Complete!")
 
         if !installedItems.isEmpty {
@@ -306,19 +348,47 @@ struct Installer {
             }
         }
 
+        // Offer inline project configuration (interactive installs only)
+        if !installAll && !dryRun && !TechPackRegistry.shared.availablePacks.isEmpty {
+            output.plain("")
+            if output.askYesNo("Configure a project now?") {
+                let cwd = FileManager.default.currentDirectoryPath
+                let projectPathStr = output.promptInline("Project path", default: cwd)
+                let projectPath = URL(fileURLWithPath: projectPathStr)
+
+                guard FileManager.default.fileExists(atPath: projectPath.path) else {
+                    output.warn("Directory does not exist: \(projectPath.path)")
+                    output.plain("  You can configure later with: cd /path/to/project && mcs configure")
+                    return
+                }
+
+                let configurator = ProjectConfigurator(
+                    environment: environment,
+                    output: output,
+                    shell: shell
+                )
+                do {
+                    try configurator.interactiveConfigure(at: projectPath)
+                } catch {
+                    output.warn("Configuration failed: \(error.localizedDescription)")
+                    output.plain("  You can retry later with: cd \(projectPath.path) && mcs configure")
+                }
+            }
+        }
+
         output.plain("")
         output.plain("  Next Steps:")
         output.plain("")
         output.plain("    1. Restart your terminal to pick up PATH changes")
         output.plain("")
-        output.plain("    2. Configure CLAUDE.local.md for your project(s):")
-        output.plain("       cd /path/to/project && mcs configure --pack ios")
-        output.dimmed("       Generates a CLAUDE.local.md with project-specific instructions.")
+        output.plain("    2. Configure more projects:")
+        output.plain("       cd /path/to/project && mcs configure")
         output.plain("")
         output.plain("    3. Verify your setup:")
         output.plain("       mcs doctor")
         output.plain("")
     }
+
 
     // MARK: - Component Installation
 
@@ -658,82 +728,16 @@ struct Installer {
 
     /// Inject a pack's hook contributions into installed hook files using section markers.
     private mutating func injectHookContributions(from pack: any TechPack) {
-        let fm = FileManager.default
-
         for contribution in pack.hookContributions {
             let hookFile = environment.hooksDirectory
                 .appendingPathComponent(contribution.hookName + ".sh")
-
-            guard fm.fileExists(atPath: hookFile.path) else { continue }
-
-            var content: String
-            do {
-                content = try String(contentsOf: hookFile, encoding: .utf8)
-            } catch {
-                output.warn("Could not read hook file \(hookFile.lastPathComponent): \(error.localizedDescription)")
-                continue
-            }
-
-            let version = MCSVersion.current
-            let beginMarker = "# --- mcs:begin \(pack.identifier) v\(version) ---"
-            let endMarker = "# --- mcs:end \(pack.identifier) ---"
-
-            // Remove existing section for idempotency (matches both versioned and unversioned markers)
-            if let beginRange = content.range(
-                of: #"# --- mcs:begin \#(pack.identifier)( v[0-9]+\.[0-9]+\.[0-9]+)? ---"#,
-                options: .regularExpression
-            ),
-               let endRange = content.range(of: endMarker) {
-                // Include trailing newline if present
-                var removeEnd = endRange.upperBound
-                if removeEnd < content.endIndex && content[removeEnd] == "\n" {
-                    removeEnd = content.index(after: removeEnd)
-                }
-                // Include leading newline if present
-                var removeStart = beginRange.lowerBound
-                if removeStart > content.startIndex {
-                    let before = content.index(before: removeStart)
-                    if content[before] == "\n" {
-                        removeStart = before
-                    }
-                }
-                content.removeSubrange(removeStart..<removeEnd)
-            }
-
-            // Build the marked section
-            let section = "\(beginMarker)\n\(contribution.scriptFragment)\n\(endMarker)"
-
-            // Insert at the specified position
-            switch contribution.position {
-            case .after:
-                if !content.hasSuffix("\n") { content += "\n" }
-                content += "\n\(section)\n"
-            case .before:
-                // Insert after the shebang and trap/setup lines (after first blank line)
-                if let blankRange = content.range(of: "\n\n") {
-                    let insertPoint = content.index(after: blankRange.lowerBound)
-                    content.insert(contentsOf: "\n\(section)\n", at: insertPoint)
-                } else if let firstNewline = content.firstIndex(of: "\n") {
-                    content.insert(
-                        contentsOf: "\n\(section)\n",
-                        at: content.index(after: firstNewline)
-                    )
-                } else {
-                    content = "\(section)\n\(content)"
-                }
-            }
-
-            do {
-                try backup.backupFile(at: hookFile)
-            } catch {
-                output.warn("Could not backup \(hookFile.lastPathComponent): \(error.localizedDescription)")
-            }
-            do {
-                try content.write(to: hookFile, atomically: true, encoding: .utf8)
-                output.success("Injected \(pack.displayName) hook fragment into \(contribution.hookName)")
-            } catch {
-                output.warn("Could not write hook file \(contribution.hookName): \(error.localizedDescription)")
-            }
+            HookInjector.inject(
+                fragment: contribution.scriptFragment,
+                identifier: pack.identifier,
+                into: hookFile,
+                backup: &backup,
+                output: output
+            )
         }
     }
 
@@ -819,66 +823,60 @@ struct Installer {
         }
     }
 
-    // MARK: - Interactive Selection Helpers
+    // MARK: - Continuous Learning Post-Processing
 
-    private func interactiveSelectByCategory(
-        _ state: inout SelectionState,
-        coreComponents: [ComponentDefinition]
-    ) {
-        let grouped = CoreComponents.grouped
+    /// Inject the Ollama/docs-mcp memory sync fragment into session_start.sh
+    /// using section markers for idempotent updates.
+    private mutating func injectContinuousLearningHook() {
+        let hookFile = environment.hooksDirectory.appendingPathComponent("session_start.sh")
+        HookInjector.inject(
+            fragment: CoreComponents.continuousLearningHookFragment,
+            identifier: "learning",
+            into: hookFile,
+            backup: &backup,
+            output: output
+        )
+    }
 
-        for (type, components) in grouped {
-            output.header(type.rawValue + "s")
-            output.dimmed(descriptionForType(type))
-            output.plain("")
+    /// Register the UserPromptSubmit hook for the continuous learning activator in settings.json.
+    private func registerContinuousLearningSettings() {
+        let settingsPath = environment.claudeSettings
+        let activatorCommand = "bash ~/.claude/hooks/continuous-learning-activator.sh"
 
-            for (index, component) in components.enumerated() {
-                output.plain("  \(index + 1). \(component.displayName)")
-                output.dimmed("   \(component.description)")
-                if !component.isRequired {
-                    if output.askYesNo("Install \(component.displayName)?") {
-                        state.select(component.id)
-                    }
-                } else {
-                    state.select(component.id)
-                    output.dimmed("   (required, will be installed)")
-                }
-                output.plain("")
+        do {
+            var settings = try Settings.load(from: settingsPath)
+
+            if settings.hooks == nil {
+                settings.hooks = [:]
             }
+
+            // Check if already registered
+            let existing = settings.hooks?["UserPromptSubmit"] ?? []
+            let alreadyRegistered = existing.contains { group in
+                group.hooks?.contains { $0.command == activatorCommand } ?? false
+            }
+
+            if !alreadyRegistered {
+                let hookGroup = Settings.HookGroup(
+                    matcher: "",
+                    hooks: [Settings.HookEntry(type: "command", command: activatorCommand)]
+                )
+                settings.hooks?["UserPromptSubmit", default: []].append(hookGroup)
+                try settings.save(to: settingsPath)
+                output.dimmed("Registered continuous learning hook in settings")
+            }
+        } catch {
+            output.warn("Could not register continuous learning hook: \(error.localizedDescription)")
         }
     }
 
-    private func descriptionForType(_ type: ComponentType) -> String {
-        switch type {
-        case .mcpServer:
-            return "MCP servers give Claude specialized capabilities."
-        case .plugin:
-            return "Plugins extend Claude Code with specialized features."
-        case .skill:
-            return "Skills provide specialized knowledge and workflows."
-        case .command:
-            return "Custom slash commands for Claude Code."
-        case .hookFile:
-            return "Hooks run automatically at key points in the session."
-        case .configuration:
-            return "Settings and configuration for Claude Code."
-        case .brewPackage:
-            return "System dependencies."
-        }
-    }
+    // MARK: - Interactive Selection Helpers
 
     private func askBranchPrefix(_ state: inout SelectionState) {
         if state.isSelected("core.command.pr") {
             output.plain("")
-            output.plain("  Your name for branch naming (e.g. bruno -> bruno/ABC-123-fix-login)")
-            output.plain("  Leave empty for feature/ABC-123-fix-login")
-            output.plain("")
-            if let answer = readLine()?.trimmingCharacters(in: .whitespaces), !answer.isEmpty {
-                state.branchPrefix = answer
-            } else {
-                state.branchPrefix = "feature"
-                output.info("Defaulting branch prefix to: feature")
-            }
+            output.plain("  Your name for branch naming (e.g. bruno \u{2192} bruno/ABC-123-fix-login)")
+            state.branchPrefix = output.promptInline("Branch prefix", default: "feature")
         }
     }
 }
