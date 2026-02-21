@@ -26,7 +26,7 @@ struct IOSTechPack: TechPack {
     ]
 
     let gitignoreEntries: [String] = [
-        ".xcodebuildmcp",
+        IOSConstants.FileNames.xcodeBuildMCPDirectory,
     ]
 
     var supplementaryDoctorChecks: [any DoctorCheck] {
@@ -34,7 +34,7 @@ struct IOSTechPack: TechPack {
     }
 
     func configureProject(at path: URL, context: ProjectConfigContext) throws {
-        let configDir = path.appendingPathComponent(".xcodebuildmcp")
+        let configDir = path.appendingPathComponent(IOSConstants.FileNames.xcodeBuildMCPDirectory)
         let configFile = configDir.appendingPathComponent("config.yaml")
 
         // Auto-detect Xcode project file, preferring .xcworkspace over .xcodeproj

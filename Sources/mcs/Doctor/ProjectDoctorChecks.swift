@@ -21,7 +21,7 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
     var section: String { "Project" }
 
     func check() -> CheckResult {
-        let claudeLocal = projectRoot.appendingPathComponent("CLAUDE.local.md")
+        let claudeLocal = projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
         guard FileManager.default.fileExists(atPath: claudeLocal.path) else {
             return .skip("CLAUDE.local.md not found")
         }
@@ -92,7 +92,7 @@ struct ProjectSerenaMemoryCheck: DoctorCheck, Sendable {
             .appendingPathComponent(".serena")
             .appendingPathComponent("memories")
         let claudeDir = projectRoot
-            .appendingPathComponent(".claude")
+            .appendingPathComponent(Constants.FileNames.claudeDirectory)
             .appendingPathComponent("memories")
 
         do {
@@ -129,7 +129,7 @@ struct ProjectStateFileCheck: DoctorCheck, Sendable {
     var section: String { "Project" }
 
     func check() -> CheckResult {
-        let claudeLocal = projectRoot.appendingPathComponent("CLAUDE.local.md")
+        let claudeLocal = projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
         let state = ProjectState(projectRoot: projectRoot)
 
         guard FileManager.default.fileExists(atPath: claudeLocal.path) else {
@@ -143,7 +143,7 @@ struct ProjectStateFileCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let claudeLocal = projectRoot.appendingPathComponent("CLAUDE.local.md")
+        let claudeLocal = projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
         let content: String
         do {
             content = try String(contentsOf: claudeLocal, encoding: .utf8)

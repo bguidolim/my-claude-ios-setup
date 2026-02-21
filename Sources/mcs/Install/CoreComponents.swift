@@ -74,7 +74,7 @@ enum CoreComponents {
     static let ollama = ComponentDefinition(
         id: "core.ollama",
         displayName: "Ollama",
-        description: "Local LLM runtime with nomic-embed-text model",
+        description: "Local LLM runtime with \(Constants.Ollama.embeddingModel) model",
         type: .brewPackage,
         packIdentifier: nil,
         dependencies: ["core.homebrew"],
@@ -93,7 +93,7 @@ enum CoreComponents {
         isRequired: false,
         installAction: .shellCommand(command: "brew install --cask claude-code"),
         supplementaryChecks: [
-            CommandCheck(name: "Claude Code", section: "Dependencies", command: "claude"),
+            CommandCheck(name: "Claude Code", section: "Dependencies", command: Constants.CLI.claudeCommand),
         ]
     )
 
@@ -113,8 +113,8 @@ enum CoreComponents {
             args: ["-y", "@arabold/docs-mcp-server@latest", "--read-only", "--telemetry=false"],
             env: [
                 "OPENAI_API_KEY": "ollama",
-                "OPENAI_API_BASE": "http://localhost:11434/v1",
-                "DOCS_MCP_EMBEDDING_MODEL": "openai:nomic-embed-text",
+                "OPENAI_API_BASE": Constants.Ollama.apiBase,
+                "DOCS_MCP_EMBEDDING_MODEL": Constants.Ollama.embeddingModelID,
             ]
         ))
     )
@@ -192,8 +192,8 @@ enum CoreComponents {
         dependencies: ["core.jq"],
         isRequired: true,
         installAction: .copyHook(
-            source: "hooks/session_start.sh",
-            destination: "session_start.sh"
+            source: "hooks/\(Constants.FileNames.sessionStartHook)",
+            destination: Constants.FileNames.sessionStartHook
         )
     )
 
@@ -206,8 +206,8 @@ enum CoreComponents {
         dependencies: [],
         isRequired: false,
         installAction: .copyHook(
-            source: "hooks/continuous-learning-activator.sh",
-            destination: "continuous-learning-activator.sh"
+            source: "hooks/\(Constants.FileNames.continuousLearningHook)",
+            destination: Constants.FileNames.continuousLearningHook
         )
     )
 
@@ -249,7 +249,7 @@ enum CoreComponents {
         packIdentifier: nil,
         dependencies: [],
         isRequired: true,
-        installAction: .gitignoreEntries(entries: [".claude", "*.local.*", ".claude/memories/"])
+        installAction: .gitignoreEntries(entries: [Constants.FileNames.claudeDirectory, "*.local.*", "\(Constants.FileNames.claudeDirectory)/memories/"])
     )
 
     // MARK: - Helpers

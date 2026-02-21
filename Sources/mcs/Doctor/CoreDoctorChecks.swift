@@ -58,9 +58,9 @@ struct OllamaRuntimeCheck: DoctorCheck, Sendable {
             return .warn("not running — start with 'ollama serve' or open the Ollama app")
         }
         guard ollama.hasEmbeddingModel() else {
-            return .warn("running but nomic-embed-text model not installed — run 'ollama pull nomic-embed-text'")
+            return .warn("running but \(Constants.Ollama.embeddingModel) model not installed — run 'ollama pull \(Constants.Ollama.embeddingModel)'")
         }
-        return .pass("running with nomic-embed-text")
+        return .pass("running with \(Constants.Ollama.embeddingModel)")
     }
 
     func fix() -> FixResult {
@@ -87,7 +87,7 @@ struct MCPServerCheck: DoctorCheck, Sendable {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .fail("~/.claude.json contains invalid JSON")
         }
-        guard let mcpServers = json["mcpServers"] as? [String: Any],
+        guard let mcpServers = json[Constants.JSONKeys.mcpServers] as? [String: Any],
               mcpServers[serverName] != nil
         else {
             return .fail("not registered")
@@ -149,7 +149,7 @@ struct HookCheck: DoctorCheck, Sendable {
     var section: String { "Hooks" }
 
     /// The marker that v2 hooks contain for fragment injection.
-    static let extensionMarker = "# --- mcs:hook-extensions ---"
+    static let extensionMarker = Constants.Hooks.extensionMarker
 
     func check() -> CheckResult {
         let hookPath = Environment().hooksDirectory.appendingPathComponent(hookName)
@@ -380,7 +380,7 @@ struct DeprecatedMCPServerCheck: DoctorCheck, Sendable {
         let claudeJSONPath = env.claudeJSON
         guard let data = try? Data(contentsOf: claudeJSONPath),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let mcpServers = json["mcpServers"] as? [String: Any],
+              let mcpServers = json[Constants.JSONKeys.mcpServers] as? [String: Any],
               mcpServers[identifier] != nil
         else {
             return .pass("not present (good)")
@@ -446,18 +446,18 @@ struct ContinuousLearningHookFragmentCheck: DoctorCheck, Sendable {
     var name: String { "Continuous learning hook fragment" }
     var section: String { "Hooks" }
 
-    private let fragmentID = "learning"
+    private let fragmentID = Constants.Hooks.continuousLearningFragmentID
 
     func check() -> CheckResult {
         let env = Environment()
-        let hookFile = env.hooksDirectory.appendingPathComponent("session_start.sh")
+        let hookFile = env.hooksDirectory.appendingPathComponent(Constants.FileNames.sessionStartHook)
 
         guard FileManager.default.fileExists(atPath: hookFile.path) else {
-            return .skip("session_start.sh not installed")
+            return .skip("\(Constants.FileNames.sessionStartHook) not installed")
         }
 
         guard let content = try? String(contentsOf: hookFile, encoding: .utf8) else {
-            return .fail("could not read session_start.sh")
+            return .fail("could not read \(Constants.FileNames.sessionStartHook)")
         }
 
         let expectedVersion = MCSVersion.current

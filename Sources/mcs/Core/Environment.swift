@@ -28,7 +28,7 @@ struct Environment: Sendable {
         let home = home ?? URL(fileURLWithPath: NSHomeDirectory())
         self.homeDirectory = home
 
-        let claudeDir = home.appendingPathComponent(".claude")
+        let claudeDir = home.appendingPathComponent(Constants.FileNames.claudeDirectory)
         self.claudeDirectory = claudeDir
         self.claudeJSON = home.appendingPathComponent(".claude.json")
         self.claudeSettings = claudeDir.appendingPathComponent("settings.json")

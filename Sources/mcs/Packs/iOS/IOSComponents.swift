@@ -51,7 +51,7 @@ enum IOSComponents {
         packIdentifier: "ios",
         dependencies: [],
         isRequired: true,
-        installAction: .gitignoreEntries(entries: [".xcodebuildmcp"])
+        installAction: .gitignoreEntries(entries: [IOSConstants.FileNames.xcodeBuildMCPDirectory])
     )
 
     static let all: [ComponentDefinition] = [

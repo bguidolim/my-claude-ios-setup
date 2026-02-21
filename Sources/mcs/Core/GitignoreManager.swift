@@ -7,9 +7,9 @@ struct GitignoreManager: Sendable {
 
     /// Core entries managed by mcs (not pack-specific).
     static let coreEntries: [String] = [
-        ".claude",
+        Constants.FileNames.claudeDirectory,
         "*.local.*",
-        ".claude/memories/",
+        "\(Constants.FileNames.claudeDirectory)/memories/",
     ]
 
     /// Resolve the global gitignore file path.

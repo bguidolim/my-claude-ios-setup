@@ -139,8 +139,8 @@ struct SettingsOwnership: Sendable {
             "env.ANTHROPIC_DEFAULT_HAIKU_MODEL",
             "env.CLAUDE_CODE_DISABLE_AUTO_MEMORY",
             "permissions.defaultMode",
-            "hooks.SessionStart",
-            "hooks.UserPromptSubmit",
+            "hooks.\(Constants.Hooks.eventSessionStart)",
+            "hooks.\(Constants.Hooks.eventUserPromptSubmit)",
             "alwaysThinkingEnabled",
         ]
 

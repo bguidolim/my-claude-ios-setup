@@ -13,7 +13,7 @@ enum ProjectDetector {
             if fm.fileExists(atPath: current.appendingPathComponent(".git").path) {
                 return current
             }
-            if fm.fileExists(atPath: current.appendingPathComponent("CLAUDE.local.md").path) {
+            if fm.fileExists(atPath: current.appendingPathComponent(Constants.FileNames.claudeLocalMD).path) {
                 return current
             }
             current = current.deletingLastPathComponent()

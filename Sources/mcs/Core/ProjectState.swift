@@ -8,8 +8,8 @@ struct ProjectState {
 
     init(projectRoot: URL) {
         self.path = projectRoot
-            .appendingPathComponent(".claude")
-            .appendingPathComponent(".mcs-project")
+            .appendingPathComponent(Constants.FileNames.claudeDirectory)
+            .appendingPathComponent(Constants.FileNames.mcsProject)
         self.data = [:]
         load()
     }

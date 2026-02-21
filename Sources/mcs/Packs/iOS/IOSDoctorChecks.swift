@@ -63,7 +63,7 @@ struct XcodeBuildMCPServerCheck: DoctorCheck, Sendable {
         let settingsURL = Environment().claudeJSON
         guard let data = try? Data(contentsOf: settingsURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let servers = json["mcpServers"] as? [String: Any],
+              let servers = json[Constants.JSONKeys.mcpServers] as? [String: Any],
               servers["XcodeBuildMCP"] != nil
         else {
             return .fail("XcodeBuildMCP not registered in ~/.claude.json")
@@ -84,7 +84,7 @@ struct SosumiServerCheck: DoctorCheck, Sendable {
         let settingsURL = Environment().claudeJSON
         guard let data = try? Data(contentsOf: settingsURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let servers = json["mcpServers"] as? [String: Any],
+              let servers = json[Constants.JSONKeys.mcpServers] as? [String: Any],
               servers["sosumi"] != nil
         else {
             return .fail("Sosumi not registered in ~/.claude.json")
@@ -126,7 +126,7 @@ struct XcodeBuildMCPConfigCheck: DoctorCheck, Sendable {
     func check() -> CheckResult {
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let configFile = cwd
-            .appendingPathComponent(".xcodebuildmcp")
+            .appendingPathComponent(IOSConstants.FileNames.xcodeBuildMCPDirectory)
             .appendingPathComponent("config.yaml")
 
         if FileManager.default.fileExists(atPath: configFile.path) {
@@ -151,7 +151,7 @@ struct CLAUDELocalIOSSectionCheck: DoctorCheck, Sendable {
 
     func check() -> CheckResult {
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let claudeLocal = cwd.appendingPathComponent("CLAUDE.local.md")
+        let claudeLocal = cwd.appendingPathComponent(Constants.FileNames.claudeLocalMD)
 
         guard let content = try? String(contentsOf: claudeLocal, encoding: .utf8) else {
             return .skip("CLAUDE.local.md not found — run 'mcs configure --pack ios'")

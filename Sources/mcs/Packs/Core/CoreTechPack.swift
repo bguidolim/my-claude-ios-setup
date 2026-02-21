@@ -42,6 +42,6 @@ struct CoreTechPack: TechPack {
     static func isContinuousLearningInstalled() -> Bool {
         let env = Environment()
         let manifest = Manifest(path: env.setupManifest)
-        return manifest.trackedPaths.contains("hooks/continuous-learning-activator.sh")
+        return manifest.trackedPaths.contains("hooks/\(Constants.FileNames.continuousLearningHook)")
     }
 }

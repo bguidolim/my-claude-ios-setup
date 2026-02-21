@@ -50,13 +50,13 @@ struct DoctorRunner {
                 packSource = "project: \(projectName ?? "unknown")"
             } else {
                 // 3. Fallback: infer from CLAUDE.local.md section markers
-                let claudeLocal = root.appendingPathComponent("CLAUDE.local.md")
+                let claudeLocal = root.appendingPathComponent(Constants.FileNames.claudeLocalMD)
                 let claudeLocalContent: String?
                 if FileManager.default.fileExists(atPath: claudeLocal.path) {
                     do {
                         claudeLocalContent = try String(contentsOf: claudeLocal, encoding: .utf8)
                     } catch {
-                        output.warn("Could not read CLAUDE.local.md: \(error.localizedDescription)")
+                        output.warn("Could not read \(Constants.FileNames.claudeLocalMD): \(error.localizedDescription)")
                         claudeLocalContent = nil
                     }
                 } else {
@@ -169,8 +169,8 @@ struct DoctorRunner {
         var checks: [any DoctorCheck] = []
 
         // Hook event registration in settings.json
-        checks.append(HookEventCheck(eventName: "SessionStart"))
-        checks.append(HookEventCheck(eventName: "UserPromptSubmit", isOptional: true))
+        checks.append(HookEventCheck(eventName: Constants.Hooks.eventSessionStart))
+        checks.append(HookEventCheck(eventName: Constants.Hooks.eventUserPromptSubmit, isOptional: true))
 
         // Continuous learning hook fragment
         checks.append(ContinuousLearningHookFragmentCheck())

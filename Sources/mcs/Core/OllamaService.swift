@@ -5,7 +5,7 @@ struct OllamaService: Sendable {
     let shell: ShellRunner
     let environment: Environment
 
-    private static let apiURL = "http://localhost:11434/api/tags"
+    private static let apiURL = Constants.Ollama.apiTagsURL
 
     /// Whether the Ollama API is responding.
     func isRunning() -> Bool {
@@ -14,8 +14,8 @@ struct OllamaService: Sendable {
 
     /// Whether the nomic-embed-text model is available.
     func hasEmbeddingModel() -> Bool {
-        let result = shell.run("/usr/bin/env", arguments: ["ollama", "list"])
-        return result.succeeded && result.stdout.contains("nomic-embed-text")
+        let result = shell.run(Constants.CLI.env, arguments: ["ollama", "list"])
+        return result.succeeded && result.stdout.contains(Constants.Ollama.embeddingModel)
     }
 
     /// Attempt to start Ollama via brew services, then macOS app.
@@ -37,7 +37,7 @@ struct OllamaService: Sendable {
     /// Returns the result of the pull, or nil if already installed.
     func pullEmbeddingModelIfNeeded() -> ShellResult? {
         guard !hasEmbeddingModel() else { return nil }
-        return shell.run("/usr/bin/env", arguments: ["ollama", "pull", "nomic-embed-text"])
+        return shell.run(Constants.CLI.env, arguments: ["ollama", "pull", Constants.Ollama.embeddingModel])
     }
 
     /// Poll until the API responds or timeout elapses.

@@ -462,7 +462,7 @@ struct Installer {
     }
 
     private func installMCPServer(_ config: MCPServerConfig) -> Bool {
-        guard shell.commandExists("claude") else {
+        guard shell.commandExists(Constants.CLI.claudeCommand) else {
             output.warn("Claude Code CLI not found, skipping MCP server")
             return false
         }
@@ -487,7 +487,7 @@ struct Installer {
     }
 
     private func installPlugin(_ fullName: String) -> Bool {
-        guard shell.commandExists("claude") else {
+        guard shell.commandExists(Constants.CLI.claudeCommand) else {
             output.warn("Claude Code CLI not found, skipping plugin")
             return false
         }
@@ -714,9 +714,9 @@ struct Installer {
                     output.warn("Start it manually with 'ollama serve' or open the Ollama app, then re-run.")
                 }
             }
-            output.dimmed("Pulling nomic-embed-text model...")
+            output.dimmed("Pulling \(Constants.Ollama.embeddingModel) model...")
             if let result = ollama.pullEmbeddingModelIfNeeded(), !result.succeeded {
-                output.warn("Could not pull nomic-embed-text: \(result.stderr)")
+                output.warn("Could not pull \(Constants.Ollama.embeddingModel): \(result.stderr)")
             }
         default:
             break
@@ -801,10 +801,10 @@ struct Installer {
     /// Inject the Ollama/docs-mcp memory sync fragment into session_start.sh
     /// using section markers for idempotent updates.
     private mutating func injectContinuousLearningHook() {
-        let hookFile = environment.hooksDirectory.appendingPathComponent("session_start.sh")
+        let hookFile = environment.hooksDirectory.appendingPathComponent(Constants.FileNames.sessionStartHook)
         HookInjector.inject(
             fragment: CoreComponents.continuousLearningHookFragment,
-            identifier: "learning",
+            identifier: Constants.Hooks.continuousLearningFragmentID,
             into: hookFile,
             backup: &backup,
             output: output
@@ -814,7 +814,7 @@ struct Installer {
     /// Register the UserPromptSubmit hook for the continuous learning activator in settings.json.
     private func registerContinuousLearningSettings() {
         let settingsPath = environment.claudeSettings
-        let activatorCommand = "bash ~/.claude/hooks/continuous-learning-activator.sh"
+        let activatorCommand = "bash ~/.claude/hooks/\(Constants.FileNames.continuousLearningHook)"
 
         do {
             var settings = try Settings.load(from: settingsPath)
@@ -824,7 +824,7 @@ struct Installer {
             }
 
             // Check if already registered
-            let existing = settings.hooks?["UserPromptSubmit"] ?? []
+            let existing = settings.hooks?[Constants.Hooks.eventUserPromptSubmit] ?? []
             let alreadyRegistered = existing.contains { group in
                 group.hooks?.contains { $0.command == activatorCommand } ?? false
             }
@@ -834,7 +834,7 @@ struct Installer {
                     matcher: "",
                     hooks: [Settings.HookEntry(type: "command", command: activatorCommand)]
                 )
-                settings.hooks?["UserPromptSubmit", default: []].append(hookGroup)
+                settings.hooks?[Constants.Hooks.eventUserPromptSubmit, default: []].append(hookGroup)
                 try settings.save(to: settingsPath)
                 output.dimmed("Registered continuous learning hook in settings")
             }

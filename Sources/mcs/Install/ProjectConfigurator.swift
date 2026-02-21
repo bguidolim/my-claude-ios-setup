@@ -147,7 +147,7 @@ struct ProjectConfigurator {
         values: [String: String]
     ) throws {
         let version = MCSVersion.current
-        let claudeLocalPath = projectPath.appendingPathComponent("CLAUDE.local.md")
+        let claudeLocalPath = projectPath.appendingPathComponent(Constants.FileNames.claudeLocalMD)
         let fm = FileManager.default
 
         // Separate core section from other sections
@@ -222,7 +222,7 @@ struct ProjectConfigurator {
         let fm = FileManager.default
         let serenaMemories = projectPath.appendingPathComponent(".serena")
             .appendingPathComponent("memories")
-        let newMemories = projectPath.appendingPathComponent(".claude")
+        let newMemories = projectPath.appendingPathComponent(Constants.FileNames.claudeDirectory)
             .appendingPathComponent("memories")
 
         guard fm.fileExists(atPath: serenaMemories.path) else { return }
@@ -265,7 +265,7 @@ struct ProjectConfigurator {
 
         var content = try String(contentsOf: projectGitignore, encoding: .utf8)
         var added: [String] = []
-        for entry in [".claude/memories/", ".claude/.mcs-project"] {
+        for entry in ["\(Constants.FileNames.claudeDirectory)/memories/", "\(Constants.FileNames.claudeDirectory)/\(Constants.FileNames.mcsProject)"] {
             if !content.contains(entry) {
                 if !content.hasSuffix("\n") { content += "\n" }
                 content += "\(entry)\n"

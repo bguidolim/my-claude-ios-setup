@@ -206,6 +206,7 @@ struct CLIOutput: Sendable {
         write("\n")
 
         for (index, item) in items.enumerated() {
+            if index > 0 { write("\n") }
             let isCursor = index == cursor
             let pointer = isCursor ? "\(cyan)\u{203A}\(reset)" : " "
             let nameStyle = isCursor
@@ -224,8 +225,8 @@ struct CLIOutput: Sendable {
         items: [(name: String, description: String)],
         cursor: Int
     ) {
-        // title line + blank before items + items (2 lines each) + blank + hint
-        let lineCount = 1 + 1 + (items.count * 2) + 1 + 1
+        // title line + blank before items + items (2 lines each) + separators between items + blank + hint
+        let lineCount = 1 + 1 + (items.count * 2) + max(items.count - 1, 0) + 1 + 1
         // +1 for the leading blank line from renderSingleSelectList
         write("\u{1B}[\(lineCount + 1)A")
         write("\u{1B}[0J")
@@ -242,6 +243,7 @@ struct CLIOutput: Sendable {
         write("\n")
 
         for (index, item) in items.enumerated() {
+            if index > 0 { write("\n") }
             let num = index + 1
             write("  [\(num)] \(bold)\(item.name)\(reset)\n")
             write("      \(dim)\(item.description)\(reset)\n")

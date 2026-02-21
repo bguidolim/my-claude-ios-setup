@@ -131,7 +131,7 @@ struct PackInstaller {
     }
 
     private func installMCPServer(_ config: MCPServerConfig) -> Bool {
-        guard shell.commandExists("claude") else {
+        guard shell.commandExists(Constants.CLI.claudeCommand) else {
             output.warn("Claude Code CLI not found, skipping MCP server")
             return false
         }
@@ -155,7 +155,7 @@ struct PackInstaller {
     }
 
     private func installPlugin(_ fullName: String) -> Bool {
-        guard shell.commandExists("claude") else {
+        guard shell.commandExists(Constants.CLI.claudeCommand) else {
             output.warn("Claude Code CLI not found, skipping plugin")
             return false
         }
@@ -190,9 +190,9 @@ struct PackInstaller {
                     output.warn("Start it manually with 'ollama serve' or open the Ollama app, then re-run.")
                 }
             }
-            output.dimmed("Pulling nomic-embed-text model...")
+            output.dimmed("Pulling \(Constants.Ollama.embeddingModel) model...")
             if let result = ollama.pullEmbeddingModelIfNeeded(), !result.succeeded {
-                output.warn("Could not pull nomic-embed-text: \(result.stderr)")
+                output.warn("Could not pull \(Constants.Ollama.embeddingModel): \(result.stderr)")
             }
         default:
             break
@@ -214,7 +214,7 @@ struct PackInstaller {
             do {
                 let data = try Data(contentsOf: environment.claudeJSON)
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let servers = json?["mcpServers"] as? [String: Any]
+                let servers = json?[Constants.JSONKeys.mcpServers] as? [String: Any]
                 return servers?[config.name] != nil
             } catch {
                 return false
@@ -235,7 +235,7 @@ struct PackInstaller {
             case "core.homebrew":
                 return shell.commandExists("brew")
             case "core.claude-code":
-                return shell.commandExists("claude")
+                return shell.commandExists(Constants.CLI.claudeCommand)
             default:
                 return false
             }
