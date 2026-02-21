@@ -19,7 +19,6 @@ extension ComponentDefinition {
                 name: displayName,
                 section: type.doctorSection,
                 command: package,
-                fixAction: "brew install \(package)",
                 isOptional: !isRequired
             )
 
@@ -106,6 +105,31 @@ struct SkillFreshnessCheck: DoctorCheck, Sendable {
         if !drifted.isEmpty {
             return .warn("drifted: \(drifted.joined(separator: ", ")) — run 'mcs install' to refresh")
         }
+
+        // Check if the bundled source has been updated since last install.
+        // This catches the case where manifest and installed match (both from a previous version)
+        // but the current binary ships with updated source.
+        if let resourceURL = Bundle.module.url(forResource: "Resources", withExtension: nil)?
+            .appendingPathComponent(skillSource),
+           FileManager.default.fileExists(atPath: resourceURL.path),
+           let sourceHashes = try? Manifest.directoryFileHashes(at: resourceURL) {
+            var sourceOutdated: [String] = []
+            for entry in sourceHashes {
+                let manifestPath = "\(skillSource)/\(entry.relativePath)"
+                if let manifestHash = manifest.sourceHash(for: manifestPath) {
+                    if manifestHash != entry.hash {
+                        sourceOutdated.append(entry.relativePath)
+                    }
+                } else {
+                    // New file in bundled source not in manifest — source has been updated
+                    sourceOutdated.append(entry.relativePath)
+                }
+            }
+            if !sourceOutdated.isEmpty {
+                return .warn("source updated in new mcs version — run 'mcs install' to refresh")
+            }
+        }
+
         return .pass("present, up to date")
     }
 

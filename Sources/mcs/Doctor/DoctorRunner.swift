@@ -1,6 +1,11 @@
 import Foundation
 
 /// Orchestrates all doctor checks grouped by section, with optional fix mode.
+///
+/// **Scope of `--fix`**: Cleanup, migration, and trivial repairs only.
+/// Additive operations (install/register/copy) are deferred to `mcs install`
+/// because only install manages the manifest and records file hashes.
+/// See CoreDoctorChecks.swift header for the full responsibility boundary.
 struct DoctorRunner {
     let fixMode: Bool
     /// Explicit pack filter. If nil, uses packs recorded in the manifest.

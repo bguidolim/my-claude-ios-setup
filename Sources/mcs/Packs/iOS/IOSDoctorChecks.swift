@@ -1,6 +1,7 @@
 import Foundation
 
 /// Doctor checks specific to the iOS tech pack.
+/// See CoreDoctorChecks.swift header for fix() responsibility boundaries.
 enum IOSDoctorChecks {
     /// Pack-level checks that cannot be auto-derived from components.
     /// XcodeBuildMCPServerCheck and SosumiServerCheck are now auto-derived
@@ -71,20 +72,7 @@ struct XcodeBuildMCPServerCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let shell = ShellRunner(environment: Environment())
-        let claude = ClaudeIntegration(shell: shell)
-        let result = claude.mcpAdd(
-            name: "XcodeBuildMCP",
-            arguments: [
-                "--",
-                "npx", "-y", "xcodebuildmcp@latest", "mcp",
-                "-e", "XCODEBUILDMCP_SENTRY_DISABLED=1",
-            ]
-        )
-        if result.succeeded {
-            return .fixed("Registered XcodeBuildMCP MCP server")
-        }
-        return .failed("Could not register: \(result.stderr)")
+        .notFixable("Run 'mcs install' to register MCP servers")
     }
 }
 
@@ -105,35 +93,7 @@ struct SosumiServerCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let settingsURL = Environment().claudeJSON
-
-        // Sosumi uses HTTP transport — need to add it directly to ~/.claude.json
-        guard let data = try? Data(contentsOf: settingsURL),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            return .failed("Cannot read ~/.claude.json")
-        }
-
-        var servers = json["mcpServers"] as? [String: Any] ?? [:]
-        servers["sosumi"] = [
-            "type": "http",
-            "url": "https://sosumi.ai/mcp",
-        ]
-        json["mcpServers"] = servers
-
-        guard let updated = try? JSONSerialization.data(
-            withJSONObject: json,
-            options: [.prettyPrinted, .sortedKeys]
-        ) else {
-            return .failed("Cannot serialize ~/.claude.json")
-        }
-
-        do {
-            try updated.write(to: settingsURL, options: .atomic)
-            return .fixed("Registered Sosumi MCP server")
-        } catch {
-            return .failed("Cannot write ~/.claude.json: \(error.localizedDescription)")
-        }
+        .notFixable("Run 'mcs install' to register MCP servers")
     }
 }
 
@@ -153,12 +113,7 @@ struct XcodeBuildMCPSkillCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let result = ShellRunner(environment: Environment())
-            .shell("npx -y skills add cameroncooke/xcodebuildmcp -g -a claude-code -y")
-        if result.succeeded {
-            return .fixed("Installed xcodebuildmcp skill")
-        }
-        return .failed("Could not install: \(result.stderr)")
+        .notFixable("Run 'mcs install' to install skills")
     }
 }
 

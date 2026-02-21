@@ -36,6 +36,11 @@ struct Manifest: Sendable {
         Array(entries.keys).sorted()
     }
 
+    /// Get the recorded hash for a source path (used for freshness comparison against bundled source).
+    func sourceHash(for relativePath: String) -> String? {
+        entries[relativePath]
+    }
+
     /// The SCRIPT_DIR recorded in the manifest (points to the source repo).
     var scriptDir: String? {
         metadata["SCRIPT_DIR"]

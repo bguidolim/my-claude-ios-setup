@@ -34,7 +34,7 @@ enum CoreComponents {
             command: "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
         ),
         supplementaryChecks: [
-            CommandCheck(name: "Homebrew", section: "Dependencies", command: "brew", fixAction: nil),
+            CommandCheck(name: "Homebrew", section: "Dependencies", command: "brew"),
         ]
     )
 
@@ -93,7 +93,7 @@ enum CoreComponents {
         isRequired: false,
         installAction: .shellCommand(command: "brew install --cask claude-code"),
         supplementaryChecks: [
-            CommandCheck(name: "Claude Code", section: "Dependencies", command: "claude", fixAction: nil),
+            CommandCheck(name: "Claude Code", section: "Dependencies", command: "claude"),
         ]
     )
 

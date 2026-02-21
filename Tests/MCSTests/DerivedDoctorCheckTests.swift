@@ -165,8 +165,7 @@ struct DerivedDoctorCheckTests {
     @Test("allDoctorChecks returns derived + supplementary")
     func allDoctorChecksCombines() {
         let supplementary = CommandCheck(
-            name: "test", section: "Dependencies", command: "test", fixAction: nil
-        )
+            name: "test", section: "Dependencies", command: "test"        )
         let component = ComponentDefinition(
             id: "test.combined",
             displayName: "TestPkg",
@@ -186,8 +185,7 @@ struct DerivedDoctorCheckTests {
     @Test("shellCommand with supplementaryChecks returns only supplementary")
     func shellCommandWithSupplementary() {
         let supplementary = CommandCheck(
-            name: "brew", section: "Dependencies", command: "brew", fixAction: nil
-        )
+            name: "brew", section: "Dependencies", command: "brew"        )
         let component = ComponentDefinition(
             id: "test.shell",
             displayName: "test",

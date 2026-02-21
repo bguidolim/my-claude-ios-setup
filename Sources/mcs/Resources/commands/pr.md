@@ -31,3 +31,5 @@ Arguments: $ARGUMENTS (optional — additional instructions for this PR, e.g. `t
 6. **Report** the PR URL.
 
 7. **Use** the skill continuous-learning.
+
+<!-- mcs:managed -->

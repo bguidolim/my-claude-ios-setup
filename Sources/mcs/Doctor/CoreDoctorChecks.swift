@@ -1,12 +1,26 @@
 import Foundation
 
 // MARK: - Check implementations
+//
+// ## fix() Responsibility Boundaries
+//
+// `doctor --fix` handles only:
+// - **Cleanup**: Removing deprecated components (MCP servers, plugins, legacy files)
+// - **Migration**: One-time data moves (memories, state files, shell RC entries)
+// - **Trivial repairs**: Permission fixes (chmod), gitignore additions (idempotent)
+//
+// `doctor --fix` does NOT handle:
+// - **Additive operations**: Installing packages, registering servers, copying hooks/skills/commands.
+//   These are `mcs install`'s responsibility because only install manages the manifest
+//   (the system's source of truth for what's installed and at what hash).
+//
+// This separation prevents inconsistent state where a file is present but
+// the manifest doesn't know about it, causing repeated false doctor warnings.
 
 struct CommandCheck: DoctorCheck, Sendable {
     let name: String
     let section: String
     let command: String
-    let fixAction: String?
     var isOptional: Bool = false
 
     func check() -> CheckResult {
@@ -21,12 +35,7 @@ struct CommandCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        guard let action = fixAction else {
-            return .notFixable("Install \(name) manually")
-        }
-        let shell = ShellRunner(environment: Environment())
-        let result = shell.shell(action)
-        return result.succeeded ? .fixed("installed \(name)") : .failed(result.stderr)
+        .notFixable("Run 'mcs install' to install dependencies")
     }
 }
 
@@ -55,27 +64,7 @@ struct OllamaRuntimeCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let env = Environment()
-        let shell = ShellRunner(environment: env)
-        let ollama = OllamaService(shell: shell, environment: env)
-
-        guard shell.commandExists("ollama") else {
-            return .notFixable("Install Ollama first")
-        }
-
-        guard ollama.start() else {
-            return .failed("Ollama did not start — try 'ollama serve' or open the Ollama app manually")
-        }
-
-        if let result = ollama.pullEmbeddingModelIfNeeded(), !result.succeeded {
-            return .failed("Could not pull nomic-embed-text: \(result.stderr)")
-        }
-
-        // Verify the fix actually worked
-        if case .pass = check() {
-            return .fixed("Ollama running with nomic-embed-text")
-        }
-        return .failed("Ollama fix attempted but verification failed")
+        .notFixable("Run 'mcs install' to configure Ollama")
     }
 }
 
@@ -134,13 +123,7 @@ struct PluginCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        let shell = ShellRunner(environment: Environment())
-        let claude = ClaudeIntegration(shell: shell)
-        let result = claude.pluginInstall(fullName: pluginName)
-        if result.succeeded {
-            return .fixed("installed \(name)")
-        }
-        return .failed(result.stderr)
+        .notFixable("Run 'mcs install' to install plugins")
     }
 }
 
@@ -165,6 +148,9 @@ struct HookCheck: DoctorCheck, Sendable {
     var name: String { hookName }
     var section: String { "Hooks" }
 
+    /// The marker that v2 hooks contain for fragment injection.
+    static let extensionMarker = "# --- mcs:hook-extensions ---"
+
     func check() -> CheckResult {
         let hookPath = Environment().hooksDirectory.appendingPathComponent(hookName)
         guard FileManager.default.fileExists(atPath: hookPath.path) else {
@@ -173,23 +159,36 @@ struct HookCheck: DoctorCheck, Sendable {
         guard FileManager.default.isExecutableFile(atPath: hookPath.path) else {
             return .fail("not executable")
         }
+        // Verify hook has the extension marker (required for fragment injection)
+        if let content = try? String(contentsOf: hookPath, encoding: .utf8),
+           !content.contains(Self.extensionMarker) {
+            return .fail("legacy hook — missing extension marker, needs update")
+        }
         return .pass("present and executable")
     }
 
     func fix() -> FixResult {
-        let hookPath = Environment().hooksDirectory.appendingPathComponent(hookName)
-        if FileManager.default.fileExists(atPath: hookPath.path) {
+        let env = Environment()
+        let hookPath = env.hooksDirectory.appendingPathComponent(hookName)
+        let fm = FileManager.default
+
+        // Only fix permissions — additive operations (installing/replacing hooks) are
+        // handled by `mcs install`, which also records manifest hashes.
+        guard fm.fileExists(atPath: hookPath.path) else {
+            return .notFixable("Run 'mcs install' to install hooks")
+        }
+
+        if !fm.isExecutableFile(atPath: hookPath.path) {
             do {
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o755],
-                    ofItemAtPath: hookPath.path
-                )
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookPath.path)
                 return .fixed("made executable")
             } catch {
                 return .failed(error.localizedDescription)
             }
         }
-        return .notFixable("Run 'mcs install' to install hooks")
+
+        // Legacy hook (exists, executable, but missing marker)
+        return .notFixable("Run 'mcs install' to replace legacy hook with current version")
     }
 }
 
@@ -345,6 +344,9 @@ struct CommandFileCheck: DoctorCheck, Sendable {
     let section = "Commands"
     let path: URL
 
+    /// The marker that v2 managed command files contain.
+    static let managedMarker = "<!-- mcs:managed -->"
+
     func check() -> CheckResult {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path.path) else {
@@ -355,6 +357,10 @@ struct CommandFileCheck: DoctorCheck, Sendable {
         }
         if content.contains("__BRANCH_PREFIX__") {
             return .warn("present but contains unreplaced __BRANCH_PREFIX__ placeholder")
+        }
+        // Verify file has the managed marker (v2+ format)
+        if !content.contains(Self.managedMarker) {
+            return .warn("legacy format — run 'mcs install' to update")
         }
         return .pass("present")
     }
