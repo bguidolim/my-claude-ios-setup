@@ -3,7 +3,7 @@ import Foundation
 /// Registry of all available tech packs.
 /// Immutable after initialization — all packs are compiled-in.
 struct TechPackRegistry: Sendable {
-    static let shared = TechPackRegistry(packs: [IOSTechPack()])
+    static let shared = TechPackRegistry(packs: [CoreTechPack(), IOSTechPack()])
 
     private let packs: [any TechPack]
 

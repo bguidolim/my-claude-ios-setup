@@ -63,15 +63,7 @@ struct ConfigureCommand: ParsableCommand {
             output.info("Project: \(projectPath.path)")
             output.info("Tech pack: \(resolvedPack.displayName)")
 
-            output.plain("")
-            output.plain("  Your name for branch naming (e.g. bruno \u{2192} bruno/ABC-123-fix-login)")
-            let branchPrefix = output.promptInline("Branch prefix", default: "feature")
-
-            try configurator.configure(
-                at: projectPath,
-                pack: resolvedPack,
-                branchPrefix: branchPrefix
-            )
+            try configurator.configure(at: projectPath, pack: resolvedPack)
 
             output.header("Done")
             output.info("Run 'mcs doctor' to verify configuration")

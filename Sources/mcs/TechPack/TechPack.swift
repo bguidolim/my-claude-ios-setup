@@ -3,7 +3,6 @@ import Foundation
 /// Context provided to tech packs during project configuration
 struct ProjectConfigContext: Sendable {
     let projectPath: URL
-    let branchPrefix: String
     let repoName: String
 }
 

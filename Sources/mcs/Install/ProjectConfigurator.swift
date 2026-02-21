@@ -9,7 +9,7 @@ struct ProjectConfigurator {
     let shell: ShellRunner
 
     /// Full interactive configure flow — shows header, pack selection,
-    /// branch prefix prompt, runs configure, and shows completion.
+    /// runs configure, and shows completion.
     /// Used by both `mcs configure` (no --pack) and post-install inline configure.
     func interactiveConfigure(at projectPath: URL) throws {
         output.header("Configure Project")
@@ -30,22 +30,16 @@ struct ProjectConfigurator {
 
         output.info("Tech pack: \(selectedPack.displayName)")
 
-        output.plain("")
-        output.plain("  Your name for branch naming (e.g. bruno \u{2192} bruno/ABC-123-fix-login)")
-        let branchPrefix = output.promptInline("Branch prefix", default: "feature")
-
-        try configure(at: projectPath, pack: selectedPack, branchPrefix: branchPrefix)
+        try configure(at: projectPath, pack: selectedPack)
 
         output.header("Done")
         output.info("Run 'mcs doctor' to verify configuration")
     }
 
     /// Configure a project at the given path with the specified pack.
-    /// This is the core logic extracted from ConfigureCommand.run().
     func configure(
         at projectPath: URL,
-        pack: any TechPack,
-        branchPrefix: String
+        pack: any TechPack
     ) throws {
         // Auto-install missing pack components
         var packInstaller = PackInstaller(
@@ -67,54 +61,108 @@ struct ProjectConfigurator {
             repoName = projectPath.lastPathComponent
         }
 
-        // Prepare template values
-        let values: [String: String] = [
-            "REPO_NAME": repoName,
-            "BRANCH_PREFIX": branchPrefix,
-        ]
+        // Gather all template contributions
+        let allContributions = gatherTemplateContributions(
+            projectPath: projectPath,
+            pack: pack
+        )
 
-        // Load core template from resources
-        guard let resourceURL = Bundle.module.url(
-            forResource: "Resources",
-            withExtension: nil
-        ) else {
-            throw MCSError.fileOperationFailed(
-                path: "Resources",
-                reason: "Resources bundle not found"
+        // Only create/update CLAUDE.local.md if there's content to add
+        if !allContributions.isEmpty {
+            let values: [String: String] = ["REPO_NAME": repoName]
+            try writeClaudeLocal(
+                at: projectPath,
+                contributions: allContributions,
+                values: values
             )
+        } else {
+            output.info("No template sections to add — skipping CLAUDE.local.md")
         }
 
-        let coreTemplatePath = resourceURL
-            .appendingPathComponent("templates")
-            .appendingPathComponent("core")
-            .appendingPathComponent("CLAUDE.local.md")
-        let coreTemplate = try String(contentsOf: coreTemplatePath, encoding: .utf8)
+        // Memory migration from Serena
+        migrateSerenaMemories(at: projectPath)
 
-        // Strip existing markers from the template file
-        let strippedCore = coreTemplate
-            .replacingOccurrences(
-                of: #"<!-- mcs:begin core v[0-9]+\.[0-9]+\.[0-9]+ -->\n"#,
-                with: "",
-                options: .regularExpression
-            )
-            .replacingOccurrences(of: "\n<!-- mcs:end core -->", with: "")
-            .replacingOccurrences(of: "<!-- mcs:end core -->\n", with: "")
+        // Add .claude entries to project .gitignore
+        try updateProjectGitignore(at: projectPath)
 
-        // Gather pack template contributions
-        let packContributions = pack.templates
+        // Run pack-specific configuration
+        let context = ProjectConfigContext(
+            projectPath: projectPath,
+            repoName: repoName
+        )
+        try pack.configureProject(at: projectPath, context: context)
+        output.success("Applied \(pack.displayName) configuration")
 
+        // Write per-project state file
+        var projectState = ProjectState(projectRoot: projectPath)
+        projectState.recordPack(pack.identifier)
+        do {
+            try projectState.save()
+            output.success("Updated .claude/.mcs-project")
+        } catch {
+            output.warn("Could not write .mcs-project: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Template Gathering
+
+    /// Collect all template contributions from CoreTechPack, symlink detection, and the selected pack.
+    private func gatherTemplateContributions(
+        projectPath: URL,
+        pack: any TechPack
+    ) -> [TemplateContribution] {
+        var contributions: [TemplateContribution] = []
+
+        // Symlink detection — project-specific, cannot be in TechPack.templates
+        let claudeMD = projectPath.appendingPathComponent("CLAUDE.md")
+        let fm = FileManager.default
+        if fm.fileExists(atPath: claudeMD.path),
+           (try? fm.destinationOfSymbolicLink(atPath: claudeMD.path)) != nil {
+            contributions.append(TemplateContribution(
+                sectionIdentifier: "core",
+                templateContent: CoreTemplates.symlinkNote,
+                placeholders: []
+            ))
+        }
+
+        // Core conditional sections (continuous learning KB search)
+        let corePack = CoreTechPack()
+        contributions.append(contentsOf: corePack.templates)
+
+        // Selected pack sections (e.g., iOS) — skip if Core is the selected pack
+        // since we already gathered its templates above.
+        if pack.identifier != corePack.identifier {
+            contributions.append(contentsOf: pack.templates)
+        }
+
+        return contributions
+    }
+
+    // MARK: - CLAUDE.local.md Writing
+
+    /// Compose and write CLAUDE.local.md from template contributions.
+    private func writeClaudeLocal(
+        at projectPath: URL,
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) throws {
         let version = MCSVersion.current
         let claudeLocalPath = projectPath.appendingPathComponent("CLAUDE.local.md")
         let fm = FileManager.default
 
-        // Check if file already exists and preserve user content
+        // Separate core section from other sections
+        let coreContribution = contributions.first { $0.sectionIdentifier == "core" }
+        let otherContributions = contributions.filter { $0.sectionIdentifier != "core" }
+
+        let coreContent = coreContribution?.templateContent ?? ""
+
         let composed: String
         if fm.fileExists(atPath: claudeLocalPath.path) {
             let existingContent = try String(contentsOf: claudeLocalPath, encoding: .utf8)
             let userContent = TemplateComposer.extractUserContent(from: existingContent)
 
-            // Build fresh sections
-            let processedCore = TemplateEngine.substitute(template: strippedCore, values: values)
+            // Update core section
+            let processedCore = TemplateEngine.substitute(template: coreContent, values: values)
             var updated = TemplateComposer.replaceSection(
                 in: existingContent,
                 sectionIdentifier: "core",
@@ -122,8 +170,8 @@ struct ProjectConfigurator {
                 newVersion: version
             )
 
-            // Update pack sections
-            for contribution in packContributions {
+            // Update other sections
+            for contribution in otherContributions {
                 let processedContent = TemplateEngine.substitute(
                     template: contribution.templateContent,
                     values: values
@@ -149,8 +197,8 @@ struct ProjectConfigurator {
             composed = updated
         } else {
             composed = TemplateComposer.compose(
-                coreContent: strippedCore,
-                packContributions: packContributions,
+                coreContent: coreContent,
+                packContributions: otherContributions,
                 values: values
             )
         }
@@ -166,16 +214,22 @@ struct ProjectConfigurator {
         }
         try composed.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
         output.success("Generated CLAUDE.local.md")
+    }
 
-        // Memory migration from Serena
+    // MARK: - Memory Migration
+
+    private func migrateSerenaMemories(at projectPath: URL) {
+        let fm = FileManager.default
         let serenaMemories = projectPath.appendingPathComponent(".serena")
             .appendingPathComponent("memories")
         let newMemories = projectPath.appendingPathComponent(".claude")
             .appendingPathComponent("memories")
 
-        if fm.fileExists(atPath: serenaMemories.path) {
-            output.info("Found .serena/memories/ -- migrating to .claude/memories/")
+        guard fm.fileExists(atPath: serenaMemories.path) else { return }
 
+        output.info("Found .serena/memories/ -- migrating to .claude/memories/")
+
+        do {
             if !fm.fileExists(atPath: newMemories.path) {
                 try fm.createDirectory(at: newMemories, withIntermediateDirectories: true)
             }
@@ -196,43 +250,31 @@ struct ProjectConfigurator {
 
             output.success("Migrated \(migrated) memory file(s) to .claude/memories/")
             output.info("Original files preserved in .serena/memories/ -- delete manually after verification")
-        }
-
-        // Add .claude entries to project .gitignore
-        let projectGitignore = projectPath.appendingPathComponent(".gitignore")
-        if fm.fileExists(atPath: projectGitignore.path) {
-            var content = try String(contentsOf: projectGitignore, encoding: .utf8)
-            var added: [String] = []
-            for entry in [".claude/memories/", ".claude/.mcs-project"] {
-                if !content.contains(entry) {
-                    if !content.hasSuffix("\n") { content += "\n" }
-                    content += "\(entry)\n"
-                    added.append(entry)
-                }
-            }
-            if !added.isEmpty {
-                try content.write(to: projectGitignore, atomically: true, encoding: .utf8)
-                output.success("Added \(added.joined(separator: ", ")) to project .gitignore")
-            }
-        }
-
-        // Run pack-specific configuration
-        let context = ProjectConfigContext(
-            projectPath: projectPath,
-            branchPrefix: branchPrefix,
-            repoName: repoName
-        )
-        try pack.configureProject(at: projectPath, context: context)
-        output.success("Applied \(pack.displayName) configuration")
-
-        // Write per-project state file
-        var projectState = ProjectState(projectRoot: projectPath)
-        projectState.recordPack(pack.identifier)
-        do {
-            try projectState.save()
-            output.success("Updated .claude/.mcs-project")
         } catch {
-            output.warn("Could not write .mcs-project: \(error.localizedDescription)")
+            output.warn("Memory migration failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Gitignore
+
+    private func updateProjectGitignore(at projectPath: URL) throws {
+        let fm = FileManager.default
+        let projectGitignore = projectPath.appendingPathComponent(".gitignore")
+
+        guard fm.fileExists(atPath: projectGitignore.path) else { return }
+
+        var content = try String(contentsOf: projectGitignore, encoding: .utf8)
+        var added: [String] = []
+        for entry in [".claude/memories/", ".claude/.mcs-project"] {
+            if !content.contains(entry) {
+                if !content.hasSuffix("\n") { content += "\n" }
+                content += "\(entry)\n"
+                added.append(entry)
+            }
+        }
+        if !added.isEmpty {
+            try content.write(to: projectGitignore, atomically: true, encoding: .utf8)
+            output.success("Added \(added.joined(separator: ", ")) to project .gitignore")
         }
     }
 }
