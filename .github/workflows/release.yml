@@ -54,8 +54,8 @@ jobs:
           cat > Formula/my-claude-setup.rb << FORMULA
           class MyClaudeSetup < Formula
             desc "Configure Claude Code with MCP servers, plugins, skills, and hooks"
-            homepage "https://github.com/bguidolim/my-claude-setup"
-            url "https://github.com/bguidolim/my-claude-setup/releases/download/${TAG_NAME}/mcs-${TAG_NAME}-macos-universal.tar.gz"
+            homepage "https://github.com/bguidolim/MyClaudeSetup"
+            url "https://github.com/bguidolim/MyClaudeSetup/releases/download/${TAG_NAME}/mcs-${TAG_NAME}-macos-universal.tar.gz"
             sha256 "${SHA}"
             version "${VERSION}"
             license "MIT"
