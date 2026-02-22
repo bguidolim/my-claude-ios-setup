@@ -586,7 +586,7 @@ struct Installer {
                 ofItemAtPath: destURL.path
             )
 
-            recordManifest(&manifest, relativePath: source, sourceFile: sourceURL)
+            recordManifest(&manifest, relativePath: source, sourceFile: destURL)
             return true
         } catch {
             output.warn(error.localizedDescription)
@@ -618,7 +618,7 @@ struct Installer {
                 output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
             }
             try content.write(to: destURL, atomically: true, encoding: .utf8)
-            recordManifest(&manifest, relativePath: source, sourceFile: sourceURL)
+            recordManifest(&manifest, relativePath: source, sourceFile: destURL)
             return true
         } catch {
             output.warn(error.localizedDescription)
