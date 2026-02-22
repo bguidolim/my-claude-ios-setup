@@ -82,14 +82,17 @@ struct Manifest: Sendable {
     }
 
     /// Initialize the manifest with a source directory header.
+    /// Preserves existing file hash entries so that skipped (already-installed)
+    /// components retain their hash tracking across re-installs. Components that
+    /// are re-installed will overwrite their entries with fresh hashes.
     mutating func initialize(sourceDirectory: String) {
         let previousPacks = metadata["INSTALLED_PACKS"]
         metadata["SCRIPT_DIR"] = sourceDirectory
         // INSTALLED_COMPONENTS is cleared because it reflects the exact set chosen
         // during each install run (components can be deselected).
         // INSTALLED_PACKS is preserved because pack membership is additive across runs.
+        // File hash entries are preserved so skipped components keep their tracking.
         metadata.removeValue(forKey: "INSTALLED_COMPONENTS")
-        entries = [:]
         // Preserve installed packs across re-initialization
         if let previousPacks {
             metadata["INSTALLED_PACKS"] = previousPacks

@@ -210,6 +210,30 @@ struct ManifestTests {
         #expect(reloaded.installedComponents.isEmpty)
     }
 
+    @Test("Initialize preserves file hash entries")
+    func initializePreservesFileHashes() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        let sourceFile = tmpDir.appendingPathComponent("hook.sh")
+        try "#!/bin/bash\necho hello".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        // First install: record file hash
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/v1")
+        try manifest.record(relativePath: "hooks/session_start.sh", sourceFile: sourceFile)
+        try manifest.save()
+
+        // Re-initialize (simulates second install run)
+        var reloaded = Manifest(path: manifestFile)
+        reloaded.initialize(sourceDirectory: "/v2")
+
+        // File hash entries should be preserved
+        #expect(reloaded.trackedPaths.contains("hooks/session_start.sh"))
+        #expect(reloaded.check(relativePath: "hooks/session_start.sh", installedFile: sourceFile) == true)
+    }
+
     // MARK: - Persistence round-trip
 
     @Test("Metadata heuristic classifies file paths correctly")
