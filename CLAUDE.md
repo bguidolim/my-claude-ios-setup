@@ -79,6 +79,7 @@ mcs cleanup --force              # Delete backups without confirmation
 ### Install (`Sources/mcs/Install/`)
 - `Installer.swift` — 5-phase orchestrator (welcome, selection, summary, install, post-summary)
 - `CoreComponents.swift` — all core component definitions, feature bundles, hook fragments
+- `ComponentExecutor.swift` — dispatches individual install actions (brew packages, MCP servers, plugins, gitignore, hooks)
 - `SelectionState.swift` — tracks selected component IDs and branch prefix during install
 - `PackInstaller.swift` — auto-installs missing pack components during configure
 - `ProjectConfigurator.swift` — template composition, CLAUDE.local.md writing, Serena memory symlink, gitignore
@@ -103,10 +104,16 @@ mcs cleanup --force              # Delete backups without confirmation
 Bundled with the binary via SwiftPM `.copy()`:
 - `config/settings.json` — Claude settings template
 - `hooks/` — session_start.sh, continuous-learning-activator.sh
-- `skills/continuous-learning/` — knowledge extraction skill
+- `skills/continuous-learning/` — knowledge extraction skill (SKILL.md + references)
 - `commands/pr.md, commit.md` — /pr and /commit slash commands
-- `templates/core/` — core CLAUDE.local.md template
-- `templates/packs/ios/` — iOS CLAUDE.local.md section, xcodebuildmcp.yaml
+
+Note: CLAUDE.local.md templates are compiled-in as Swift string literals (`CoreTemplates.swift`, `IOSTemplates.swift`), not bundled resources.
+
+## Testing
+
+- Test files mirror source: `FooTests.swift` tests `Foo.swift`
+- Run a single test class: `swift test --filter MCSTests.FooTests`
+- Tests construct all state inline; no external fixtures or shared setup
 
 ## Key Design Decisions
 
