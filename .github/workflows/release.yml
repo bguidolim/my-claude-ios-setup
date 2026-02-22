@@ -21,9 +21,9 @@ jobs:
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          BINARY_PATH=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/mcs
+          BIN_DIR=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
           TARBALL="mcs-${TAG_NAME}-macos-universal.tar.gz"
-          tar -czf "${TARBALL}" -C "$(dirname "${BINARY_PATH}")" mcs
+          tar -czf "${TARBALL}" -C "${BIN_DIR}" mcs my-claude-setup_mcs.bundle
           shasum -a 256 "${TARBALL}" > SHA256SUMS
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
@@ -61,8 +61,10 @@ jobs:
             license "MIT"
 
             def install
-              bin.install "mcs"
-              bin.install_symlink "mcs" => "my-claude-setup"
+              libexec.install "mcs"
+              libexec.install "my-claude-setup_mcs.bundle"
+              bin.install_symlink libexec/"mcs"
+              bin.install_symlink libexec/"mcs" => "my-claude-setup"
             end
 
             test do
