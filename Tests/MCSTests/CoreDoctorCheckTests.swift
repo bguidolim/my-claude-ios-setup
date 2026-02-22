@@ -90,11 +90,6 @@ struct CommandFileCheckTests {
 
 @Suite("HookCheck")
 struct HookCheckTests {
-    @Test("extension marker constant matches hook template marker")
-    func extensionMarkerConstant() {
-        #expect(HookCheck.extensionMarker == "# --- mcs:hook-extensions ---")
-    }
-
     @Test("deriveDoctorCheck generates HookCheck for copyHook action")
     func derivedHookCheck() {
         let component = ComponentDefinition(

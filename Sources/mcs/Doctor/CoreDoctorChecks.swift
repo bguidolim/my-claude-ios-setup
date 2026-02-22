@@ -148,9 +148,6 @@ struct HookCheck: DoctorCheck, Sendable {
     var name: String { hookName }
     var section: String { "Hooks" }
 
-    /// The marker that v2 hooks contain for fragment injection.
-    static let extensionMarker = Constants.Hooks.extensionMarker
-
     func check() -> CheckResult {
         let hookPath = Environment().hooksDirectory.appendingPathComponent(hookName)
         guard FileManager.default.fileExists(atPath: hookPath.path) else {
@@ -158,11 +155,6 @@ struct HookCheck: DoctorCheck, Sendable {
         }
         guard FileManager.default.isExecutableFile(atPath: hookPath.path) else {
             return .fail("not executable")
-        }
-        // Verify hook has the extension marker (required for fragment injection)
-        if let content = try? String(contentsOf: hookPath, encoding: .utf8),
-           !content.contains(Self.extensionMarker) {
-            return .fail("legacy hook — missing extension marker, needs update")
         }
         return .pass("present and executable")
     }
@@ -187,8 +179,7 @@ struct HookCheck: DoctorCheck, Sendable {
             }
         }
 
-        // Legacy hook (exists, executable, but missing marker)
-        return .notFixable("Run 'mcs install' to replace legacy hook with current version")
+        return .notFixable("Run 'mcs install' to reinstall hooks")
     }
 }
 
