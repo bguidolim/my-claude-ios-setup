@@ -224,7 +224,7 @@ struct ProjectConfigurator {
     /// - If `.serena/memories` exists as real directory → copy files, delete, create symlink.
     /// - If `.serena/memories` doesn't exist → create `.serena/` if needed, create symlink.
     private func ensureSerenaMemoriesSymlink(at projectPath: URL) {
-        guard isSerenaMCPInstalled() else { return }
+        guard CoreTechPack.isSerenaInstalled() else { return }
 
         let fm = FileManager.default
         let serenaMemories = projectPath
@@ -291,17 +291,6 @@ struct ProjectConfigurator {
         } catch {
             output.warn("Could not create symlink: \(error.localizedDescription)")
         }
-    }
-
-    private func isSerenaMCPInstalled() -> Bool {
-        let claudeJSON = environment.claudeJSON
-        guard let data = try? Data(contentsOf: claudeJSON),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let mcpServers = json[Constants.JSONKeys.mcpServers] as? [String: Any]
-        else {
-            return false
-        }
-        return mcpServers[Constants.Serena.mcpServerName] != nil
     }
 
     // MARK: - Gitignore

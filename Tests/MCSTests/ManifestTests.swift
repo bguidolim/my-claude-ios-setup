@@ -165,6 +165,51 @@ struct ManifestTests {
         #expect(reloaded.installedPacks == Set(["ios"]))
     }
 
+    // MARK: - Installed components tracking
+
+    @Test("Record and retrieve installed components")
+    func installedComponents() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/test")
+
+        #expect(manifest.installedComponents.isEmpty)
+
+        manifest.recordInstalledComponent("core.serena")
+        manifest.recordInstalledComponent("core.docs-mcp-server")
+        #expect(manifest.installedComponents == Set(["core.serena", "core.docs-mcp-server"]))
+
+        // Duplicate insert is idempotent
+        manifest.recordInstalledComponent("core.serena")
+        #expect(manifest.installedComponents.count == 2)
+
+        try manifest.save()
+
+        // Reload preserves components
+        let loaded = Manifest(path: manifestFile)
+        #expect(loaded.installedComponents == Set(["core.serena", "core.docs-mcp-server"]))
+    }
+
+    @Test("Initialize clears installed components")
+    func initializeClearsComponents() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/v1")
+        manifest.recordInstalledComponent("core.serena")
+        try manifest.save()
+
+        // Re-initialize (simulates re-running install)
+        var reloaded = Manifest(path: manifestFile)
+        reloaded.initialize(sourceDirectory: "/v2")
+        #expect(reloaded.installedComponents.isEmpty)
+    }
+
     // MARK: - Persistence round-trip
 
     @Test("Metadata heuristic classifies file paths correctly")
@@ -178,6 +223,7 @@ struct ManifestTests {
         let content = """
         SCRIPT_DIR=/test/path
         INSTALLED_PACKS=ios,web
+        INSTALLED_COMPONENTS=core.serena,core.docs-mcp-server
         hooks/session_start.sh=abc123
         skills/continuous-learning=def456
         config/settings.json=ghi789
@@ -189,11 +235,14 @@ struct ManifestTests {
         // Metadata should be recognized
         #expect(manifest.scriptDir == "/test/path")
         #expect(manifest.installedPacks == Set(["ios", "web"]))
+        #expect(manifest.installedComponents == Set(["core.serena", "core.docs-mcp-server"]))
 
         // File entries should not be treated as metadata
         #expect(manifest.trackedPaths.contains("hooks/session_start.sh"))
         #expect(manifest.trackedPaths.contains("skills/continuous-learning"))
         #expect(manifest.trackedPaths.contains("config/settings.json"))
+        // Metadata should NOT appear in trackedPaths
+        #expect(!manifest.trackedPaths.contains("INSTALLED_COMPONENTS"))
     }
 
     @Test("Manifest save and reload preserves all entries")

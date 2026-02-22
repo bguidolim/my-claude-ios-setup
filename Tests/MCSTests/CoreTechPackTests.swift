@@ -91,4 +91,18 @@ struct CoreTemplatesTests {
     func continuousLearningContent() {
         #expect(CoreTemplates.continuousLearningSection.contains("search_docs"))
     }
+
+    @Test("Serena section mentions key symbolic tools")
+    func serenaContent() {
+        #expect(CoreTemplates.serenaSection.contains("replace_symbol_body"))
+        #expect(CoreTemplates.serenaSection.contains("find_symbol"))
+        #expect(CoreTemplates.serenaSection.contains("get_symbols_overview"))
+        #expect(CoreTemplates.serenaSection.contains("find_referencing_symbols"))
+    }
+
+    @Test("Serena section has no unreplaced placeholders")
+    func serenaNoPlaceholders() {
+        let unreplaced = TemplateEngine.findUnreplacedPlaceholders(in: CoreTemplates.serenaSection)
+        #expect(unreplaced.isEmpty)
+    }
 }

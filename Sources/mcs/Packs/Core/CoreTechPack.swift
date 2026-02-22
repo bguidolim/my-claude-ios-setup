@@ -28,6 +28,14 @@ struct CoreTechPack: TechPack {
             ))
         }
 
+        if Self.isSerenaInstalled() {
+            result.append(TemplateContribution(
+                sectionIdentifier: "serena",
+                templateContent: CoreTemplates.serenaSection,
+                placeholders: []
+            ))
+        }
+
         return result
     }
 
@@ -43,5 +51,27 @@ struct CoreTechPack: TechPack {
         let env = Environment()
         let manifest = Manifest(path: env.setupManifest)
         return manifest.trackedPaths.contains("hooks/\(Constants.FileNames.continuousLearningHook)")
+    }
+
+    /// Check whether Serena MCP server was installed.
+    /// Prefers `INSTALLED_COMPONENTS` manifest metadata (present after installs
+    /// that include component tracking). Falls back to checking claude.json
+    /// for users who installed before component tracking was added.
+    static func isSerenaInstalled() -> Bool {
+        let env = Environment()
+        let manifest = Manifest(path: env.setupManifest)
+
+        if manifest.installedComponents.contains("core.serena") {
+            return true
+        }
+
+        // Fallback: check claude.json for pre-component-tracking installs
+        guard let data = try? Data(contentsOf: env.claudeJSON),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let mcpServers = json[Constants.JSONKeys.mcpServers] as? [String: Any]
+        else {
+            return false
+        }
+        return mcpServers[Constants.Serena.mcpServerName] != nil
     }
 }

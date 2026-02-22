@@ -68,10 +68,27 @@ struct Manifest: Sendable {
         metadata["INSTALLED_PACKS"] = packs.sorted().joined(separator: ",")
     }
 
+    /// The component identifiers that were recorded during install.
+    var installedComponents: Set<String> {
+        guard let raw = metadata["INSTALLED_COMPONENTS"], !raw.isEmpty else { return [] }
+        return Set(raw.components(separatedBy: ","))
+    }
+
+    /// Record that a component was installed. Idempotent.
+    mutating func recordInstalledComponent(_ identifier: String) {
+        var components = installedComponents
+        components.insert(identifier)
+        metadata["INSTALLED_COMPONENTS"] = components.sorted().joined(separator: ",")
+    }
+
     /// Initialize the manifest with a source directory header.
     mutating func initialize(sourceDirectory: String) {
         let previousPacks = metadata["INSTALLED_PACKS"]
         metadata["SCRIPT_DIR"] = sourceDirectory
+        // INSTALLED_COMPONENTS is cleared because it reflects the exact set chosen
+        // during each install run (components can be deselected).
+        // INSTALLED_PACKS is preserved because pack membership is additive across runs.
+        metadata.removeValue(forKey: "INSTALLED_COMPONENTS")
         entries = [:]
         // Preserve installed packs across re-initialization
         if let previousPacks {
@@ -104,7 +121,7 @@ struct Manifest: Sendable {
     // MARK: - Internal
 
     /// Known metadata key names. Everything else is treated as a file hash entry.
-    private static let metadataKeys: Set<String> = ["SCRIPT_DIR", "INSTALLED_PACKS"]
+    private static let metadataKeys: Set<String> = ["SCRIPT_DIR", "INSTALLED_PACKS", "INSTALLED_COMPONENTS"]
 
     private mutating func load() {
         guard let content = try? String(contentsOf: path, encoding: .utf8) else { return }

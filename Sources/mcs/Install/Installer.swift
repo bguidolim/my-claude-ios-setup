@@ -280,6 +280,7 @@ struct Installer {
             if isAlreadyInstalled(component) {
                 skippedItems.append("\(component.displayName) (already installed)")
                 output.dimmed("Already installed, skipping")
+                manifest.recordInstalledComponent(component.id)
                 continue
             }
 
@@ -290,6 +291,7 @@ struct Installer {
             )
             if success {
                 installedItems.append(component.displayName)
+                manifest.recordInstalledComponent(component.id)
                 output.success("\(component.displayName) installed")
             } else {
                 skippedItems.append("\(component.displayName) (failed)")
