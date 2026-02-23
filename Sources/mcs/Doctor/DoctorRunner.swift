@@ -151,14 +151,7 @@ struct DoctorRunner {
     private func standaloneDoctorChecks(installedPackIDs: Set<String>) -> [any DoctorCheck] {
         var checks: [any DoctorCheck] = []
 
-        // Hook event registration in settings.json
-        checks.append(HookEventCheck(eventName: Constants.Hooks.eventSessionStart))
-        checks.append(HookEventCheck(eventName: Constants.Hooks.eventUserPromptSubmit, isOptional: true))
-
-        // Settings value validation
-        checks.append(SettingsCheck())
-
-        // Gitignore (cross-component aggregation)
+        // Gitignore (cross-component aggregation — engine-level)
         checks.append(GitignoreCheck(registry: registry, installedPackIDs: installedPackIDs))
 
         return checks

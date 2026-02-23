@@ -438,7 +438,11 @@ struct ExternalDoctorCheckTests {
             pattern: nil,
             scope: nil,
             fixCommand: nil,
-            fixScript: nil
+            fixScript: nil,
+            event: nil,
+            keyPath: nil,
+            expectedValue: nil,
+            isOptional: nil
         )
 
         let check = ExternalDoctorCheckFactory.makeCheck(
@@ -467,7 +471,11 @@ struct ExternalDoctorCheckTests {
             pattern: nil,
             scope: nil,
             fixCommand: nil,
-            fixScript: nil
+            fixScript: nil,
+            event: nil,
+            keyPath: nil,
+            expectedValue: nil,
+            isOptional: nil
         )
 
         let check = ExternalDoctorCheckFactory.makeCheck(
@@ -478,6 +486,138 @@ struct ExternalDoctorCheckTests {
         )
 
         #expect(check.section == "External Pack")
+    }
+
+    @Test("Factory creates hookEventExists check from definition")
+    func factoryCreatesHookEventExistsCheck() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let definition = ExternalDoctorCheckDefinition(
+            type: .hookEventExists,
+            name: "SessionStart hook",
+            section: "Hooks",
+            command: nil,
+            args: nil,
+            path: nil,
+            pattern: nil,
+            scope: nil,
+            fixCommand: nil,
+            fixScript: nil,
+            event: "SessionStart",
+            keyPath: nil,
+            expectedValue: nil,
+            isOptional: false
+        )
+
+        let check = ExternalDoctorCheckFactory.makeCheck(
+            from: definition,
+            packPath: tmpDir,
+            projectRoot: nil,
+            scriptRunner: makeScriptRunner()
+        )
+
+        #expect(check is ExternalHookEventExistsCheck)
+        #expect(check.name == "SessionStart hook")
+        #expect(check.section == "Hooks")
+    }
+
+    @Test("Factory creates settingsKeyEquals check from definition")
+    func factoryCreatesSettingsKeyEqualsCheck() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let definition = ExternalDoctorCheckDefinition(
+            type: .settingsKeyEquals,
+            name: "Plan mode",
+            section: "Settings",
+            command: nil,
+            args: nil,
+            path: nil,
+            pattern: nil,
+            scope: nil,
+            fixCommand: nil,
+            fixScript: nil,
+            event: nil,
+            keyPath: "permissions.defaultMode",
+            expectedValue: "plan",
+            isOptional: nil
+        )
+
+        let check = ExternalDoctorCheckFactory.makeCheck(
+            from: definition,
+            packPath: tmpDir,
+            projectRoot: nil,
+            scriptRunner: makeScriptRunner()
+        )
+
+        #expect(check is ExternalSettingsKeyEqualsCheck)
+        #expect(check.name == "Plan mode")
+        #expect(check.section == "Settings")
+    }
+
+    @Test("Factory returns misconfigured for hookEventExists without event")
+    func factoryHookEventExistsMisconfigured() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let definition = ExternalDoctorCheckDefinition(
+            type: .hookEventExists,
+            name: "Bad hook check",
+            section: nil,
+            command: nil,
+            args: nil,
+            path: nil,
+            pattern: nil,
+            scope: nil,
+            fixCommand: nil,
+            fixScript: nil,
+            event: nil,
+            keyPath: nil,
+            expectedValue: nil,
+            isOptional: nil
+        )
+
+        let check = ExternalDoctorCheckFactory.makeCheck(
+            from: definition,
+            packPath: tmpDir,
+            projectRoot: nil,
+            scriptRunner: makeScriptRunner()
+        )
+
+        #expect(check is MisconfiguredDoctorCheck)
+    }
+
+    @Test("Factory returns misconfigured for settingsKeyEquals without keyPath")
+    func factorySettingsKeyEqualsMisconfigured() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let definition = ExternalDoctorCheckDefinition(
+            type: .settingsKeyEquals,
+            name: "Bad settings check",
+            section: nil,
+            command: nil,
+            args: nil,
+            path: nil,
+            pattern: nil,
+            scope: nil,
+            fixCommand: nil,
+            fixScript: nil,
+            event: nil,
+            keyPath: nil,
+            expectedValue: nil,
+            isOptional: nil
+        )
+
+        let check = ExternalDoctorCheckFactory.makeCheck(
+            from: definition,
+            packPath: tmpDir,
+            projectRoot: nil,
+            scriptRunner: makeScriptRunner()
+        )
+
+        #expect(check is MisconfiguredDoctorCheck)
     }
 
     // MARK: - ScopedPathCheck Path Traversal

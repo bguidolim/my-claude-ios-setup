@@ -455,6 +455,86 @@ struct ExternalPackManifestTests {
         try manifest.validate()
     }
 
+    @Test("Validation rejects hookEventExists without event")
+    func rejectHookEventExistsNoEvent() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: test
+            displayName: Test
+            description: Test
+            version: "1.0.0"
+            supplementaryDoctorChecks:
+              - type: hookEventExists
+                name: Bad hook check
+                section: Hooks
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        #expect(throws: ManifestError.self) {
+            try manifest.validate()
+        }
+    }
+
+    @Test("Validation rejects settingsKeyEquals without keyPath")
+    func rejectSettingsKeyEqualsNoKeyPath() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: test
+            displayName: Test
+            description: Test
+            version: "1.0.0"
+            supplementaryDoctorChecks:
+              - type: settingsKeyEquals
+                name: Bad settings check
+                section: Settings
+                expectedValue: plan
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        #expect(throws: ManifestError.self) {
+            try manifest.validate()
+        }
+    }
+
+    @Test("Validation rejects settingsKeyEquals without expectedValue")
+    func rejectSettingsKeyEqualsNoExpectedValue() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: test
+            displayName: Test
+            description: Test
+            version: "1.0.0"
+            supplementaryDoctorChecks:
+              - type: settingsKeyEquals
+                name: Bad settings check
+                section: Settings
+                keyPath: permissions.defaultMode
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        #expect(throws: ManifestError.self) {
+            try manifest.validate()
+        }
+    }
+
     // MARK: - Install action types
 
     @Test("Deserialize mcpServer install action with stdio transport")
@@ -863,6 +943,68 @@ struct ExternalPackManifestTests {
 
         #expect(check.scope == .project)
         #expect(check.fixScript == "scripts/fix-config.sh")
+    }
+
+    @Test("Deserialize hookEventExists doctor check")
+    func hookEventExistsDoctorCheck() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: test
+            displayName: Test
+            description: Test
+            version: "1.0.0"
+            supplementaryDoctorChecks:
+              - type: hookEventExists
+                name: SessionStart hook
+                section: Hooks
+                event: SessionStart
+                isOptional: false
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        try manifest.validate()
+
+        let check = manifest.supplementaryDoctorChecks![0]
+        #expect(check.type == .hookEventExists)
+        #expect(check.event == "SessionStart")
+        #expect(check.isOptional == false)
+    }
+
+    @Test("Deserialize settingsKeyEquals doctor check")
+    func settingsKeyEqualsDoctorCheck() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: test
+            displayName: Test
+            description: Test
+            version: "1.0.0"
+            supplementaryDoctorChecks:
+              - type: settingsKeyEquals
+                name: Plan mode
+                section: Settings
+                keyPath: permissions.defaultMode
+                expectedValue: plan
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        try manifest.validate()
+
+        let check = manifest.supplementaryDoctorChecks![0]
+        #expect(check.type == .settingsKeyEquals)
+        #expect(check.keyPath == "permissions.defaultMode")
+        #expect(check.expectedValue == "plan")
     }
 
     // MARK: - Prompt types

@@ -151,6 +151,17 @@ extension ExternalPackManifest {
             guard let command = check.command, !command.isEmpty else {
                 throw ManifestError.invalidDoctorCheck(name: check.name, reason: "shellScript requires non-empty 'command'")
             }
+        case .hookEventExists:
+            guard let event = check.event, !event.isEmpty else {
+                throw ManifestError.invalidDoctorCheck(name: check.name, reason: "hookEventExists requires non-empty 'event'")
+            }
+        case .settingsKeyEquals:
+            guard let keyPath = check.keyPath, !keyPath.isEmpty else {
+                throw ManifestError.invalidDoctorCheck(name: check.name, reason: "settingsKeyEquals requires non-empty 'keyPath'")
+            }
+            guard let expectedValue = check.expectedValue, !expectedValue.isEmpty else {
+                throw ManifestError.invalidDoctorCheck(name: check.name, reason: "settingsKeyEquals requires non-empty 'expectedValue'")
+            }
         }
     }
 }
@@ -501,19 +512,10 @@ struct ExternalDoctorCheckDefinition: Codable, Sendable {
     let scope: ExternalDoctorCheckScope?
     let fixCommand: String?
     let fixScript: String?
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case name
-        case section
-        case command
-        case args
-        case path
-        case pattern
-        case scope
-        case fixCommand
-        case fixScript
-    }
+    let event: String?
+    let keyPath: String?
+    let expectedValue: String?
+    let isOptional: Bool?
 }
 
 enum ExternalDoctorCheckType: String, Codable, Sendable {
@@ -523,6 +525,8 @@ enum ExternalDoctorCheckType: String, Codable, Sendable {
     case fileContains
     case fileNotContains
     case shellScript
+    case hookEventExists
+    case settingsKeyEquals
 }
 
 enum ExternalDoctorCheckScope: String, Codable, Sendable {

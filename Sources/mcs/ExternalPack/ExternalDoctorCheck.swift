@@ -228,6 +228,91 @@ struct ExternalShellScriptCheck: DoctorCheck, Sendable {
     }
 }
 
+// MARK: - Hook Event Exists Check
+
+/// Checks that a hook event is registered in settings.json.
+/// Pack-contributed replacement for the engine-level HookEventCheck.
+struct ExternalHookEventExistsCheck: DoctorCheck, Sendable {
+    let name: String
+    let section: String
+    let event: String
+    let isOptional: Bool
+
+    func check() -> CheckResult {
+        let settingsURL = Environment().claudeSettings
+        guard FileManager.default.fileExists(atPath: settingsURL.path) else {
+            return .fail("settings.json not found")
+        }
+        let settings: Settings
+        do {
+            settings = try Settings.load(from: settingsURL)
+        } catch {
+            return .fail("settings.json is invalid: \(error.localizedDescription)")
+        }
+        guard let hooks = settings.hooks, hooks[event] != nil else {
+            return isOptional
+                ? .skip("\(event) not registered (optional)")
+                : .fail("\(event) not registered in settings.json")
+        }
+        return .pass("registered in settings.json")
+    }
+
+    func fix() -> FixResult {
+        .notFixable("Run 'mcs install' to merge settings")
+    }
+}
+
+// MARK: - Settings Key Equals Check
+
+/// Checks that a specific key in settings.json has an expected value.
+/// Uses dot-notation keyPath to navigate the raw JSON, ensuring forward compatibility
+/// with any key — not just those modeled by the Settings struct.
+struct ExternalSettingsKeyEqualsCheck: DoctorCheck, Sendable {
+    let name: String
+    let section: String
+    let keyPath: String
+    let expectedValue: String
+
+    func check() -> CheckResult {
+        let settingsURL = Environment().claudeSettings
+        guard FileManager.default.fileExists(atPath: settingsURL.path) else {
+            return .fail("settings.json not found")
+        }
+        guard let data = try? Data(contentsOf: settingsURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return .fail("settings.json is invalid")
+        }
+
+        guard let actual = resolveKeyPath(keyPath, in: json) else {
+            return .warn("\(keyPath) not set")
+        }
+        if actual == expectedValue {
+            return .pass("\(keyPath) = \(expectedValue)")
+        }
+        return .warn("\(keyPath) is '\(actual)', expected '\(expectedValue)'")
+    }
+
+    func fix() -> FixResult {
+        .notFixable("Run 'mcs install' to merge settings")
+    }
+
+    private func resolveKeyPath(_ keyPath: String, in json: [String: Any]) -> String? {
+        let parts = keyPath.split(separator: ".").map(String.init)
+        var current: Any = json
+        for part in parts {
+            guard let dict = current as? [String: Any],
+                  let next = dict[part]
+            else { return nil }
+            current = next
+        }
+        if let str = current as? String { return str }
+        if let bool = current as? Bool { return String(bool) }
+        if let num = current as? NSNumber { return num.stringValue }
+        return nil
+    }
+}
+
 // MARK: - Factory
 
 /// Creates concrete `DoctorCheck` instances from declarative `ExternalDoctorCheckDefinition`.
@@ -344,6 +429,35 @@ enum ExternalDoctorCheckFactory {
                 fixScriptPath: fixURL,
                 fixCommand: definition.fixCommand,
                 scriptRunner: scriptRunner
+            )
+
+        case .hookEventExists:
+            guard let event = definition.event, !event.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "hookEventExists requires non-empty 'event'"
+                )
+            }
+            return ExternalHookEventExistsCheck(
+                name: definition.name,
+                section: section,
+                event: event,
+                isOptional: definition.isOptional ?? false
+            )
+
+        case .settingsKeyEquals:
+            guard let keyPath = definition.keyPath, !keyPath.isEmpty,
+                  let expectedValue = definition.expectedValue, !expectedValue.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "settingsKeyEquals requires non-empty 'keyPath' and 'expectedValue'"
+                )
+            }
+            return ExternalSettingsKeyEqualsCheck(
+                name: definition.name,
+                section: section,
+                keyPath: keyPath,
+                expectedValue: expectedValue
             )
         }
     }
