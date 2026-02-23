@@ -18,7 +18,10 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Yams", package: "Yams"),
             ],
-            path: "Sources/mcs"
+            path: "Sources/mcs",
+            resources: [
+                .copy("Resources"),
+            ]
         ),
         .testTarget(
             name: "MCSTests",

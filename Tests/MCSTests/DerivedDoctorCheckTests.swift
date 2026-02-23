@@ -62,6 +62,59 @@ struct DerivedDoctorCheckTests {
         #expect(check?.section == "Dependencies")
     }
 
+    @Test("copySkill action derives SkillFreshnessCheck")
+    func copySkillDerivation() {
+        let component = ComponentDefinition(
+            id: "test.skill",
+            displayName: "test-skill",
+            description: "test",
+            type: .skill,
+            packIdentifier: nil,
+            dependencies: [],
+            isRequired: false,
+            installAction: .copySkill(source: "skills/test", destination: "test")
+        )
+        let check = component.deriveDoctorCheck()
+        #expect(check != nil)
+        #expect(check?.name == "test-skill")
+        #expect(check?.section == "Skills")
+    }
+
+    @Test("copyHook action derives HookCheck")
+    func copyHookDerivation() {
+        let component = ComponentDefinition(
+            id: "test.hook",
+            displayName: "test-hook",
+            description: "test",
+            type: .hookFile,
+            packIdentifier: nil,
+            dependencies: [],
+            isRequired: true,
+            installAction: .copyHook(source: "hooks/test.sh", destination: "test.sh")
+        )
+        let check = component.deriveDoctorCheck()
+        #expect(check != nil)
+        #expect(check?.section == "Hooks")
+    }
+
+    @Test("copyCommand action derives CommandFileCheck")
+    func copyCommandDerivation() {
+        let component = ComponentDefinition(
+            id: "test.command",
+            displayName: "test-command",
+            description: "test",
+            type: .command,
+            packIdentifier: nil,
+            dependencies: [],
+            isRequired: false,
+            installAction: .copyCommand(source: "commands/test.md", destination: "test.md", placeholders: [:])
+        )
+        let check = component.deriveDoctorCheck()
+        #expect(check != nil)
+        #expect(check?.name == "test-command")
+        #expect(check?.section == "Commands")
+    }
+
     @Test("shellCommand action returns nil (not derivable)")
     func shellCommandReturnsNil() {
         let component = ComponentDefinition(
@@ -87,7 +140,7 @@ struct DerivedDoctorCheckTests {
             packIdentifier: nil,
             dependencies: [],
             isRequired: true,
-            installAction: .settingsMerge(source: nil)
+            installAction: .settingsMerge
         )
         #expect(component.deriveDoctorCheck() == nil)
     }
@@ -149,12 +202,41 @@ struct DerivedDoctorCheckTests {
         #expect(checks.first?.name == "brew")
     }
 
+    // MARK: - Every .shellCommand component has supplementaryChecks
+
+    @Test("All .shellCommand core components have supplementaryChecks")
+    func shellCommandCoreComponentsHaveSupplementary() {
+        let shellComponents = CoreComponents.all.filter {
+            if case .shellCommand = $0.installAction { return true }
+            return false
+        }
+        for component in shellComponents {
+            #expect(
+                !component.supplementaryChecks.isEmpty,
+                "Core component '\(component.id)' uses .shellCommand but has no supplementaryChecks"
+            )
+        }
+    }
+
+    @Test("All .shellCommand iOS components have supplementaryChecks")
+    func shellCommandIOSComponentsHaveSupplementary() {
+        let shellComponents = IOSComponents.all.filter {
+            if case .shellCommand = $0.installAction { return true }
+            return false
+        }
+        for component in shellComponents {
+            #expect(
+                !component.supplementaryChecks.isEmpty,
+                "iOS component '\(component.id)' uses .shellCommand but has no supplementaryChecks"
+            )
+        }
+    }
 }
 
-// MARK: - FileHasher directory hashing
+// MARK: - Manifest directory hashing
 
-@Suite("FileHasherDirectoryHashing")
-struct FileHasherDirectoryHashingTests {
+@Suite("ManifestDirectoryHashing")
+struct ManifestDirectoryHashingTests {
     private func makeTmpDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("mcs-dirhash-test-\(UUID().uuidString)")
@@ -173,7 +255,7 @@ struct FileHasherDirectoryHashingTests {
         try "file1".write(to: tmpDir.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
         try "file2".write(to: subDir.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
 
-        let hashes = try FileHasher.directoryFileHashes(at: tmpDir)
+        let hashes = try Manifest.directoryFileHashes(at: tmpDir)
         let paths = hashes.map(\.relativePath)
 
         #expect(paths.contains("a.txt"))
@@ -190,7 +272,7 @@ struct FileHasherDirectoryHashingTests {
         try "a".write(to: tmpDir.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
         try "b".write(to: tmpDir.appendingPathComponent("m.txt"), atomically: true, encoding: .utf8)
 
-        let hashes = try FileHasher.directoryFileHashes(at: tmpDir)
+        let hashes = try Manifest.directoryFileHashes(at: tmpDir)
         let paths = hashes.map(\.relativePath)
 
         #expect(paths == ["a.txt", "m.txt", "z.txt"])
@@ -204,7 +286,7 @@ struct FileHasherDirectoryHashingTests {
         try "visible".write(to: tmpDir.appendingPathComponent("visible.txt"), atomically: true, encoding: .utf8)
         try "hidden".write(to: tmpDir.appendingPathComponent(".hidden"), atomically: true, encoding: .utf8)
 
-        let hashes = try FileHasher.directoryFileHashes(at: tmpDir)
+        let hashes = try Manifest.directoryFileHashes(at: tmpDir)
         #expect(hashes.count == 1)
         #expect(hashes.first?.relativePath == "visible.txt")
     }

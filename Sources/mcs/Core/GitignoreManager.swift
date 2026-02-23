@@ -65,24 +65,6 @@ struct GitignoreManager: Sendable {
         }
     }
 
-    /// Remove an entry from the global gitignore.
-    /// Returns `true` if the entry was found and removed.
-    @discardableResult
-    func removeEntry(_ entry: String) throws -> Bool {
-        let path = resolveGlobalGitignorePath()
-        guard FileManager.default.fileExists(atPath: path.path) else { return false }
-
-        let content = try String(contentsOf: path, encoding: .utf8)
-        let lines = content.components(separatedBy: "\n")
-        let filtered = lines.filter { $0 != entry }
-
-        guard filtered.count < lines.count else { return false }
-
-        let updated = filtered.joined(separator: "\n")
-        try updated.write(to: path, atomically: true, encoding: .utf8)
-        return true
-    }
-
     /// Add all core gitignore entries.
     func addCoreEntries() throws {
         for entry in Self.coreEntries {

@@ -87,19 +87,6 @@ enum Constants {
         static let mcpServers = "mcpServers"
     }
 
-    // MARK: - External Packs
-
-    enum ExternalPacks {
-        /// The manifest filename for external tech packs.
-        static let manifestFilename = "techpack.yaml"
-
-        /// The registry filename tracking installed packs.
-        static let registryFilename = ".mcs-packs.yaml"
-
-        /// The directory name for pack checkouts.
-        static let packsDirectory = "packs"
-    }
-
     // MARK: - Plugins
 
     enum Plugins {

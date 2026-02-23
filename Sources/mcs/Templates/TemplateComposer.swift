@@ -189,47 +189,6 @@ enum TemplateComposer {
         return result.joined(separator: "\n")
     }
 
-    // MARK: - Section removal
-
-    /// Remove a section identified by its begin/end markers from the content.
-    /// Cleans up surrounding blank lines left by the removal.
-    /// Returns the original content unchanged if the section is not found.
-    static func removeSection(
-        in existingContent: String,
-        sectionIdentifier: String
-    ) -> String {
-        let lines = existingContent.components(separatedBy: "\n")
-        var result: [String] = []
-        var skipUntilEnd = false
-        var found = false
-
-        for line in lines {
-            if let parsed = parseBeginMarker(line),
-               parsed.identifier == sectionIdentifier {
-                skipUntilEnd = true
-                found = true
-                // Also skip a preceding blank line if we left one
-                if let last = result.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
-                    result.removeLast()
-                }
-            } else if let identifier = parseEndMarker(line),
-                      identifier == sectionIdentifier {
-                skipUntilEnd = false
-            } else if !skipUntilEnd {
-                result.append(line)
-            }
-        }
-
-        guard found else { return existingContent }
-
-        // Clean up leading blank lines left at the top
-        while let first = result.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
-            result.removeFirst()
-        }
-
-        return result.joined(separator: "\n")
-    }
-
     // MARK: - Private helpers
 
     private static func parseBeginMarker(

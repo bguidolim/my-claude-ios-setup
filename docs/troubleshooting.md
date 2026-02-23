@@ -35,7 +35,7 @@ Follow the system dialog to complete installation, then re-run `mcs install`.
 
 **Symptom**: MCP servers that use `npx` fail to start or install.
 
-**Fix**: Node.js is auto-resolved as a dependency if your pack declares it. Re-run:
+**Fix**: Node.js is auto-resolved as a dependency. Re-run:
 ```bash
 mcs install
 ```
@@ -55,6 +55,11 @@ brew services start ollama        # Background service
 If the embedding model is missing:
 ```bash
 ollama pull nomic-embed-text
+```
+
+Verify it's working:
+```bash
+curl http://localhost:11434/api/tags
 ```
 
 ### Claude Code CLI not found
@@ -77,32 +82,12 @@ claude --version
 
 **Symptom**: `mcs doctor` shows a server as "not registered" or `claude mcp list` doesn't show it.
 
-**Fix**: Re-run configure for your project:
-```bash
-cd /path/to/project
-mcs configure
-```
-
-Or re-run install for global registration:
+**Fix**: Re-run the installer:
 ```bash
 mcs install
 ```
 
-### MCP server registered with wrong scope
-
-**Symptom**: Server works in one project but not another, or is unexpectedly shared.
-
-MCP servers have three scopes:
-- **`local`** (default): per-user, per-project — only active in the project where it was configured
-- **`project`**: team-shared — active for anyone who clones the repo
-- **`user`**: cross-project — active everywhere
-
-**Fix**: Remove and re-register with the correct scope:
-```bash
-claude mcp remove <server-name>
-cd /path/to/project
-mcs configure
-```
+The installer checks for existing registrations and only adds what's missing.
 
 ### docs-mcp-server semantic search not working
 
@@ -132,6 +117,8 @@ OPENAI_API_KEY=ollama OPENAI_API_BASE=http://localhost:11434/v1 \
   --embedding-model "openai:nomic-embed-text"
 ```
 
+The session_start hook normally handles indexing automatically when Ollama is running.
+
 ### Sosumi not responding
 
 **Symptom**: Apple documentation search via Sosumi returns errors.
@@ -141,11 +128,7 @@ Sosumi uses HTTP transport (external service at `https://sosumi.ai/mcp`). Check 
 claude mcp list
 ```
 
-If not registered, re-run configure:
-```bash
-cd /path/to/project
-mcs configure
-```
+If not registered, re-run `mcs install --pack ios`.
 
 ## Plugins
 
@@ -160,20 +143,68 @@ mcs install
 
 You can also manually install a plugin:
 ```bash
-claude plugin install <plugin-name>@<org>
+claude plugin install <plugin-name>@claude-plugins-official
 ```
+
+## Hooks
+
+### Hook not executable
+
+**Symptom**: `mcs doctor` shows "not executable" for a hook file.
+
+**Fix**: `mcs doctor --fix` can repair this automatically. Or manually:
+```bash
+chmod +x ~/.claude/hooks/session_start.sh
+chmod +x ~/.claude/hooks/continuous-learning-activator.sh
+```
+
+### Legacy hook missing extension marker
+
+**Symptom**: `mcs doctor` shows "legacy hook -- missing extension marker, needs update."
+
+This means the hook file was installed by an older version that didn't support fragment injection.
+
+**Fix**: Re-run installation to replace the hook:
+```bash
+mcs install
+```
+
+### Hook fragment version mismatch
+
+**Symptom**: `mcs doctor` shows something like "v1.0.0 installed, v2.0.0 available."
+
+**Fix**: Re-run installation to update:
+```bash
+mcs install
+```
+
+## Settings
+
+### defaultMode not set to 'plan'
+
+**Symptom**: `mcs doctor` warns about settings configuration.
+
+**Fix**: Re-run installation to merge settings:
+```bash
+mcs install
+```
+
+Settings are deep-merged: existing user settings are preserved, and template values are added.
+
+### Stale settings keys
+
+**Symptom**: `mcs doctor` warns about stale settings keys.
+
+This means a previous version of mcs added settings keys that the current version no longer manages.
+
+**Fix**: Re-run installation:
+```bash
+mcs install
+```
+
+The installer detects and removes stale keys automatically.
 
 ## Project Configuration
-
-### No packs registered
-
-**Symptom**: `mcs configure` shows "No packs registered."
-
-**Fix**: Add a pack first:
-```bash
-mcs pack add https://github.com/user/my-pack
-mcs configure
-```
 
 ### CLAUDE.local.md not found
 
@@ -206,33 +237,23 @@ Managed sections (inside `<!-- mcs:begin/end -->` markers) are updated. Content 
 mcs configure
 ```
 
-### Per-project artifacts not appearing
+### XcodeBuildMCP config.yaml missing (iOS)
 
-**Symptom**: After `mcs configure`, expected files are missing from `<project>/.claude/`.
-
-**Causes**:
-1. The pack wasn't selected during multi-select
-2. The pack's `techpack.yaml` doesn't define the expected components
+**Symptom**: `mcs doctor` shows ".xcodebuildmcp/config.yaml: Missing."
 
 **Fix**:
 ```bash
-# Check what's configured
-cat .claude/.mcs-project
-
-# Re-run configure and ensure the pack is selected
-mcs configure
+cd /path/to/your/ios/project
+mcs configure --pack ios
 ```
 
-### Unpaired section markers
+### XcodeBuildMCP config.yaml has placeholder
 
-**Symptom**: `mcs configure` warns about "unpaired section markers."
+**Symptom**: `mcs doctor` warns "Present but __PROJECT__ placeholder not filled in."
 
-This means a `<!-- mcs:begin X -->` marker exists without a matching `<!-- mcs:end X -->` (or vice versa) in CLAUDE.local.md.
+This means `mcs configure` could not auto-detect an `.xcworkspace` or `.xcodeproj` file in the project directory.
 
-**Fix**: Manually add the missing marker, then re-run configure:
-```bash
-mcs configure
-```
+**Fix**: Manually edit `.xcodebuildmcp/config.yaml` and replace `__PROJECT__` with your actual Xcode project or workspace file name.
 
 ## Serena Memory Migration
 
@@ -250,30 +271,36 @@ mcs doctor --fix
 
 This copies files from `.serena/memories/` to `.claude/memories/`, removes the original directory, and creates a symlink.
 
-## External Packs
+## Migration from Legacy Versions
 
-### Pack add fails
+### Deprecated MCP servers or plugins
 
-**Symptom**: `mcs pack add <url>` fails with a Git error.
+**Symptom**: `mcs doctor` warns about deprecated components like `mcp-omnisearch` or `claude-hud`.
 
-**Causes**:
-1. The URL is not a valid Git repository
-2. No `techpack.yaml` exists in the repository root
-3. Network connectivity issues
-
-**Fix**: Verify the URL is correct and the repo contains a `techpack.yaml`:
+**Fix**: `mcs doctor --fix` removes deprecated components automatically:
 ```bash
-git ls-remote <url>  # Verify repo exists
+mcs doctor --fix
 ```
 
-### Pack update fails
+### Migrating from the bash installer
 
-**Symptom**: `mcs pack update` fails for a specific pack.
+If you previously used the bash-based installer (`claude-ios-setup`):
 
-**Fix**: Try removing and re-adding the pack:
 ```bash
-mcs pack remove <name>
-mcs pack add <url>
+# 1. Install the new version
+brew install bguidolim/tap/my-claude-setup
+
+# 2. Run full install (handles manifest migration)
+mcs install --all
+
+# 3. Configure each project
+cd /path/to/project && mcs configure
+
+# 4. Verify
+mcs doctor
+
+# 5. Clean up old installation
+rm -rf ~/.claude-ios-setup ~/.claude/bin/claude-ios-setup
 ```
 
 ## Global Gitignore
@@ -306,5 +333,4 @@ If `mcs doctor` doesn't identify the problem:
 1. Check that your PATH includes the necessary binaries (`brew`, `node`, `claude`, `ollama`)
 2. Verify `~/.claude.json` is valid JSON: `python3 -m json.tool ~/.claude.json`
 3. Verify `~/.claude/settings.json` is valid JSON: `python3 -m json.tool ~/.claude/settings.json`
-4. Check `.claude/.mcs-project` in your project for state corruption
-5. Open an issue at the project repository with the output of `mcs doctor`
+4. Open an issue at the project repository with the output of `mcs doctor`

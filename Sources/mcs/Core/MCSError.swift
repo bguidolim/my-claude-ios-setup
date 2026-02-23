@@ -7,7 +7,6 @@ enum MCSError: Error, LocalizedError {
     case fileOperationFailed(path: String, reason: String)
     case dependencyMissing(String)
     case templateError(String)
-    case configurationFailed(reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -21,8 +20,6 @@ enum MCSError: Error, LocalizedError {
             return "Missing dependency: \(name)"
         case .templateError(let message):
             return "Template error: \(message)"
-        case .configurationFailed(let reason):
-            return "Configuration failed: \(reason)"
         }
     }
 }

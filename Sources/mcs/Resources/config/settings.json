@@ -1,0 +1,31 @@
+{
+  "env": {
+    "ENABLE_TOOL_SEARCH": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  },
+  "permissions": {
+    "defaultMode": "plan"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/session_start.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "explanatory-output-style@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true
+  },
+  "alwaysThinkingEnabled": true
+}

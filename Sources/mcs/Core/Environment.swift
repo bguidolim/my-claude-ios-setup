@@ -6,10 +6,12 @@ struct Environment: Sendable {
     let claudeDirectory: URL
     let claudeJSON: URL
     let claudeSettings: URL
+    let settingsKeys: URL
     let hooksDirectory: URL
     let skillsDirectory: URL
     let commandsDirectory: URL
     let memoriesDirectory: URL
+    let setupManifest: URL
     let binDirectory: URL
 
     let architecture: Architecture
@@ -30,10 +32,12 @@ struct Environment: Sendable {
         self.claudeDirectory = claudeDir
         self.claudeJSON = home.appendingPathComponent(".claude.json")
         self.claudeSettings = claudeDir.appendingPathComponent("settings.json")
+        self.settingsKeys = claudeDir.appendingPathComponent(".mcs-settings-keys")
         self.hooksDirectory = claudeDir.appendingPathComponent("hooks")
         self.skillsDirectory = claudeDir.appendingPathComponent("skills")
         self.commandsDirectory = claudeDir.appendingPathComponent("commands")
         self.memoriesDirectory = claudeDir.appendingPathComponent("memories")
+        self.setupManifest = claudeDir.appendingPathComponent(".mcs-manifest")
         self.binDirectory = claudeDir.appendingPathComponent("bin")
 
         #if arch(arm64)
@@ -61,14 +65,32 @@ struct Environment: Sendable {
         }
     }
 
-    /// Directory where external tech pack checkouts live.
-    var packsDirectory: URL {
-        claudeDirectory.appendingPathComponent(Constants.ExternalPacks.packsDirectory)
+    /// The path where the old bash installer stored its manifest.
+    var legacyManifest: URL {
+        claudeDirectory.appendingPathComponent(".setup-manifest")
     }
 
-    /// YAML registry of installed external packs.
-    var packsRegistry: URL {
-        claudeDirectory.appendingPathComponent(Constants.ExternalPacks.registryFilename)
+    /// Migrate the old `.setup-manifest` to `.mcs-manifest` if needed.
+    /// Returns true if a migration was performed.
+    @discardableResult
+    func migrateManifestIfNeeded() -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacyManifest.path),
+              !fm.fileExists(atPath: setupManifest.path)
+        else { return false }
+
+        do {
+            try fm.moveItem(at: legacyManifest, to: setupManifest)
+            return true
+        } catch {
+            // Fall back to copy if move fails (e.g., cross-volume)
+            do {
+                try fm.copyItem(at: legacyManifest, to: setupManifest)
+                return true
+            } catch {
+                return false
+            }
+        }
     }
 
     /// PATH string that includes the Homebrew bin directory.
