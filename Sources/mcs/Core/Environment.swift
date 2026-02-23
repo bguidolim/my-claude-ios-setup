@@ -65,6 +65,16 @@ struct Environment: Sendable {
         }
     }
 
+    /// Directory where external tech pack checkouts live.
+    var packsDirectory: URL {
+        claudeDirectory.appendingPathComponent(Constants.ExternalPacks.packsDirectory)
+    }
+
+    /// YAML registry of installed external packs.
+    var packsRegistry: URL {
+        claudeDirectory.appendingPathComponent(Constants.ExternalPacks.registryFilename)
+    }
+
     /// The path where the old bash installer stored its manifest.
     var legacyManifest: URL {
         claudeDirectory.appendingPathComponent(".setup-manifest")

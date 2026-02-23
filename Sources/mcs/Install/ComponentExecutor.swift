@@ -138,6 +138,92 @@ struct ComponentExecutor {
         }
     }
 
+    // MARK: - Copy Pack File
+
+    /// Copy files from an external pack checkout to the appropriate Claude directory.
+    mutating func installCopyPackFile(
+        source: URL,
+        destination: String,
+        fileType: CopyFileType,
+        manifest: inout Manifest
+    ) -> Bool {
+        let fm = FileManager.default
+        let destURL = fileType.destinationURL(in: environment, destination: destination)
+
+        // Validate destination doesn't escape expected directory via symlinks
+        let resolvedDest = destURL.resolvingSymlinksInPath()
+        let expectedParent = fileType.baseDirectory(in: environment)
+        let parentPath = expectedParent.resolvingSymlinksInPath().path
+        let destPath = resolvedDest.path
+        let parentPrefix = parentPath.hasSuffix("/") ? parentPath : parentPath + "/"
+        guard destPath.hasPrefix(parentPrefix) || destPath == parentPath else {
+            output.warn("Destination '\(destination)' escapes expected directory")
+            return false
+        }
+
+        guard fm.fileExists(atPath: source.path) else {
+            output.warn("Pack source not found: \(source.path)")
+            return false
+        }
+
+        do {
+            try fm.createDirectory(
+                at: destURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: source.path, isDirectory: &isDir)
+
+            if isDir.boolValue {
+                // Source is a directory — copy all files recursively
+                try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
+                let contents = try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+                for file in contents {
+                    let destFile = destURL.appendingPathComponent(file.lastPathComponent)
+                    do {
+                        try backup.backupFile(at: destFile)
+                    } catch {
+                        output.warn("Could not backup \(destFile.lastPathComponent): \(error.localizedDescription)")
+                    }
+                    if fm.fileExists(atPath: destFile.path) {
+                        try fm.removeItem(at: destFile)
+                    }
+                    try fm.copyItem(at: file, to: destFile)
+                }
+                // Record per-file hashes
+                let fileHashes = try Manifest.directoryFileHashes(at: source)
+                let sourceRelative = source.lastPathComponent
+                for entry in fileHashes {
+                    manifest.recordHash(
+                        relativePath: "packs/\(sourceRelative)/\(entry.relativePath)",
+                        hash: entry.hash
+                    )
+                }
+            } else {
+                // Source is a single file
+                do {
+                    try backup.backupFile(at: destURL)
+                } catch {
+                    output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
+                }
+                if fm.fileExists(atPath: destURL.path) {
+                    try fm.removeItem(at: destURL)
+                }
+                try fm.copyItem(at: source, to: destURL)
+
+                // Make hooks executable
+                if fileType == .hook {
+                    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destURL.path)
+                }
+            }
+            return true
+        } catch {
+            output.warn(error.localizedDescription)
+            return false
+        }
+    }
+
     // MARK: - Already-Installed Detection
 
     /// Check if a component is already installed using the same derived + supplementary
@@ -146,7 +232,7 @@ struct ComponentExecutor {
     static func isAlreadyInstalled(_ component: ComponentDefinition) -> Bool {
         // Idempotent actions: always re-run
         switch component.installAction {
-        case .settingsMerge, .gitignoreEntries:
+        case .settingsMerge, .gitignoreEntries, .copyPackFile:
             return false
         default:
             break

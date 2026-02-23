@@ -14,7 +14,13 @@ struct DoctorCommand: ParsableCommand {
     var pack: String?
 
     mutating func run() throws {
-        var runner = DoctorRunner(fixMode: fix, packFilter: pack)
+        let env = Environment()
+        let output = CLIOutput()
+        let registry = TechPackRegistry.loadWithExternalPacks(
+            environment: env,
+            output: output
+        )
+        var runner = DoctorRunner(fixMode: fix, packFilter: pack, registry: registry)
         try runner.run()
     }
 }

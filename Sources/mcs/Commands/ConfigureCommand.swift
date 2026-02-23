@@ -18,6 +18,11 @@ struct ConfigureCommand: ParsableCommand {
         let output = CLIOutput()
         let shell = ShellRunner(environment: env)
 
+        let registry = TechPackRegistry.loadWithExternalPacks(
+            environment: env,
+            output: output
+        )
+
         let projectPath: URL
         if let p = path {
             projectPath = URL(fileURLWithPath: p)
@@ -35,7 +40,8 @@ struct ConfigureCommand: ParsableCommand {
         let configurator = ProjectConfigurator(
             environment: env,
             output: output,
-            shell: shell
+            shell: shell,
+            registry: registry
         )
 
         if pack.isEmpty {
@@ -43,7 +49,6 @@ struct ConfigureCommand: ParsableCommand {
             try configurator.interactiveConfigure(at: projectPath)
         } else {
             // Explicit --pack flag
-            let registry = TechPackRegistry.shared
             let resolvedPacks = pack.compactMap { registry.pack(for: $0) }
 
             for id in pack where registry.pack(for: id) == nil {

@@ -287,6 +287,11 @@ struct SettingsOwnershipCheck: DoctorCheck, Sendable {
 struct GitignoreCheck: DoctorCheck, Sendable {
     var name: String { "Global gitignore" }
     var section: String { "Gitignore" }
+    let registry: TechPackRegistry
+
+    init(registry: TechPackRegistry = .shared) {
+        self.registry = registry
+    }
 
     func check() -> CheckResult {
         let shell = ShellRunner(environment: Environment())
@@ -300,7 +305,7 @@ struct GitignoreCheck: DoctorCheck, Sendable {
         // Check core entries + installed pack gitignore entries
         let manifest = Manifest(path: Environment().setupManifest)
         let allEntries = GitignoreManager.coreEntries
-            + TechPackRegistry.shared.gitignoreEntries(installedPacks: manifest.installedPacks)
+            + registry.gitignoreEntries(installedPacks: manifest.installedPacks)
         var missing: [String] = []
         for entry in allEntries {
             if !content.contains(entry) {
@@ -320,7 +325,7 @@ struct GitignoreCheck: DoctorCheck, Sendable {
             try gitignoreManager.addCoreEntries()
             // Also add installed pack entries
             let manifest = Manifest(path: Environment().setupManifest)
-            for entry in TechPackRegistry.shared.gitignoreEntries(installedPacks: manifest.installedPacks) {
+            for entry in registry.gitignoreEntries(installedPacks: manifest.installedPacks) {
                 try gitignoreManager.addEntry(entry)
             }
             return .fixed("added missing entries")

@@ -7,6 +7,7 @@ struct ProjectConfigurator {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
+    var registry: TechPackRegistry = .shared
 
     /// Full interactive configure flow — shows header, pack selection,
     /// runs configure, and shows completion.
@@ -17,7 +18,6 @@ struct ProjectConfigurator {
         output.warn("This command should be run inside your project directory.")
         output.info("Project: \(projectPath.path)")
 
-        let registry = TechPackRegistry.shared
         let packs = registry.availablePacks
         guard !packs.isEmpty else {
             output.error("No tech packs available.")
@@ -45,7 +45,8 @@ struct ProjectConfigurator {
         var packInstaller = PackInstaller(
             environment: environment,
             output: output,
-            shell: shell
+            shell: shell,
+            registry: registry
         )
         packInstaller.installPack(pack)
 

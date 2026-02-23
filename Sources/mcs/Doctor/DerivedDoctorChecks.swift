@@ -38,6 +38,14 @@ extension ComponentDefinition {
                 path: Environment().commandsDirectory.appendingPathComponent(destination)
             )
 
+        case .copyPackFile(_, let destination, let fileType):
+            let destURL = fileType.destinationURL(in: Environment(), destination: destination)
+            return FileExistsCheck(
+                name: displayName,
+                section: type.doctorSection,
+                path: destURL
+            )
+
         case .shellCommand, .settingsMerge, .gitignoreEntries:
             return nil
         }

@@ -65,6 +65,30 @@ enum ComponentInstallAction: Sendable {
     case shellCommand(command: String)
     case settingsMerge
     case gitignoreEntries(entries: [String])
+    case copyPackFile(source: URL, destination: String, fileType: CopyFileType)
+}
+
+/// File type for `copyPackFile` actions — determines the target directory.
+enum CopyFileType: String, Sendable {
+    case skill
+    case hook
+    case command
+    case generic
+}
+
+extension CopyFileType {
+    func baseDirectory(in environment: Environment) -> URL {
+        switch self {
+        case .skill: return environment.skillsDirectory
+        case .hook: return environment.hooksDirectory
+        case .command: return environment.commandsDirectory
+        case .generic: return environment.claudeDirectory
+        }
+    }
+
+    func destinationURL(in environment: Environment, destination: String) -> URL {
+        baseDirectory(in: environment).appendingPathComponent(destination)
+    }
 }
 
 /// Configuration for an MCP server

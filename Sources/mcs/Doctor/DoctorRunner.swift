@@ -10,6 +10,7 @@ struct DoctorRunner {
     let fixMode: Bool
     /// Explicit pack filter. If nil, uses packs recorded in the manifest.
     let packFilter: String?
+    let registry: TechPackRegistry
 
     private let output = CLIOutput()
     private var passCount = 0
@@ -17,9 +18,10 @@ struct DoctorRunner {
     private var warnCount = 0
     private var fixedCount = 0
 
-    init(fixMode: Bool, packFilter: String? = nil) {
+    init(fixMode: Bool, packFilter: String? = nil, registry: TechPackRegistry = .shared) {
         self.fixMode = fixMode
         self.packFilter = packFilter
+        self.registry = registry
     }
 
     mutating func run() throws {
@@ -28,7 +30,7 @@ struct DoctorRunner {
         let env = Environment()
         env.migrateManifestIfNeeded()
         let manifest = Manifest(path: env.setupManifest)
-        let registry = TechPackRegistry.shared
+        let registry = self.registry
 
         // Detect project root
         let projectRoot = ProjectDetector.findProjectRoot()
@@ -180,7 +182,7 @@ struct DoctorRunner {
         checks.append(SettingsOwnershipCheck())
 
         // Gitignore (cross-component aggregation)
-        checks.append(GitignoreCheck())
+        checks.append(GitignoreCheck(registry: registry))
 
         // Manifest freshness (cross-file integrity)
         checks.append(ManifestFreshnessCheck())

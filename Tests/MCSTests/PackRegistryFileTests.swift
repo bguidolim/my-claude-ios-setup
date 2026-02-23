@@ -1,0 +1,263 @@
+import Foundation
+import Testing
+
+@testable import mcs
+
+@Suite("PackRegistryFile")
+struct PackRegistryFileTests {
+    /// Create a unique temp directory for each test.
+    private func makeTmpDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-registry-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func sampleEntry(
+        identifier: String = "test-pack",
+        version: String = "1.0.0"
+    ) -> PackRegistryFile.PackEntry {
+        PackRegistryFile.PackEntry(
+            identifier: identifier,
+            displayName: "Test Pack",
+            version: version,
+            sourceURL: "https://github.com/user/\(identifier).git",
+            ref: "v\(version)",
+            commitSHA: "abc123def456",
+            localPath: identifier,
+            addedAt: "2026-02-22T00:00:00Z",
+            trustedScriptHashes: ["scripts/setup.sh": "sha256hash"]
+        )
+    }
+
+    // MARK: - Load from missing / empty file
+
+    @Test("Load from missing file returns empty registry")
+    func loadMissingFile() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let registry = PackRegistryFile(path: tmpDir.appendingPathComponent("missing.yaml"))
+        let data = try registry.load()
+        #expect(data.packs.isEmpty)
+    }
+
+    @Test("Load from empty file returns empty registry")
+    func loadEmptyFile() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("empty.yaml")
+        try "".write(to: file, atomically: true, encoding: .utf8)
+
+        let registry = PackRegistryFile(path: file)
+        let data = try registry.load()
+        #expect(data.packs.isEmpty)
+    }
+
+    // MARK: - Save and load round-trip
+
+    @Test("Save and load round-trip preserves pack entries")
+    func saveLoadRoundTrip() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("packs.yaml")
+        let registry = PackRegistryFile(path: file)
+
+        var data = PackRegistryFile.RegistryData()
+        let entry = sampleEntry()
+        registry.register(entry, in: &data)
+        try registry.save(data)
+
+        let loaded = try registry.load()
+        #expect(loaded.packs.count == 1)
+        #expect(loaded.packs[0].identifier == "test-pack")
+        #expect(loaded.packs[0].version == "1.0.0")
+        #expect(loaded.packs[0].sourceURL == "https://github.com/user/test-pack.git")
+        #expect(loaded.packs[0].trustedScriptHashes["scripts/setup.sh"] == "sha256hash")
+    }
+
+    @Test("Save creates parent directories if needed")
+    func saveCreatesDirectories() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let nested = tmpDir
+            .appendingPathComponent("deep")
+            .appendingPathComponent("nested")
+            .appendingPathComponent("packs.yaml")
+        let registry = PackRegistryFile(path: nested)
+
+        let data = PackRegistryFile.RegistryData()
+        try registry.save(data)
+
+        #expect(FileManager.default.fileExists(atPath: nested.path))
+    }
+
+    // MARK: - Register
+
+    @Test("Register adds a new entry")
+    func registerNew() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+        var data = PackRegistryFile.RegistryData()
+
+        registry.register(sampleEntry(identifier: "pack-a"), in: &data)
+        #expect(data.packs.count == 1)
+
+        registry.register(sampleEntry(identifier: "pack-b"), in: &data)
+        #expect(data.packs.count == 2)
+    }
+
+    @Test("Register replaces existing entry with same identifier")
+    func registerReplaces() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+        var data = PackRegistryFile.RegistryData()
+
+        registry.register(sampleEntry(identifier: "pack-a", version: "1.0.0"), in: &data)
+        registry.register(sampleEntry(identifier: "pack-a", version: "2.0.0"), in: &data)
+
+        #expect(data.packs.count == 1)
+        #expect(data.packs[0].version == "2.0.0")
+    }
+
+    // MARK: - Remove
+
+    @Test("Remove deletes entry by identifier")
+    func removeEntry() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+        var data = PackRegistryFile.RegistryData()
+
+        registry.register(sampleEntry(identifier: "pack-a"), in: &data)
+        registry.register(sampleEntry(identifier: "pack-b"), in: &data)
+        #expect(data.packs.count == 2)
+
+        registry.remove(identifier: "pack-a", from: &data)
+        #expect(data.packs.count == 1)
+        #expect(data.packs[0].identifier == "pack-b")
+    }
+
+    @Test("Remove is no-op for unknown identifier")
+    func removeUnknown() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+        var data = PackRegistryFile.RegistryData()
+
+        registry.register(sampleEntry(identifier: "pack-a"), in: &data)
+        registry.remove(identifier: "nonexistent", from: &data)
+        #expect(data.packs.count == 1)
+    }
+
+    // MARK: - Queries
+
+    @Test("Look up pack by identifier")
+    func lookupByIdentifier() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+        var data = PackRegistryFile.RegistryData()
+
+        registry.register(sampleEntry(identifier: "pack-a"), in: &data)
+        registry.register(sampleEntry(identifier: "pack-b"), in: &data)
+
+        let found = registry.pack(identifier: "pack-b", in: data)
+        #expect(found?.identifier == "pack-b")
+
+        let notFound = registry.pack(identifier: "nonexistent", in: data)
+        #expect(notFound == nil)
+    }
+
+    // MARK: - Collision Detection
+
+    @Test("No collisions when packs have distinct artifacts")
+    func noCollisions() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+
+        let existing = PackRegistryFile.CollisionInput(
+            identifier: "pack-a",
+            mcpServerNames: ["server-a"],
+            skillDirectories: ["skill-a"],
+            templateSectionIDs: ["pack-a"],
+            componentIDs: ["pack-a.comp1"]
+        )
+        let newPack = PackRegistryFile.CollisionInput(
+            identifier: "pack-b",
+            mcpServerNames: ["server-b"],
+            skillDirectories: ["skill-b"],
+            templateSectionIDs: ["pack-b"],
+            componentIDs: ["pack-b.comp1"]
+        )
+
+        let collisions = registry.detectCollisions(newPack: newPack, existingPacks: [existing])
+        #expect(collisions.isEmpty)
+    }
+
+    @Test("Detect MCP server name collision")
+    func mcpServerCollision() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+
+        let existing = PackRegistryFile.CollisionInput(
+            identifier: "pack-a",
+            mcpServerNames: ["shared-server"],
+            skillDirectories: [],
+            templateSectionIDs: [],
+            componentIDs: []
+        )
+        let newPack = PackRegistryFile.CollisionInput(
+            identifier: "pack-b",
+            mcpServerNames: ["shared-server"],
+            skillDirectories: [],
+            templateSectionIDs: [],
+            componentIDs: []
+        )
+
+        let collisions = registry.detectCollisions(newPack: newPack, existingPacks: [existing])
+        #expect(collisions.count == 1)
+        #expect(collisions[0].type == .mcpServerName)
+        #expect(collisions[0].artifactName == "shared-server")
+        #expect(collisions[0].existingPackIdentifier == "pack-a")
+        #expect(collisions[0].newPackIdentifier == "pack-b")
+    }
+
+    @Test("Detect multiple collision types")
+    func multipleCollisionTypes() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+
+        let existing = PackRegistryFile.CollisionInput(
+            identifier: "pack-a",
+            mcpServerNames: ["server-x"],
+            skillDirectories: ["my-skill"],
+            templateSectionIDs: ["section-y"],
+            componentIDs: []
+        )
+        let newPack = PackRegistryFile.CollisionInput(
+            identifier: "pack-b",
+            mcpServerNames: ["server-x"],
+            skillDirectories: ["my-skill"],
+            templateSectionIDs: ["section-y"],
+            componentIDs: []
+        )
+
+        let collisions = registry.detectCollisions(newPack: newPack, existingPacks: [existing])
+        #expect(collisions.count == 3)
+
+        let types = Set(collisions.map(\.type))
+        #expect(types.contains(.mcpServerName))
+        #expect(types.contains(.skillDirectory))
+        #expect(types.contains(.templateSection))
+    }
+
+    @Test("Skip collision check against same identifier")
+    func skipSelfCollision() throws {
+        let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
+
+        let pack = PackRegistryFile.CollisionInput(
+            identifier: "same-pack",
+            mcpServerNames: ["server-a"],
+            skillDirectories: [],
+            templateSectionIDs: [],
+            componentIDs: []
+        )
+
+        // When updating, the existing list may contain the same pack — should be skipped
+        let collisions = registry.detectCollisions(newPack: pack, existingPacks: [pack])
+        #expect(collisions.isEmpty)
+    }
+}

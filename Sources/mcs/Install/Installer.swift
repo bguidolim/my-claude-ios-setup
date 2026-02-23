@@ -8,6 +8,7 @@ struct Installer {
     let shell: ShellRunner
     var backup: Backup
     let dryRun: Bool
+    let registry: TechPackRegistry
 
     private var installedItems: [String] = []
     private var skippedItems: [String] = []
@@ -17,13 +18,15 @@ struct Installer {
         output: CLIOutput,
         shell: ShellRunner,
         backup: Backup = Backup(),
-        dryRun: Bool
+        dryRun: Bool,
+        registry: TechPackRegistry = .shared
     ) {
         self.environment = environment
         self.output = output
         self.shell = shell
         self.backup = backup
         self.dryRun = dryRun
+        self.registry = registry
     }
 
     // MARK: - Phase 1: Welcome
@@ -91,7 +94,6 @@ struct Installer {
         var state = SelectionState()
 
         let coreComponents = CoreComponents.all
-        let registry = TechPackRegistry.shared
         let allPacks = registry.availablePacks
         let allComponents = registry.allComponents(includingCore: coreComponents)
 
@@ -312,7 +314,7 @@ struct Installer {
         // re-recorded after injection modifies the installed files.
         var modifiedHookFiles: Set<String> = []
         for packID in installedPackIDs {
-            if let pack = TechPackRegistry.shared.pack(for: packID) {
+            if let pack = registry.pack(for: packID) {
                 injectHookContributions(from: pack)
                 addPackGitignoreEntries(from: pack)
                 for contribution in pack.hookContributions {
@@ -374,7 +376,7 @@ struct Installer {
         }
 
         // Offer inline project configuration (interactive installs only)
-        if !installAll && !dryRun && !TechPackRegistry.shared.availablePacks.isEmpty {
+        if !installAll && !dryRun && !registry.availablePacks.isEmpty {
             output.plain("")
             if output.askYesNo("Configure a project now?") {
                 let cwd = FileManager.default.currentDirectoryPath
@@ -390,7 +392,8 @@ struct Installer {
                 let configurator = ProjectConfigurator(
                     environment: environment,
                     output: output,
-                    shell: shell
+                    shell: shell,
+                    registry: registry
                 )
                 do {
                     try configurator.interactiveConfigure(at: projectPath)
@@ -472,6 +475,17 @@ struct Installer {
 
         case .gitignoreEntries(let entries):
             return executor.addGitignoreEntries(entries)
+
+        case .copyPackFile(let source, let destination, let fileType):
+            var exec = executor
+            let success = exec.installCopyPackFile(
+                source: source,
+                destination: destination,
+                fileType: fileType,
+                manifest: &manifest
+            )
+            backup = exec.backup
+            return success
         }
     }
 
