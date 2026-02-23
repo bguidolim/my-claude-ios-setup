@@ -88,6 +88,24 @@ struct AddPack: ParsableCommand {
             throw ExitCode.failure
         }
 
+        // 3b. Check peer dependencies (warning only — peer packs may be added later)
+        let peerResults = PeerDependencyValidator.validate(
+            manifest: manifest,
+            registeredPacks: registryData.packs
+        )
+        for result in peerResults where result.status != .satisfied {
+            switch result.status {
+            case .missing:
+                output.warn("Pack '\(manifest.identifier)' requires peer pack '\(result.peerPack)' (>= \(result.minVersion)) which is not registered.")
+                output.dimmed("  Install it with: mcs pack add <\(result.peerPack)-pack-url>")
+            case .versionTooLow(let actual):
+                output.warn("Pack '\(manifest.identifier)' requires peer pack '\(result.peerPack)' >= \(result.minVersion), but v\(actual) is registered.")
+                output.dimmed("  Update it with: mcs pack update \(result.peerPack)")
+            case .satisfied:
+                break
+            }
+        }
+
         // Build collision input from loaded manifests for better detection
         let existingManifestInputs: [PackRegistryFile.CollisionInput] = registryData.packs.map { entry in
             let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)

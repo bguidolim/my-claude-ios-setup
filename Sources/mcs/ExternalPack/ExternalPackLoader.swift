@@ -220,6 +220,109 @@ struct ExternalPackLoader: Sendable {
     }
 }
 
+// MARK: - Peer Dependency Validation
+
+/// Result of a peer dependency check.
+struct PeerDependencyResult: Equatable, Sendable {
+    let packIdentifier: String
+    let peerPack: String
+    let minVersion: String
+    let status: Status
+
+    enum Status: Equatable, Sendable {
+        case satisfied
+        case missing
+        case versionTooLow(actual: String)
+    }
+}
+
+/// Validate peer dependencies for a manifest against registered packs.
+enum PeerDependencyValidator {
+    /// Check peer dependencies of a single manifest against the registry.
+    /// Used by `mcs pack add` to warn about missing peers.
+    static func validate(
+        manifest: ExternalPackManifest,
+        registeredPacks: [PackRegistryFile.PackEntry]
+    ) -> [PeerDependencyResult] {
+        guard let peers = manifest.peerDependencies, !peers.isEmpty else {
+            return []
+        }
+
+        return peers.map { peer in
+            if let entry = registeredPacks.first(where: { $0.identifier == peer.pack }) {
+                if SemVer.isCompatible(current: entry.version, required: peer.minVersion) {
+                    return PeerDependencyResult(
+                        packIdentifier: manifest.identifier,
+                        peerPack: peer.pack,
+                        minVersion: peer.minVersion,
+                        status: .satisfied
+                    )
+                } else {
+                    return PeerDependencyResult(
+                        packIdentifier: manifest.identifier,
+                        peerPack: peer.pack,
+                        minVersion: peer.minVersion,
+                        status: .versionTooLow(actual: entry.version)
+                    )
+                }
+            } else {
+                return PeerDependencyResult(
+                    packIdentifier: manifest.identifier,
+                    peerPack: peer.pack,
+                    minVersion: peer.minVersion,
+                    status: .missing
+                )
+            }
+        }
+    }
+
+    /// Check peer dependencies for all selected packs at configure time.
+    /// Validates that each pack's peer dependencies are satisfied by the selected set.
+    static func validateSelection(
+        packs: [any TechPack],
+        registeredPacks: [PackRegistryFile.PackEntry]
+    ) -> [PeerDependencyResult] {
+        let selectedIDs = Set(packs.map(\.identifier))
+        var results: [PeerDependencyResult] = []
+
+        for entry in registeredPacks {
+            guard selectedIDs.contains(entry.identifier) else { continue }
+
+            // Load manifest to get peer dependencies
+            // We need the manifest data, so look it up from the registry entries
+            // For external packs, we already have them as loaded adapters
+        }
+
+        // For external packs, check peer deps against the selected set
+        for pack in packs {
+            guard let adapter = pack as? ExternalPackAdapter else { continue }
+            guard let peers = adapter.manifest.peerDependencies, !peers.isEmpty else { continue }
+
+            for peer in peers {
+                if !selectedIDs.contains(peer.pack) {
+                    results.append(PeerDependencyResult(
+                        packIdentifier: pack.identifier,
+                        peerPack: peer.pack,
+                        minVersion: peer.minVersion,
+                        status: .missing
+                    ))
+                } else if let peerEntry = registeredPacks.first(where: { $0.identifier == peer.pack }) {
+                    if !SemVer.isCompatible(current: peerEntry.version, required: peer.minVersion) {
+                        results.append(PeerDependencyResult(
+                            packIdentifier: pack.identifier,
+                            peerPack: peer.pack,
+                            minVersion: peer.minVersion,
+                            status: .versionTooLow(actual: peerEntry.version)
+                        ))
+                    }
+                }
+            }
+        }
+
+        return results
+    }
+}
+
 // MARK: - Semver Comparison
 
 /// Minimal semver comparison for `minMCSVersion` checks.

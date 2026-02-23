@@ -548,3 +548,165 @@ struct ExternalPackLoaderTests {
         #expect(SemVer.isCompatible(current: "2.1.0", required: "2.1.0-beta"))
     }
 }
+
+// MARK: - Peer Dependency Validation Tests
+
+@Suite("PeerDependencyValidator")
+struct PeerDependencyValidatorTests {
+
+    private func makeManifest(
+        identifier: String,
+        version: String = "1.0.0",
+        peers: [PeerDependency] = []
+    ) -> ExternalPackManifest {
+        ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: identifier,
+            displayName: identifier,
+            description: "Test",
+            version: version,
+            minMCSVersion: nil,
+            peerDependencies: peers.isEmpty ? nil : peers,
+            components: nil,
+            templates: nil,
+            hookContributions: nil,
+            gitignoreEntries: nil,
+            prompts: nil,
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+    }
+
+    private func makeEntry(
+        identifier: String,
+        version: String = "1.0.0"
+    ) -> PackRegistryFile.PackEntry {
+        PackRegistryFile.PackEntry(
+            identifier: identifier,
+            displayName: identifier,
+            version: version,
+            sourceURL: "https://example.com/\(identifier)",
+            ref: nil,
+            commitSHA: "abc123",
+            localPath: identifier,
+            addedAt: "2026-01-01T00:00:00Z",
+            trustedScriptHashes: [:]
+        )
+    }
+
+    @Test("No peer dependencies returns empty results")
+    func noPeers() {
+        let manifest = makeManifest(identifier: "test")
+        let results = PeerDependencyValidator.validate(
+            manifest: manifest,
+            registeredPacks: []
+        )
+        #expect(results.isEmpty)
+    }
+
+    @Test("Missing peer pack is detected")
+    func missingPeer() {
+        let manifest = makeManifest(
+            identifier: "ios-testing",
+            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
+        )
+        let results = PeerDependencyValidator.validate(
+            manifest: manifest,
+            registeredPacks: []
+        )
+        #expect(results.count == 1)
+        #expect(results[0].status == .missing)
+        #expect(results[0].peerPack == "ios")
+    }
+
+    @Test("Peer pack with sufficient version is satisfied")
+    func satisfiedPeer() {
+        let manifest = makeManifest(
+            identifier: "ios-testing",
+            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
+        )
+        let results = PeerDependencyValidator.validate(
+            manifest: manifest,
+            registeredPacks: [makeEntry(identifier: "ios", version: "1.2.0")]
+        )
+        #expect(results.count == 1)
+        #expect(results[0].status == .satisfied)
+    }
+
+    @Test("Peer pack with exact minimum version is satisfied")
+    func exactVersion() {
+        let manifest = makeManifest(
+            identifier: "ios-testing",
+            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
+        )
+        let results = PeerDependencyValidator.validate(
+            manifest: manifest,
+            registeredPacks: [makeEntry(identifier: "ios", version: "1.0.0")]
+        )
+        #expect(results.count == 1)
+        #expect(results[0].status == .satisfied)
+    }
+
+    @Test("Peer pack with version too low is detected")
+    func versionTooLow() {
+        let manifest = makeManifest(
+            identifier: "ios-testing",
+            peers: [PeerDependency(pack: "ios", minVersion: "2.0.0")]
+        )
+        let results = PeerDependencyValidator.validate(
+            manifest: manifest,
+            registeredPacks: [makeEntry(identifier: "ios", version: "1.5.0")]
+        )
+        #expect(results.count == 1)
+        #expect(results[0].status == .versionTooLow(actual: "1.5.0"))
+    }
+
+    @Test("Selection validation catches missing peer in selected set")
+    func selectionMissingPeer() {
+        let manifest = makeManifest(
+            identifier: "ios-testing",
+            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
+        )
+        let adapter = ExternalPackAdapter(
+            manifest: manifest,
+            packPath: URL(fileURLWithPath: "/tmp/fake"),
+            shell: ShellRunner(environment: Environment()),
+            output: CLIOutput(colorsEnabled: false)
+        )
+        let results = PeerDependencyValidator.validateSelection(
+            packs: [adapter],
+            registeredPacks: [makeEntry(identifier: "ios-testing")]
+        )
+        #expect(results.count == 1)
+        #expect(results[0].status == .missing)
+        #expect(results[0].peerPack == "ios")
+    }
+
+    @Test("Selection validation passes when peer is selected")
+    func selectionWithPeer() {
+        let testingManifest = makeManifest(
+            identifier: "ios-testing",
+            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
+        )
+        let iosManifest = makeManifest(identifier: "ios", version: "1.0.0")
+        let shell = ShellRunner(environment: Environment())
+        let output = CLIOutput(colorsEnabled: false)
+        let fakePath = URL(fileURLWithPath: "/tmp/fake")
+
+        let testingAdapter = ExternalPackAdapter(
+            manifest: testingManifest, packPath: fakePath, shell: shell, output: output
+        )
+        let iosAdapter = ExternalPackAdapter(
+            manifest: iosManifest, packPath: fakePath, shell: shell, output: output
+        )
+
+        let results = PeerDependencyValidator.validateSelection(
+            packs: [testingAdapter, iosAdapter],
+            registeredPacks: [
+                makeEntry(identifier: "ios-testing"),
+                makeEntry(identifier: "ios", version: "1.0.0"),
+            ]
+        )
+        #expect(results.isEmpty)
+    }
+}

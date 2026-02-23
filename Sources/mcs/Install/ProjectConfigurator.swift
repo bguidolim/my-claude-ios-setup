@@ -237,6 +237,26 @@ struct ProjectConfigurator {
         let removals = previousIDs.subtracting(selectedIDs)
         let additions = selectedIDs.subtracting(previousIDs)
 
+        // 0. Validate peer dependencies before making any changes
+        let peerIssues = validatePeerDependencies(packs: packs)
+        if !peerIssues.isEmpty {
+            for issue in peerIssues {
+                switch issue.status {
+                case .missing:
+                    output.error("Pack '\(issue.packIdentifier)' requires peer pack '\(issue.peerPack)' (>= \(issue.minVersion)) which is not selected.")
+                    output.dimmed("  Either select '\(issue.peerPack)' or deselect '\(issue.packIdentifier)'.")
+                case .versionTooLow(let actual):
+                    output.error("Pack '\(issue.packIdentifier)' requires peer pack '\(issue.peerPack)' >= \(issue.minVersion), but v\(actual) is registered.")
+                    output.dimmed("  Update it with: mcs pack update \(issue.peerPack)")
+                case .satisfied:
+                    break
+                }
+            }
+            throw MCSError.configurationFailed(
+                reason: "Unresolved peer dependencies. Fix the issues above and re-run mcs configure."
+            )
+        }
+
         // 1. Unconfigure removed packs
         for packID in removals.sorted() {
             unconfigurePack(packID, at: projectPath, state: &projectState)
@@ -617,6 +637,18 @@ struct ProjectConfigurator {
             output: output,
             shell: shell,
             backup: Backup()
+        )
+    }
+
+    /// Validate peer dependencies for all selected packs.
+    /// Returns only unsatisfied results (missing or version too low).
+    private func validatePeerDependencies(packs: [any TechPack]) -> [PeerDependencyResult] {
+        let packRegistryFile = PackRegistryFile(path: environment.packsRegistry)
+        let registeredPacks = (try? packRegistryFile.load())?.packs ?? []
+
+        return PeerDependencyValidator.validateSelection(
+            packs: packs,
+            registeredPacks: registeredPacks
         )
     }
 
