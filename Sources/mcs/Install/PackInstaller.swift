@@ -37,8 +37,7 @@ struct PackInstaller {
     /// Install missing components for a pack. Returns true if all succeeded.
     @discardableResult
     mutating func installPack(_ pack: any TechPack) -> Bool {
-        let coreComponents = CoreComponents.all
-        let allComponents = registry.allComponents(includingCore: coreComponents)
+        let allComponents = registry.allPackComponents
 
         // Select all pack components
         let selectedIDs = Set(pack.components.map(\.id))

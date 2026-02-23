@@ -7,21 +7,16 @@ import Testing
 struct TechPackRegistryTests {
     // MARK: - Basic registry
 
-    @Test("Shared registry contains iOS pack")
-    func sharedHasIOSPack() {
+    @Test("Shared registry has no compiled-in packs")
+    func sharedIsEmpty() {
         let packs = TechPackRegistry.shared.availablePacks
-        let identifiers = packs.map(\.identifier)
-        #expect(identifiers.contains("ios"))
+        #expect(packs.isEmpty)
     }
 
-    @Test("Find pack by identifier")
-    func findByIdentifier() {
-        let ios = TechPackRegistry.shared.pack(for: "ios")
-        #expect(ios != nil)
-        #expect(ios?.displayName == "iOS Development")
-
-        let nonexistent = TechPackRegistry.shared.pack(for: "android")
-        #expect(nonexistent == nil)
+    @Test("Find pack by identifier returns nil for unknown")
+    func findByIdentifierUnknown() {
+        let result = TechPackRegistry.shared.pack(for: "nonexistent")
+        #expect(result == nil)
     }
 
     // MARK: - Filtered by installed packs
@@ -30,15 +25,6 @@ struct TechPackRegistryTests {
     func supplementaryDoctorChecksEmpty() {
         let checks = TechPackRegistry.shared.supplementaryDoctorChecks(installedPacks: [])
         #expect(checks.isEmpty)
-    }
-
-    @Test("supplementaryDoctorChecks returns iOS checks when iOS pack is installed")
-    func supplementaryDoctorChecksWithIOS() {
-        let checks = TechPackRegistry.shared.supplementaryDoctorChecks(installedPacks: ["ios"])
-        #expect(!checks.isEmpty)
-        // iOS pack should contribute checks like XcodeBuildMCP, Sosumi, etc.
-        let names = checks.map(\.name)
-        #expect(names.contains(where: { $0.lowercased().contains("xcode") || $0.lowercased().contains("sosumi") || $0.lowercased().contains("config") }))
     }
 
     @Test("supplementaryDoctorChecks ignores unrecognized pack identifiers")
@@ -53,24 +39,10 @@ struct TechPackRegistryTests {
         #expect(contributions.isEmpty)
     }
 
-    @Test("hookContributions returns iOS hooks when iOS pack is installed")
-    func hookContributionsWithIOS() {
-        let contributions = TechPackRegistry.shared.hookContributions(installedPacks: ["ios"])
-        #expect(!contributions.isEmpty)
-        #expect(contributions.first?.pack.identifier == "ios")
-        #expect(contributions.first?.contribution.hookName == "session_start")
-    }
-
     @Test("gitignoreEntries returns empty when no packs installed")
     func gitignoreEntriesEmpty() {
         let entries = TechPackRegistry.shared.gitignoreEntries(installedPacks: [])
         #expect(entries.isEmpty)
-    }
-
-    @Test("gitignoreEntries returns iOS entries when iOS pack is installed")
-    func gitignoreEntriesWithIOS() {
-        let entries = TechPackRegistry.shared.gitignoreEntries(installedPacks: ["ios"])
-        #expect(entries.contains(".xcodebuildmcp"))
     }
 
     @Test("migrations returns empty when no packs installed")
@@ -88,16 +60,19 @@ struct TechPackRegistryTests {
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
+        let fakePack = FakeTechPack(identifier: "test-pack")
+        let registry = TechPackRegistry.withExternalPacks([fakePack])
+
         let manifestFile = tmpDir.appendingPathComponent("manifest")
         var manifest = Manifest(path: manifestFile)
         manifest.initialize(sourceDirectory: "/test")
-        manifest.recordInstalledPack("ios")
+        manifest.recordInstalledPack("test-pack")
         try manifest.save()
 
         let reloaded = Manifest(path: manifestFile)
-        let packs = TechPackRegistry.shared.installedPacks(from: reloaded)
+        let packs = registry.installedPacks(from: reloaded)
         #expect(packs.count == 1)
-        #expect(packs.first?.identifier == "ios")
+        #expect(packs.first?.identifier == "test-pack")
     }
 
     @Test("installedPacks returns empty when manifest has no packs")
@@ -119,12 +94,18 @@ struct TechPackRegistryTests {
 
     // MARK: - Template contributions
 
-    @Test("templateContributions returns iOS templates")
+    @Test("templateContributions returns templates for registered pack")
     func templateContributions() {
-        let templates = TechPackRegistry.shared.templateContributions(for: "ios")
+        let template = TemplateContribution(
+            sectionIdentifier: "test",
+            templateContent: "Test content __NAME__",
+            placeholders: ["__NAME__"]
+        )
+        let fakePack = FakeTechPack(identifier: "test-pack", templates: [template])
+        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let templates = registry.templateContributions(for: "test-pack")
         #expect(!templates.isEmpty)
-        #expect(templates.first?.sectionIdentifier == "ios")
-        #expect(templates.first?.placeholders.contains("__PROJECT__") == true)
+        #expect(templates.first?.sectionIdentifier == "test")
     }
 
     @Test("templateContributions returns empty for unknown pack")
@@ -141,16 +122,15 @@ struct TechPackRegistryTests {
         let registry = TechPackRegistry.withExternalPacks([fakePack])
         let ids = registry.availablePacks.map(\.identifier)
         #expect(ids.contains("android"))
-        #expect(ids.contains("core")) // compiled-in still present
-        #expect(ids.contains("ios"))  // compiled-in still present
     }
 
-    @Test("External pack overrides compiled-in with same identifier")
-    func externalPackOverridesCompiledIn() {
-        let overridePack = FakeTechPack(identifier: "ios")
-        let registry = TechPackRegistry.withExternalPacks([overridePack])
-        let ios = registry.pack(for: "ios")
-        #expect(ios?.displayName == "Fake Pack") // not "iOS Development"
+    @Test("Find external pack by identifier")
+    func findExternalByIdentifier() {
+        let fakePack = FakeTechPack(identifier: "android")
+        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let found = registry.pack(for: "android")
+        #expect(found != nil)
+        #expect(found?.displayName == "Fake Pack")
     }
 
     @Test("isExternalPack returns true for external packs")
@@ -158,7 +138,7 @@ struct TechPackRegistryTests {
         let fakePack = FakeTechPack(identifier: "android")
         let registry = TechPackRegistry.withExternalPacks([fakePack])
         #expect(registry.isExternalPack("android") == true)
-        #expect(registry.isExternalPack("ios") == false)
+        #expect(registry.isExternalPack("nonexistent") == false)
     }
 
     @Test("externalPackIdentifiers returns correct set")
@@ -190,12 +170,52 @@ struct TechPackRegistryTests {
         #expect(allIDs.contains("ext.comp"))
     }
 
-    @Test("Existing methods work unchanged with empty external packs")
+    @Test("Registry with empty external packs has no available packs")
     func emptyExternalPacks() {
         let registry = TechPackRegistry.withExternalPacks([])
-        let ids = registry.availablePacks.map(\.identifier)
-        #expect(ids.contains("core"))
-        #expect(ids.contains("ios"))
+        #expect(registry.availablePacks.isEmpty)
+    }
+
+    @Test("supplementaryDoctorChecks returns checks for registered external pack")
+    func supplementaryDoctorChecksWithExternalPack() {
+        let check = CommandCheck(name: "test-check", section: "Dependencies", command: "test")
+        let fakePack = FakeTechPack(
+            identifier: "test-pack",
+            supplementaryDoctorChecks: [check]
+        )
+        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let checks = registry.supplementaryDoctorChecks(installedPacks: ["test-pack"])
+        #expect(!checks.isEmpty)
+        #expect(checks.first?.name == "test-check")
+    }
+
+    @Test("hookContributions returns hooks for registered external pack")
+    func hookContributionsWithExternalPack() {
+        let contribution = HookContribution(
+            hookName: "session_start",
+            scriptFragment: "echo test",
+            position: .after
+        )
+        let fakePack = FakeTechPack(
+            identifier: "test-pack",
+            hookContributions: [contribution]
+        )
+        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let contributions = registry.hookContributions(installedPacks: ["test-pack"])
+        #expect(!contributions.isEmpty)
+        #expect(contributions.first?.pack.identifier == "test-pack")
+        #expect(contributions.first?.contribution.hookName == "session_start")
+    }
+
+    @Test("gitignoreEntries returns entries for registered external pack")
+    func gitignoreEntriesWithExternalPack() {
+        let fakePack = FakeTechPack(
+            identifier: "test-pack",
+            gitignoreEntries: [".testdir"]
+        )
+        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let entries = registry.gitignoreEntries(installedPacks: ["test-pack"])
+        #expect(entries.contains(".testdir"))
     }
 }
 
@@ -206,15 +226,28 @@ private struct FakeTechPack: TechPack {
     let displayName: String = "Fake Pack"
     let description: String = "A fake pack for testing"
     let components: [ComponentDefinition]
-    let templates: [TemplateContribution] = []
-    let hookContributions: [HookContribution] = []
-    let gitignoreEntries: [String] = []
-    let supplementaryDoctorChecks: [any DoctorCheck] = []
-    let migrations: [any PackMigration] = []
+    let templates: [TemplateContribution]
+    let hookContributions: [HookContribution]
+    let gitignoreEntries: [String]
+    let supplementaryDoctorChecks: [any DoctorCheck]
+    let migrations: [any PackMigration]
 
-    init(identifier: String, components: [ComponentDefinition] = []) {
+    init(
+        identifier: String,
+        components: [ComponentDefinition] = [],
+        templates: [TemplateContribution] = [],
+        hookContributions: [HookContribution] = [],
+        gitignoreEntries: [String] = [],
+        supplementaryDoctorChecks: [any DoctorCheck] = [],
+        migrations: [any PackMigration] = []
+    ) {
         self.identifier = identifier
         self.components = components
+        self.templates = templates
+        self.hookContributions = hookContributions
+        self.gitignoreEntries = gitignoreEntries
+        self.supplementaryDoctorChecks = supplementaryDoctorChecks
+        self.migrations = migrations
     }
 
     func configureProject(at path: URL, context: ProjectConfigContext) throws {}

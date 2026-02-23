@@ -46,9 +46,7 @@ struct InstallCommand: ParsableCommand {
         }
 
         // Resolve dependencies
-        let allComponents = registry.allComponents(
-            includingCore: CoreComponents.all
-        )
+        let allComponents = registry.allPackComponents
         let plan: DependencyResolver.ResolvedPlan
         do {
             plan = try DependencyResolver.resolve(

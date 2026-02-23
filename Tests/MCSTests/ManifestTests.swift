@@ -269,6 +269,136 @@ struct ManifestTests {
         #expect(!manifest.trackedPaths.contains("INSTALLED_COMPONENTS"))
     }
 
+    // MARK: - Pack removal
+
+    @Test("Remove an installed pack")
+    func removeInstalledPack() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/test")
+        manifest.recordInstalledPack("ios")
+        manifest.recordInstalledPack("web")
+
+        let removed = manifest.removeInstalledPack("ios")
+        #expect(removed == true)
+        #expect(manifest.installedPacks == Set(["web"]))
+
+        // Removing again is idempotent
+        let removedAgain = manifest.removeInstalledPack("ios")
+        #expect(removedAgain == false)
+    }
+
+    @Test("Removing last pack clears metadata key")
+    func removeLastPack() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/test")
+        manifest.recordInstalledPack("ios")
+        manifest.removeInstalledPack("ios")
+        try manifest.save()
+
+        // Reload — should have no INSTALLED_PACKS key
+        let loaded = Manifest(path: manifestFile)
+        #expect(loaded.installedPacks.isEmpty)
+    }
+
+    // MARK: - Component removal
+
+    @Test("Remove an installed component")
+    func removeInstalledComponent() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/test")
+        manifest.recordInstalledComponent("core.serena")
+        manifest.recordInstalledComponent("core.docs-mcp-server")
+
+        let removed = manifest.removeInstalledComponent("core.serena")
+        #expect(removed == true)
+        #expect(manifest.installedComponents == Set(["core.docs-mcp-server"]))
+
+        let removedAgain = manifest.removeInstalledComponent("core.serena")
+        #expect(removedAgain == false)
+    }
+
+    @Test("Removing last component clears metadata key")
+    func removeLastComponent() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.initialize(sourceDirectory: "/test")
+        manifest.recordInstalledComponent("core.serena")
+        manifest.removeInstalledComponent("core.serena")
+        try manifest.save()
+
+        let loaded = Manifest(path: manifestFile)
+        #expect(loaded.installedComponents.isEmpty)
+    }
+
+    // MARK: - Hash removal
+
+    @Test("Remove a single hash entry")
+    func removeHash() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.recordHash(relativePath: "hooks/session_start.sh", hash: "abc123")
+        manifest.recordHash(relativePath: "config/settings.json", hash: "def456")
+
+        let removed = manifest.removeHash(relativePath: "hooks/session_start.sh")
+        #expect(removed == true)
+        #expect(!manifest.trackedPaths.contains("hooks/session_start.sh"))
+        #expect(manifest.trackedPaths.contains("config/settings.json"))
+
+        let removedAgain = manifest.removeHash(relativePath: "hooks/session_start.sh")
+        #expect(removedAgain == false)
+    }
+
+    @Test("Remove hashes by prefix")
+    func removeHashesWithPrefix() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let manifestFile = tmpDir.appendingPathComponent("manifest")
+        var manifest = Manifest(path: manifestFile)
+        manifest.recordHash(relativePath: "packs/ios/hooks/sim.sh", hash: "aaa")
+        manifest.recordHash(relativePath: "packs/ios/skills/build.md", hash: "bbb")
+        manifest.recordHash(relativePath: "packs/web/hooks/lint.sh", hash: "ccc")
+        manifest.recordHash(relativePath: "config/settings.json", hash: "ddd")
+
+        let count = manifest.removeHashesWithPrefix("packs/ios/")
+        #expect(count == 2)
+        #expect(!manifest.trackedPaths.contains("packs/ios/hooks/sim.sh"))
+        #expect(!manifest.trackedPaths.contains("packs/ios/skills/build.md"))
+        #expect(manifest.trackedPaths.contains("packs/web/hooks/lint.sh"))
+        #expect(manifest.trackedPaths.contains("config/settings.json"))
+    }
+
+    @Test("Remove hashes with no matching prefix returns zero")
+    func removeHashesNoMatch() {
+        let manifestFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("manifest-\(UUID().uuidString)")
+        var manifest = Manifest(path: manifestFile)
+        manifest.recordHash(relativePath: "config/settings.json", hash: "abc")
+
+        let count = manifest.removeHashesWithPrefix("packs/nonexistent/")
+        #expect(count == 0)
+    }
+
+    // MARK: - Persistence round-trip
+
     @Test("Manifest save and reload preserves all entries")
     func saveReloadRoundTrip() throws {
         let tmpDir = try makeTmpDir()

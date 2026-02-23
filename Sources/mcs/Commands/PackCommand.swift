@@ -78,17 +78,6 @@ struct AddPack: ParsableCommand {
 
         output.success("Found pack: \(manifest.displayName) v\(manifest.version)")
 
-        // 2b. Warn if overriding a built-in pack
-        let builtInIDs = Set(TechPackRegistry.shared.availablePacks.map(\.identifier))
-        if builtInIDs.contains(manifest.identifier) {
-            output.warn("Pack '\(manifest.identifier)' will override the built-in pack with the same identifier.")
-            if !output.askYesNo("Override built-in pack?", default: false) {
-                try? fetcher.remove(packPath: fetchResult.localPath)
-                output.info("Pack not added.")
-                return
-            }
-        }
-
         // 3. Check for collisions with existing packs
         let registryData: PackRegistryFile.RegistryData
         do {
@@ -287,13 +276,53 @@ struct RemovePack: ParsableCommand {
             throw ExitCode.failure
         }
 
-        // 2. Show what will be removed
+        let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+
+        // 2. Load manifest from checkout (if available) to know what to reverse
+        let manifest: ExternalPackManifest?
+        if FileManager.default.fileExists(atPath: packPath.path) {
+            let loader = ExternalPackLoader(
+                environment: env,
+                registry: registry
+            )
+            do {
+                manifest = try loader.validate(at: packPath)
+            } catch {
+                output.warn("Could not read pack manifest: \(error.localizedDescription)")
+                output.warn("Artifacts will not be cleaned up.")
+                manifest = nil
+            }
+        } else {
+            output.warn("Pack checkout missing at \(packPath.path)")
+            output.warn("Artifacts will not be cleaned up.")
+            manifest = nil
+        }
+
+        // 3. Show removal plan
         output.info("Pack: \(entry.displayName) v\(entry.version)")
         output.plain("  Source: \(entry.sourceURL)")
         output.plain("  Local:  ~/.claude/packs/\(entry.localPath)")
+        if let manifest {
+            let componentCount = manifest.components?.count ?? 0
+            let hookCount = manifest.hookContributions?.count ?? 0
+            let gitignoreCount = manifest.gitignoreEntries?.count ?? 0
+            if componentCount + hookCount + gitignoreCount > 0 {
+                output.plain("")
+                output.plain("  Will remove:")
+                if componentCount > 0 {
+                    output.plain("    \(componentCount) component(s)")
+                }
+                if hookCount > 0 {
+                    output.plain("    \(hookCount) hook fragment(s)")
+                }
+                if gitignoreCount > 0 {
+                    output.plain("    \(gitignoreCount) gitignore entry/entries")
+                }
+            }
+        }
         output.plain("")
 
-        // 3. Confirm
+        // 4. Confirm
         if !force {
             guard output.askYesNo("Remove pack '\(entry.displayName)'?", default: false) else {
                 output.info("Pack not removed.")
@@ -301,7 +330,24 @@ struct RemovePack: ParsableCommand {
             }
         }
 
-        // 4. Remove from registry
+        // 5. Uninstall artifacts BEFORE deleting checkout
+        if let manifest {
+            var uninstaller = PackUninstaller(
+                environment: env,
+                output: output,
+                shell: shell,
+                backup: Backup()
+            )
+            let summary = uninstaller.uninstall(manifest: manifest, packPath: packPath)
+            if summary.totalRemoved > 0 {
+                output.info("Cleaned up \(summary.totalRemoved) artifact(s)")
+            }
+            for err in summary.errors {
+                output.warn(err)
+            }
+        }
+
+        // 6. Remove from registry
         do {
             var data = registryData
             registry.remove(identifier: identifier, from: &data)
@@ -311,8 +357,7 @@ struct RemovePack: ParsableCommand {
             throw ExitCode.failure
         }
 
-        // 5. Delete local checkout
-        let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+        // 7. Delete local checkout
         do {
             try fetcher.remove(packPath: packPath)
         } catch {
@@ -320,7 +365,7 @@ struct RemovePack: ParsableCommand {
         }
 
         output.success("Pack '\(entry.displayName)' removed.")
-        output.info("Run 'mcs install' to clean up any installed artifacts.")
+        output.info("Note: Project-level CLAUDE.local.md may still reference this pack. Run 'mcs configure' to update.")
     }
 }
 
@@ -489,18 +534,6 @@ struct ListPacks: ParsableCommand {
         let registry = PackRegistryFile(path: env.packsRegistry)
 
         output.header("Tech Packs")
-
-        // Built-in packs (show compiled-in packs, noting overrides)
-        let compiledPacks = TechPackRegistry.shared.availablePacks
-        let fullRegistry = TechPackRegistry.loadWithExternalPacks(environment: env, output: output)
-        if !compiledPacks.isEmpty {
-            output.sectionHeader("Built-in")
-            for pack in compiledPacks {
-                let overridden = fullRegistry.isExternalPack(pack.identifier)
-                let suffix = overridden ? "  (overridden by external)" : ""
-                output.plain("  \(pack.identifier)  \(pack.displayName)  (built-in)\(suffix)")
-            }
-        }
 
         // External packs
         let registryData: PackRegistryFile.RegistryData

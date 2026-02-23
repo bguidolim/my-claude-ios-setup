@@ -95,11 +95,9 @@ struct DoctorRunner {
         // === Layered check collection ===
 
         // Layer 1+2: Derived + supplementary checks from installed components
-        let coreComponents = CoreComponents.all
-        let packComponents = registry.availablePacks
+        let allComponents = registry.availablePacks
             .filter { installedPackIDs.contains($0.identifier) }
             .flatMap { $0.components }
-        let allComponents = coreComponents + packComponents
 
         var allChecks: [any DoctorCheck] = []
         for component in allComponents {
@@ -173,9 +171,6 @@ struct DoctorRunner {
         // Hook event registration in settings.json
         checks.append(HookEventCheck(eventName: Constants.Hooks.eventSessionStart))
         checks.append(HookEventCheck(eventName: Constants.Hooks.eventUserPromptSubmit, isOptional: true))
-
-        // Continuous learning hook fragment
-        checks.append(ContinuousLearningHookFragmentCheck())
 
         // Settings value validation
         checks.append(SettingsCheck())

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Centralizes hook fragment injection using `# --- mcs:begin/end ---` section markers.
-/// Used by both core (continuous learning) and tech pack hook contributions.
+/// Used by tech pack hook contributions.
 ///
 /// Fragments are always inserted at the `# --- mcs:hook-extensions ---` marker
 /// inside the hook file. If the marker is missing, injection fails with a warning
@@ -32,30 +32,8 @@ enum HookInjector {
             return
         }
 
-        // Remove existing section (patterns include optional leading whitespace)
-        let beginPattern = #"[ \t]*# --- mcs:begin \#(identifier)( v[0-9]+\.[0-9]+\.[0-9]+)? ---"#
-        let endPattern = #"[ \t]*# --- mcs:end \#(identifier) ---"#
-        if let beginRange = content.range(of: beginPattern, options: .regularExpression),
-           let endRange = content.range(of: endPattern, options: .regularExpression) {
-            var removeEnd = endRange.upperBound
-            // Consume trailing newline
-            if removeEnd < content.endIndex && content[removeEnd] == "\n" {
-                removeEnd = content.index(after: removeEnd)
-            }
-            // Consume extra blank line after end marker
-            if removeEnd < content.endIndex && content[removeEnd] == "\n" {
-                removeEnd = content.index(after: removeEnd)
-            }
-            var removeStart = beginRange.lowerBound
-            // Consume preceding newline
-            if removeStart > content.startIndex {
-                let before = content.index(before: removeStart)
-                if content[before] == "\n" {
-                    removeStart = before
-                }
-            }
-            content.removeSubrange(removeStart..<removeEnd)
-        }
+        // Remove existing section if present
+        content = stripSection(identifier: identifier, from: content)
 
         // Build the marked section (indented to match function body)
         let beginMarker = "# --- mcs:begin \(identifier) v\(version) ---"
@@ -81,5 +59,80 @@ enum HookInjector {
         } catch {
             output.warn("Could not write \(hookFile.lastPathComponent): \(error.localizedDescription)")
         }
+    }
+
+    /// Remove a fragment from a hook file by its identifier.
+    ///
+    /// - Returns `true` if the section was found and removed.
+    /// - Returns `false` if the file doesn't exist or the section wasn't found.
+    /// - Creates a backup before modifying the file.
+    @discardableResult
+    static func remove(
+        identifier: String,
+        from hookFile: URL,
+        backup: inout Backup,
+        output: CLIOutput
+    ) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: hookFile.path) else { return false }
+
+        let content: String
+        do {
+            content = try String(contentsOf: hookFile, encoding: .utf8)
+        } catch {
+            output.warn("Could not read \(hookFile.lastPathComponent): \(error.localizedDescription)")
+            return false
+        }
+
+        let stripped = stripSection(identifier: identifier, from: content)
+
+        // If nothing changed, the section wasn't found
+        guard stripped != content else { return false }
+
+        do {
+            try backup.backupFile(at: hookFile)
+        } catch {
+            output.warn("Could not backup \(hookFile.lastPathComponent): \(error.localizedDescription)")
+        }
+        do {
+            try stripped.write(to: hookFile, atomically: true, encoding: .utf8)
+            output.success("Removed \(identifier) hook fragment from \(hookFile.deletingPathExtension().lastPathComponent)")
+            return true
+        } catch {
+            output.warn("Could not write \(hookFile.lastPathComponent): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    // MARK: - Private
+
+    /// Strip a section identified by `# --- mcs:begin/end <identifier> ---` markers,
+    /// including surrounding blank lines. Returns the content unchanged if no section found.
+    private static func stripSection(identifier: String, from content: String) -> String {
+        var result = content
+        let beginPattern = #"[ \t]*# --- mcs:begin \#(identifier)( v[0-9]+\.[0-9]+\.[0-9]+)? ---"#
+        let endPattern = #"[ \t]*# --- mcs:end \#(identifier) ---"#
+        if let beginRange = result.range(of: beginPattern, options: .regularExpression),
+           let endRange = result.range(of: endPattern, options: .regularExpression) {
+            var removeEnd = endRange.upperBound
+            // Consume trailing newline
+            if removeEnd < result.endIndex && result[removeEnd] == "\n" {
+                removeEnd = result.index(after: removeEnd)
+            }
+            // Consume extra blank line after end marker
+            if removeEnd < result.endIndex && result[removeEnd] == "\n" {
+                removeEnd = result.index(after: removeEnd)
+            }
+            var removeStart = beginRange.lowerBound
+            // Consume preceding newline
+            if removeStart > result.startIndex {
+                let before = result.index(before: removeStart)
+                if result[before] == "\n" {
+                    removeStart = before
+                }
+            }
+            result.removeSubrange(removeStart..<removeEnd)
+        }
+        return result
     }
 }

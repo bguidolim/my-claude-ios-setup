@@ -122,34 +122,15 @@ struct ProjectConfigurator {
 
     // MARK: - Template Gathering
 
-    /// Collect all template contributions from CoreTechPack, symlink detection, and the selected pack.
+    /// Collect all template contributions from the selected pack.
     private func gatherTemplateContributions(
         projectPath: URL,
         pack: any TechPack
     ) -> [TemplateContribution] {
         var contributions: [TemplateContribution] = []
 
-        // Symlink detection — project-specific, cannot be in TechPack.templates
-        let claudeMD = projectPath.appendingPathComponent("CLAUDE.md")
-        let fm = FileManager.default
-        if fm.fileExists(atPath: claudeMD.path),
-           (try? fm.destinationOfSymbolicLink(atPath: claudeMD.path)) != nil {
-            contributions.append(TemplateContribution(
-                sectionIdentifier: "core",
-                templateContent: CoreTemplates.symlinkNote,
-                placeholders: []
-            ))
-        }
-
-        // Core conditional sections (continuous learning KB search)
-        let corePack = CoreTechPack()
-        contributions.append(contentsOf: corePack.templates)
-
-        // Selected pack sections (e.g., iOS) — skip if Core is the selected pack
-        // since we already gathered its templates above.
-        if pack.identifier != corePack.identifier {
-            contributions.append(contentsOf: pack.templates)
-        }
+        // Pack template sections
+        contributions.append(contentsOf: pack.templates)
 
         return contributions
     }
@@ -262,7 +243,10 @@ struct ProjectConfigurator {
     /// - If `.serena/memories` exists as real directory → copy files, delete, create symlink.
     /// - If `.serena/memories` doesn't exist → create `.serena/` if needed, create symlink.
     private func ensureSerenaMemoriesSymlink(at projectPath: URL) {
-        guard CoreTechPack.isSerenaInstalled() else { return }
+        // Check if Serena is present by looking for the installed MCP server
+        let manifest = Manifest(path: environment.setupManifest)
+        let hasSerena = manifest.installedComponents.contains(where: { $0.contains("serena") })
+        guard hasSerena else { return }
 
         let fm = FileManager.default
         let serenaMemories = projectPath

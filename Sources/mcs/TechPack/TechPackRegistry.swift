@@ -4,7 +4,7 @@ import Foundation
 /// External packs with the same identifier as a compiled-in pack override it,
 /// enabling migration from compiled-in to external packs.
 struct TechPackRegistry: Sendable {
-    static let shared = TechPackRegistry(packs: [CoreTechPack(), IOSTechPack()])
+    static let shared = TechPackRegistry(packs: [])
 
     private let compiledPacks: [any TechPack]
     private let externalPacks: [any TechPack]
@@ -21,10 +21,9 @@ struct TechPackRegistry: Sendable {
 
     /// Create a registry that includes external packs alongside compiled-in packs.
     /// External packs with the same identifier override compiled-in ones.
-    /// NOTE: Keep this compiled-in pack list in sync with `TechPackRegistry.shared`.
     static func withExternalPacks(_ external: [any TechPack]) -> TechPackRegistry {
         TechPackRegistry(
-            compiledPacks: [CoreTechPack(), IOSTechPack()],
+            compiledPacks: [],
             externalPacks: external
         )
     }

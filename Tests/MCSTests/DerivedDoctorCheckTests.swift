@@ -202,35 +202,6 @@ struct DerivedDoctorCheckTests {
         #expect(checks.first?.name == "brew")
     }
 
-    // MARK: - Every .shellCommand component has supplementaryChecks
-
-    @Test("All .shellCommand core components have supplementaryChecks")
-    func shellCommandCoreComponentsHaveSupplementary() {
-        let shellComponents = CoreComponents.all.filter {
-            if case .shellCommand = $0.installAction { return true }
-            return false
-        }
-        for component in shellComponents {
-            #expect(
-                !component.supplementaryChecks.isEmpty,
-                "Core component '\(component.id)' uses .shellCommand but has no supplementaryChecks"
-            )
-        }
-    }
-
-    @Test("All .shellCommand iOS components have supplementaryChecks")
-    func shellCommandIOSComponentsHaveSupplementary() {
-        let shellComponents = IOSComponents.all.filter {
-            if case .shellCommand = $0.installAction { return true }
-            return false
-        }
-        for component in shellComponents {
-            #expect(
-                !component.supplementaryChecks.isEmpty,
-                "iOS component '\(component.id)' uses .shellCommand but has no supplementaryChecks"
-            )
-        }
-    }
 }
 
 // MARK: - Manifest directory hashing

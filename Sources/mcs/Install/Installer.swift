@@ -93,21 +93,18 @@ struct Installer {
     ) -> SelectionState {
         var state = SelectionState()
 
-        let coreComponents = CoreComponents.all
         let allPacks = registry.availablePacks
-        let allComponents = registry.allComponents(includingCore: coreComponents)
+        let allComponents = registry.allPackComponents
 
         if installAll {
             state.selectAllCore(from: allComponents)
-            // --all explicitly includes all packs
             for pack in allPacks {
                 state.selectPack(
                     pack.identifier,
-                    coreComponents: coreComponents,
+                    coreComponents: [],
                     packComponents: pack.components
                 )
             }
-            askBranchPrefix(&state)
             return state
         }
 
@@ -115,53 +112,34 @@ struct Installer {
             if let pack = registry.pack(for: packName) {
                 state.selectPack(
                     packName,
-                    coreComponents: coreComponents,
+                    coreComponents: [],
                     packComponents: pack.components
                 )
                 output.info("Selected tech pack: \(pack.displayName)")
             } else {
                 output.warn("Unknown tech pack: \(packName)")
-                output.plain("  Available packs: \(allPacks.map(\.identifier).joined(separator: ", "))")
+                if !allPacks.isEmpty {
+                    output.plain("  Available packs: \(allPacks.map(\.identifier).joined(separator: ", "))")
+                }
             }
-            askBranchPrefix(&state)
             return state
         }
 
-        // Interactive multi-select
-        output.header("Component Selection")
-
-        let selection = CoreComponents.groupedForSelection
-        var numberToComponentIDs: [Int: [String]] = [:]
-        var number = 1
-
-        // Build selectable groups: bundles first, then individual components
-        var groups: [SelectableGroup] = []
-
-        // Feature bundles
-        let bundles = CoreComponents.bundles
-        if !bundles.isEmpty {
-            var bundleItems: [SelectableItem] = []
-            for bundle in bundles {
-                bundleItems.append(SelectableItem(
-                    number: number,
-                    name: bundle.name,
-                    description: bundle.description,
-                    isSelected: true
-                ))
-                numberToComponentIDs[number] = bundle.componentIDs
-                number += 1
-            }
-            groups.append(SelectableGroup(
-                title: "Features",
-                items: bundleItems,
-                requiredItems: []
-            ))
+        // Interactive: show only external pack components for selection
+        if allPacks.isEmpty {
+            output.info("No packs registered. Use 'mcs pack add <url>' to add tech packs.")
+            return state
         }
 
-        // Individual components (excludes bundled ones)
-        for (type, components) in selection.selectable {
+        output.header("Component Selection")
+
+        var numberToComponentIDs: [Int: [String]] = [:]
+        var number = 1
+        var groups: [SelectableGroup] = []
+
+        for pack in allPacks {
             var items: [SelectableItem] = []
-            for component in components {
+            for component in pack.components {
                 items.append(SelectableItem(
                     number: number,
                     name: component.displayName,
@@ -171,27 +149,17 @@ struct Installer {
                 numberToComponentIDs[number] = [component.id]
                 number += 1
             }
-            groups.append(SelectableGroup(
-                title: type.rawValue,
-                items: items,
-                requiredItems: []
-            ))
-        }
-
-        // Add required items to a dedicated group
-        let requiredItems = selection.required.map { RequiredItem(name: $0.displayName) }
-        if !requiredItems.isEmpty {
-            groups.append(SelectableGroup(
-                title: "",
-                items: [],
-                requiredItems: requiredItems
-            ))
+            if !items.isEmpty {
+                groups.append(SelectableGroup(
+                    title: pack.displayName,
+                    items: items,
+                    requiredItems: []
+                ))
+            }
         }
 
         let selectedNumbers = output.multiSelect(groups: &groups)
 
-        // Translate selections back to component IDs
-        state.selectRequiredCore(from: coreComponents)
         for (num, componentIDs) in numberToComponentIDs {
             if selectedNumbers.contains(num) {
                 for id in componentIDs {
@@ -200,7 +168,6 @@ struct Installer {
             }
         }
 
-        askBranchPrefix(&state)
         return state
     }
 
@@ -248,6 +215,9 @@ struct Installer {
     // MARK: - Phase 4: Install
 
     mutating func phaseInstall(plan: DependencyResolver.ResolvedPlan, state: SelectionState) {
+        // Silent base infrastructure install (session_start.sh, settings.json, gitignore)
+        installBaseInfrastructure()
+
         let components = plan.orderedComponents
         let total = components.count
 
@@ -321,13 +291,6 @@ struct Installer {
                     modifiedHookFiles.insert(contribution.hookName + ".sh")
                 }
             }
-        }
-
-        // Post-processing: continuous learning hook fragment + settings entry
-        if state.isSelected("core.docs-mcp-server") {
-            injectContinuousLearningHook()
-            registerContinuousLearningSettings()
-            modifiedHookFiles.insert(Constants.FileNames.sessionStartHook)
         }
 
         // Re-record hashes for hook files modified by post-processing injections.
@@ -417,6 +380,50 @@ struct Installer {
         output.plain("")
     }
 
+    // MARK: - Base Infrastructure
+
+    /// Silently install the base infrastructure that all packs depend on:
+    /// session_start.sh, settings.json (deep-merged), and core gitignore entries.
+    /// This runs before any pack component installation.
+    private mutating func installBaseInfrastructure() {
+        let fm = FileManager.default
+
+        // Ensure directories exist
+        do {
+            try fm.createDirectory(at: environment.hooksDirectory, withIntermediateDirectories: true)
+        } catch {
+            output.warn("Could not create hooks directory: \(error.localizedDescription)")
+        }
+
+        // 1. Copy session_start.sh
+        if let sourceURL = resolvedResourceURL("hooks/session_start.sh") {
+            let destURL = environment.hooksDirectory.appendingPathComponent(Constants.FileNames.sessionStartHook)
+            do {
+                try backup.backupFile(at: destURL)
+                if fm.fileExists(atPath: destURL.path) {
+                    try fm.removeItem(at: destURL)
+                }
+                try fm.copyItem(at: sourceURL, to: destURL)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destURL.path)
+            } catch {
+                output.warn("Could not install base hook: \(error.localizedDescription)")
+            }
+        }
+
+        // 2. Deep-merge settings.json
+        let settingsMerged = mergeSettings()
+        if !settingsMerged {
+            output.dimmed("Settings merge skipped or failed")
+        }
+
+        // 3. Add core gitignore entries
+        let gitignore = GitignoreManager(shell: shell)
+        do {
+            try gitignore.addCoreEntries()
+        } catch {
+            output.warn("Could not add gitignore entries: \(error.localizedDescription)")
+        }
+    }
 
     // MARK: - Component Installation
 
@@ -461,8 +468,7 @@ struct Installer {
         case .copyHook(let source, let destination):
             return copyHook(source: source, destination: destination, manifest: &manifest)
 
-        case .copyCommand(let source, let destination, var placeholders):
-            placeholders["BRANCH_PREFIX"] = state.branchPrefix
+        case .copyCommand(let source, let destination, let placeholders):
             return copyCommand(
                 source: source,
                 destination: destination,
@@ -640,6 +646,7 @@ struct Installer {
         }
     }
 
+    @discardableResult
     private mutating func mergeSettings() -> Bool {
         guard let sourceURL = resolvedResourceURL("config/settings.json") else { return false }
         let destURL = environment.claudeSettings
@@ -707,62 +714,5 @@ struct Installer {
 
     private func isAlreadyInstalled(_ component: ComponentDefinition) -> Bool {
         ComponentExecutor.isAlreadyInstalled(component)
-    }
-
-    // MARK: - Continuous Learning Post-Processing
-
-    /// Inject the Ollama/docs-mcp memory sync fragment into session_start.sh
-    /// using section markers for idempotent updates.
-    private mutating func injectContinuousLearningHook() {
-        let hookFile = environment.hooksDirectory.appendingPathComponent(Constants.FileNames.sessionStartHook)
-        HookInjector.inject(
-            fragment: CoreComponents.continuousLearningHookFragment,
-            identifier: Constants.Hooks.continuousLearningFragmentID,
-            into: hookFile,
-            backup: &backup,
-            output: output
-        )
-    }
-
-    /// Register the UserPromptSubmit hook for the continuous learning activator in settings.json.
-    private func registerContinuousLearningSettings() {
-        let settingsPath = environment.claudeSettings
-        let activatorCommand = "bash ~/.claude/hooks/\(Constants.FileNames.continuousLearningHook)"
-
-        do {
-            var settings = try Settings.load(from: settingsPath)
-
-            if settings.hooks == nil {
-                settings.hooks = [:]
-            }
-
-            // Check if already registered
-            let existing = settings.hooks?[Constants.Hooks.eventUserPromptSubmit] ?? []
-            let alreadyRegistered = existing.contains { group in
-                group.hooks?.contains { $0.command == activatorCommand } ?? false
-            }
-
-            if !alreadyRegistered {
-                let hookGroup = Settings.HookGroup(
-                    matcher: "",
-                    hooks: [Settings.HookEntry(type: "command", command: activatorCommand)]
-                )
-                settings.hooks?[Constants.Hooks.eventUserPromptSubmit, default: []].append(hookGroup)
-                try settings.save(to: settingsPath)
-                output.dimmed("Registered continuous learning hook in settings")
-            }
-        } catch {
-            output.warn("Could not register continuous learning hook: \(error.localizedDescription)")
-        }
-    }
-
-    // MARK: - Interactive Selection Helpers
-
-    private func askBranchPrefix(_ state: inout SelectionState) {
-        if state.isSelected("core.command.pr") || state.isSelected("core.command.commit") {
-            output.plain("")
-            output.plain("  Your name for branch naming (e.g. bruno \u{2192} bruno/ABC-123-fix-login)")
-            state.branchPrefix = output.promptInline("Branch prefix", default: "feature")
-        }
     }
 }

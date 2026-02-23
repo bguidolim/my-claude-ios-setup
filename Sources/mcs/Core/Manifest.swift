@@ -68,6 +68,20 @@ struct Manifest: Sendable {
         metadata["INSTALLED_PACKS"] = packs.sorted().joined(separator: ",")
     }
 
+    /// Remove a pack from the installed packs list.
+    /// Returns `true` if the pack was found and removed.
+    @discardableResult
+    mutating func removeInstalledPack(_ identifier: String) -> Bool {
+        var packs = installedPacks
+        guard packs.remove(identifier) != nil else { return false }
+        if packs.isEmpty {
+            metadata.removeValue(forKey: "INSTALLED_PACKS")
+        } else {
+            metadata["INSTALLED_PACKS"] = packs.sorted().joined(separator: ",")
+        }
+        return true
+    }
+
     /// The component identifiers that were recorded during install.
     var installedComponents: Set<String> {
         guard let raw = metadata["INSTALLED_COMPONENTS"], !raw.isEmpty else { return [] }
@@ -79,6 +93,20 @@ struct Manifest: Sendable {
         var components = installedComponents
         components.insert(identifier)
         metadata["INSTALLED_COMPONENTS"] = components.sorted().joined(separator: ",")
+    }
+
+    /// Remove a component from the installed components list.
+    /// Returns `true` if the component was found and removed.
+    @discardableResult
+    mutating func removeInstalledComponent(_ identifier: String) -> Bool {
+        var components = installedComponents
+        guard components.remove(identifier) != nil else { return false }
+        if components.isEmpty {
+            metadata.removeValue(forKey: "INSTALLED_COMPONENTS")
+        } else {
+            metadata["INSTALLED_COMPONENTS"] = components.sorted().joined(separator: ",")
+        }
+        return true
     }
 
     /// Initialize the manifest with a source directory header.
@@ -146,6 +174,24 @@ struct Manifest: Sendable {
     /// Store a pre-computed hash for a relative path.
     mutating func recordHash(relativePath: String, hash: String) {
         entries[relativePath] = hash
+    }
+
+    /// Remove a single file hash entry.
+    /// Returns `true` if the entry was found and removed.
+    @discardableResult
+    mutating func removeHash(relativePath: String) -> Bool {
+        entries.removeValue(forKey: relativePath) != nil
+    }
+
+    /// Remove all file hash entries whose relative path starts with the given prefix.
+    /// Returns the number of entries removed.
+    @discardableResult
+    mutating func removeHashesWithPrefix(_ prefix: String) -> Int {
+        let matching = entries.keys.filter { $0.hasPrefix(prefix) }
+        for key in matching {
+            entries.removeValue(forKey: key)
+        }
+        return matching.count
     }
 
     /// Compute SHA-256 hashes for all regular files in a directory (recursive).
