@@ -9,17 +9,20 @@ struct PackInstaller {
     let output: CLIOutput
     let shell: ShellRunner
     var backup: Backup
+    let registry: TechPackRegistry
 
     init(
         environment: Environment,
         output: CLIOutput,
         shell: ShellRunner,
-        backup: Backup = Backup()
+        backup: Backup = Backup(),
+        registry: TechPackRegistry = .shared
     ) {
         self.environment = environment
         self.output = output
         self.shell = shell
         self.backup = backup
+        self.registry = registry
     }
 
     private var executor: ComponentExecutor {
@@ -34,8 +37,7 @@ struct PackInstaller {
     /// Install missing components for a pack. Returns true if all succeeded.
     @discardableResult
     mutating func installPack(_ pack: any TechPack) -> Bool {
-        let coreComponents = CoreComponents.all
-        let allComponents = TechPackRegistry.shared.allComponents(includingCore: coreComponents)
+        let allComponents = registry.allPackComponents
 
         // Select all pack components
         let selectedIDs = Set(pack.components.map(\.id))
@@ -79,46 +81,17 @@ struct PackInstaller {
             }
         }
 
-        // Post-processing: hook contributions and gitignore
-        var exec = executor
-        exec.injectHookContributions(from: pack)
+        // Post-processing: gitignore entries
+        let exec = executor
         exec.addPackGitignoreEntries(from: pack)
-        backup = exec.backup
-
-        // Record pack in manifest and re-record hashes for hook files
-        // modified by injection (must happen after injection, not before)
-        var manifest = Manifest(path: environment.setupManifest)
-        manifest.recordInstalledPack(pack.identifier)
-
-        for contribution in pack.hookContributions {
-            let hookFileName = contribution.hookName + ".sh"
-            let installedHook = environment.hooksDirectory.appendingPathComponent(hookFileName)
-            let relativePath = "hooks/\(hookFileName)"
-            guard FileManager.default.fileExists(atPath: installedHook.path) else {
-                output.warn("Expected hook file \(hookFileName) not found — hash not recorded")
-                continue
-            }
-            do {
-                let hash = try Manifest.sha256(of: installedHook)
-                manifest.recordHash(relativePath: relativePath, hash: hash)
-            } catch {
-                output.warn("Could not update manifest hash for \(hookFileName): \(error.localizedDescription)")
-            }
-        }
-
-        do {
-            try manifest.save()
-        } catch {
-            output.warn("Could not save manifest: \(error.localizedDescription)")
-        }
 
         return allSucceeded
     }
 
     // MARK: - Component Installation
 
-    private func installComponent(_ component: ComponentDefinition) -> Bool {
-        let exec = executor
+    private mutating func installComponent(_ component: ComponentDefinition) -> Bool {
+        var exec = executor
 
         switch component.installAction {
         case .brewInstall(let package):
@@ -144,8 +117,17 @@ struct PackInstaller {
         case .gitignoreEntries(let entries):
             return exec.addGitignoreEntries(entries)
 
-        case .copySkill, .copyHook, .copyCommand, .settingsMerge:
-            // These are core-only actions, not used by pack components
+        case .copyPackFile(let source, let destination, let fileType):
+            let success = exec.installCopyPackFile(
+                source: source,
+                destination: destination,
+                fileType: fileType
+            )
+            backup = exec.backup
+            return success
+
+        case .settingsMerge:
+            // Settings merge is handled at the project level by ProjectConfigurator.
             return true
         }
     }

@@ -9,17 +9,22 @@ Package.swift                    # swift-tools-version: 6.0, macOS 13+
 Sources/mcs/
     CLI.swift                    # @main entry, version, subcommand registration
     Core/                        # Shared infrastructure
-    Commands/                    # CLI subcommands (install, doctor, configure, cleanup)
-    Install/                     # Installation logic, component definitions, project configuration
+    Commands/                    # CLI subcommands (install, doctor, configure, cleanup, pack)
+    Install/                     # Installation logic, project configuration, convergence engine
     TechPack/                    # Tech pack protocol, component model, dependency resolver
     Templates/                   # Template engine and section-based file composition
     Doctor/                      # Diagnostic checks and fix logic
-    Packs/
-        Core/                    # Universal tech pack (works with any project)
-        iOS/                     # iOS/macOS development tech pack
-    Resources/                   # Bundled config, hooks, skills, commands, templates
+    ExternalPack/                # YAML manifest parsing, Git fetching, adapter, script runner
 Tests/MCSTests/                  # Test target
 ```
+
+## Design Philosophy
+
+`mcs` is a **pure pack management engine** with zero bundled content. It ships no templates, hooks, settings, skills, or slash commands. Everything comes from external tech packs that users add via `mcs pack add <url>`.
+
+The two primary commands:
+- **`mcs install`** — global component installation (brew packages, MCP servers, plugins)
+- **`mcs configure`** — per-project setup with multi-pack selection and convergent artifact management
 
 ## Core Infrastructure
 
@@ -27,95 +32,131 @@ Tests/MCSTests/                  # Test target
 
 Central path resolution for all file locations. Detects architecture (arm64/x86_64), resolves Homebrew path, and locates the user's shell RC file. Key paths:
 
-- `~/.claude/` -- Claude Code configuration directory
-- `~/.claude/settings.json` -- user settings
-- `~/.claude.json` -- MCP server registrations
-- `~/.claude/hooks/` -- session hooks
-- `~/.claude/skills/` -- installed skills
-- `~/.claude/commands/` -- slash commands
-- `~/.claude/.mcs-manifest` -- manifest tracking installed files
-- `~/.claude/.mcs-settings-keys` -- settings ownership sidecar
+- `~/.claude/` — Claude Code configuration directory
+- `~/.claude/settings.json` — user settings (global)
+- `~/.claude.json` — MCP server registrations (global + per-project via `local` scope)
+- `~/.claude/packs/` — external tech pack checkouts
+- `~/.claude/packs.yaml` — registry of installed external packs
+- `~/.claude/.mcs-manifest` — manifest tracking globally installed files
 
-### Settings (`Core/Settings.swift`, `Core/SettingsOwnership.swift`)
+Per-project paths (created by `mcs configure`):
+- `<project>/.claude/settings.local.json` — per-project settings with hook entries
+- `<project>/.claude/skills/` — per-project skills
+- `<project>/.claude/hooks/` — per-project hook scripts
+- `<project>/.claude/commands/` — per-project slash commands
+- `<project>/.claude/.mcs-project` — per-project state (JSON)
+- `<project>/CLAUDE.local.md` — per-project instructions with section markers
 
-`Settings` is a Codable model that mirrors the structure of `~/.claude/settings.json`. It supports deep-merge: when merging a template into existing settings, hooks are deduplicated by command string, plugins are merged additively, and scalar values from the template take precedence.
+### Settings (`Core/Settings.swift`)
 
-`SettingsOwnership` tracks which top-level keys in `settings.json` were written by mcs. This enables stale key cleanup: when a key is removed from the template in a new version, `mcs install` detects and removes it from the user's settings without disturbing user-added keys.
+`Settings` is a Codable model that mirrors the structure of Claude Code settings files. It supports deep-merge: when merging, hooks are deduplicated by command string, plugins are merged additively, and scalar values from the template take precedence.
+
+In the per-project model, `ProjectConfigurator` composes `settings.local.json` from all selected packs' hook entries. Each pack gets its own `HookGroup` entry pointing to a script in `<project>/.claude/hooks/`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "bash .claude/hooks/core-session-start.sh" }] },
+      { "hooks": [{ "type": "command", "command": "bash .claude/hooks/ios-session-start.sh" }] }
+    ]
+  }
+}
+```
 
 ### Manifest (`Core/Manifest.swift`)
 
-Tracks what mcs has installed using three data structures:
+Tracks what mcs has installed globally using three data structures:
 
-1. **File hashes**: SHA-256 hashes of bundled resources at install time, enabling freshness checks
-2. **Installed component IDs**: set of component identifiers (e.g., `core.docs-mcp-server`, `ios.xcodebuildmcp`)
+1. **File hashes**: SHA-256 hashes of copied resources at install time
+2. **Installed component IDs**: set of component identifiers (e.g., `ios.xcodebuildmcp`)
 3. **Installed pack IDs**: set of pack identifiers (e.g., `ios`)
 
-The manifest is the system's source of truth for "what is installed." Doctor checks read it to determine scope; the installer writes to it after each successful component installation.
+The manifest covers global-scope installations. Per-project state is tracked separately by `ProjectState`.
 
 ### Project State (`Core/ProjectState.swift`)
 
-Per-project state stored at `<project>/.claude/.mcs-project`. Tracks:
+Per-project state stored as JSON at `<project>/.claude/.mcs-project`. Tracks:
 
-- **Configured packs**: which packs have had their templates applied to this project's `CLAUDE.local.md`
+- **Configured packs**: which packs are configured for this project
+- **Per-pack artifact records** (`PackArtifactRecord`): for each pack, what was installed
+  - `mcpServers`: name + scope (for `claude mcp remove`)
+  - `files`: project-relative paths (for deletion)
+  - `templateSections`: section identifiers (for CLAUDE.local.md removal)
+  - `hookCommands`: hook commands (for settings.local.json cleanup)
+  - `settingsKeys`: settings keys contributed by this pack
 - **mcs version**: the version that last wrote the file
 - **Timestamp**: when the file was last updated
 
-Written by `mcs configure` after templates are composed and the project is set up.
+Written by `mcs configure` after convergence. Supports legacy key=value format migration.
 
 ### Global vs. Project State
-
-The manifest and project state files serve different scopes:
 
 | | `~/.claude/.mcs-manifest` | `<project>/.claude/.mcs-project` |
 |---|---|---|
 | **Scope** | Machine-wide | Single project |
 | **Written by** | `mcs install` | `mcs configure` |
-| **Tracks** | Globally installed components, pack IDs, file integrity hashes | Which packs are configured for this project |
-
-Pack identifiers appear in both files because installation and configuration are independent operations:
-
-- **Installed but not configured**: `mcs install --pack ios` registers MCP servers and installs brew packages globally, but no project has iOS templates yet. Doctor should still verify these global tools are healthy.
-- **Configured but not installed**: a teammate clones a repo that already has `.mcs-project` listing `ios`, but hasn't run `mcs install`. Doctor inside the project should flag missing components.
-
-The manifest tracks packs globally because the resources it manages (MCP servers via `claude mcp add`, hook files in `~/.claude/hooks/`, settings in `~/.claude/settings.json`, brew packages) are machine-level artifacts, not project-local files.
-
-Doctor resolves which packs to check using a priority chain:
-
-1. `--pack` CLI flag (explicit override)
-2. `.mcs-project` configured packs (authoritative per-project source)
-3. `CLAUDE.local.md` section markers (legacy inference for projects predating `.mcs-project`)
-4. Manifest installed packs (global fallback when outside any project)
+| **Format** | Key=value | JSON |
+| **Tracks** | Globally installed components, pack IDs, file hashes | Per-pack artifact records, configured pack IDs |
 
 ### Backup (`Core/Backup.swift`)
 
 Every file write goes through the backup system. Before overwriting a file, a timestamped copy is created (e.g., `settings.json.backup.20260222_143000`). The `mcs cleanup` command discovers and deletes these backups.
 
-### HookInjector (`Core/HookInjector.swift`)
+### ClaudeIntegration (`Core/ClaudeIntegration.swift`)
 
-Injects script fragments into hook files using versioned section markers:
+Wraps `claude mcp add/remove` and `claude plugin install/remove` CLI commands. MCP server registration supports three scopes:
 
-```bash
-# --- mcs:begin ios v2.0.0 ---
-# ... injected fragment ...
-# --- mcs:end ios ---
+- **`local`** (default): per-user, per-project — stored in `~/.claude.json` keyed by project path
+- **`project`**: team-shared — stored in `.mcp.json` in the project directory
+- **`user`**: cross-project — stored in `~/.claude.json` globally
+
+## External Pack System
+
+External packs are Git repositories containing a `techpack.yaml` manifest. The system has these layers:
+
+1. **PackFetcher** — clones/pulls pack repos into `~/.claude/packs/<name>/`
+2. **ExternalPackManifest** — Codable model for `techpack.yaml` (components, templates, hooks, doctor checks, prompts, configure scripts)
+3. **ExternalPackAdapter** — bridges `ExternalPackManifest` to the `TechPack` protocol so external packs participate in all install/doctor/configure flows
+4. **PackRegistryFile** — YAML registry (`~/.claude/packs.yaml`) tracking which packs are installed
+5. **TechPackRegistry** — unified registry that loads external packs and exposes them alongside the (now empty) compiled-in pack list
+
+### Pack Manifest (`techpack.yaml`)
+
+```yaml
+identifier: my-pack
+displayName: My Pack
+description: What this pack provides
+components:
+  - id: my-pack.server
+    displayName: My Server
+    type: mcpServer
+    installAction:
+      mcpServer:
+        name: my-server
+        command: npx
+        args: ["-y", "my-server@latest"]
+        scope: local  # local (default), project, or user
+templates:
+  - sectionIdentifier: my-pack
+    contentFile: templates/claude-local.md
+hookContributions:
+  - hookName: session_start
+    fragmentFile: hooks/session-start-fragment.sh
 ```
-
-This pattern enables idempotent updates: running install again replaces the fragment between markers without affecting the rest of the hook file. Both tech pack hook contributions and core features (continuous learning) use this mechanism.
 
 ## Install Flow
 
-The installer (`Install/Installer.swift`) runs five phases:
+The installer (`Install/Installer.swift`) handles global-scope component installation:
 
 ### Phase 1: Welcome
-System checks (macOS, not root, Xcode CLT, Homebrew). Manifest migration from legacy formats.
+System checks (macOS, not root, Xcode CLT, Homebrew).
 
 ### Phase 2: Selection
 Three modes:
-- `--all`: selects every component from core and all packs
+- `--all`: selects every component from all registered packs
 - `--pack <name>`: selects all components from the named pack
-- Interactive: presents grouped multi-select menu with feature bundles
-
-Feature bundles (`CoreComponents.bundles`) group related components into a single selectable item. For example, "Continuous Learning" bundles `docs-mcp-server` + `continuous-learning` skill + `continuous-learning-activator` hook.
+- Interactive: presents grouped multi-select menu
 
 ### Phase 3: Summary
 Shows the dependency-resolved installation plan grouped by type. Auto-resolved dependencies are annotated. In `--dry-run` mode, stops here.
@@ -125,26 +166,32 @@ Iterates through the resolved plan in topological order. For each component:
 1. Checks if already installed using the same doctor check logic (shared detection)
 2. Executes the component's install action
 3. Records the component in the manifest
-4. Runs post-install steps (e.g., starting Ollama, pulling models)
 
-After all components: injects hook contributions, adds gitignore entries, registers continuous learning hooks.
+After all components: adds gitignore entries, records pack IDs in manifest.
 
 ### Phase 5: Post-Summary
-Shows installed/skipped items. Offers inline project configuration for interactive installs.
+Shows installed/skipped items. Offers inline project configuration.
+
+## Project Configuration (Convergence Engine)
+
+`ProjectConfigurator` is the per-project convergence engine, invoked by `mcs configure`:
+
+1. **Multi-select**: shows all registered packs, pre-selects previously configured packs
+2. **Compute diff**: `removals = previous - selected`, `additions = selected - previous`
+3. **Unconfigure removed packs**: remove MCP servers (via CLI), delete project files, using stored `PackArtifactRecord`
+4. **Auto-install global deps**: brew packages and plugins for all selected packs
+5. **Install per-project artifacts**: copy skills/hooks/commands to `<project>/.claude/`, register MCP servers with `local` scope
+6. **Compose `settings.local.json`**: build from all selected packs' hook entries
+7. **Compose `CLAUDE.local.md`**: gather template sections from all selected packs
+8. **Run pack configure hooks**: pack-specific setup (e.g., generate config files)
+9. **Ensure gitignore entries**: add `.claude/` entries to global gitignore
+10. **Save project state**: write `.mcs-project` with artifact records for each pack
+
+The `--pack` flag bypasses multi-select for CI use: `mcs configure --pack ios --pack web`.
 
 ## Dependency Resolution
 
 `DependencyResolver` performs a topological sort of selected components plus their transitive dependencies. It detects cycles and auto-adds dependencies that weren't explicitly selected (marking them as "(auto-resolved)" in the summary).
-
-Components declare dependencies by ID:
-
-```swift
-static let docsMCPServer = ComponentDefinition(
-    id: "core.docs-mcp-server",
-    dependencies: ["core.node", "core.ollama"],
-    // ...
-)
-```
 
 ## Component Model
 
@@ -152,7 +199,7 @@ Each installable unit is a `ComponentDefinition` with:
 
 - **id**: unique identifier (e.g., `ios.xcodebuildmcp`)
 - **type**: `mcpServer`, `plugin`, `skill`, `hookFile`, `command`, `brewPackage`, `configuration`
-- **packIdentifier**: `nil` for core, pack ID for pack components
+- **packIdentifier**: pack ID for the owning pack
 - **dependencies**: IDs of components this depends on
 - **isRequired**: if true, always installed with its pack
 - **installAction**: how to install (see below)
@@ -162,17 +209,22 @@ Each installable unit is a `ComponentDefinition` with:
 
 ```swift
 enum ComponentInstallAction {
-    case mcpServer(MCPServerConfig)     // Register via `claude mcp add`
+    case mcpServer(MCPServerConfig)     // Register via `claude mcp add -s <scope>`
     case plugin(name: String)            // Install via `claude plugin install`
-    case copySkill(source, destination)  // Copy bundled skill directory
-    case copyHook(source, destination)   // Copy bundled hook script
-    case copyCommand(source, dest, placeholders)  // Copy with placeholder substitution
     case brewInstall(package: String)    // Install via Homebrew
     case shellCommand(command: String)   // Run arbitrary shell command
-    case settingsMerge                   // Deep-merge settings template
+    case settingsMerge                   // Deep-merge settings (project-level)
     case gitignoreEntries(entries)       // Add to global gitignore
+    case copyPackFile(source, dest, type) // Copy from pack checkout to project .claude/
 }
 ```
+
+### MCP Server Scopes
+
+`MCPServerConfig` includes a `scope` field:
+- `nil` / `"local"` (default) — per-user, per-project isolation
+- `"project"` — team-shared (`.mcp.json`)
+- `"user"` — cross-project global
 
 ## Tech Pack Protocol
 
@@ -186,7 +238,7 @@ protocol TechPack: Sendable {
     var hookContributions: [HookContribution] { get }
     var gitignoreEntries: [String] { get }
     var supplementaryDoctorChecks: [any DoctorCheck] { get }
-    var migrations: [any PackMigration] { get }
+    func templateValues(context: ProjectConfigContext) -> [String: String]
     func configureProject(at path: URL, context: ProjectConfigContext) throws
 }
 ```
@@ -194,34 +246,30 @@ protocol TechPack: Sendable {
 Packs provide:
 - **Components**: installable units (MCP servers, skills, etc.)
 - **Templates**: sections to inject into `CLAUDE.local.md`
-- **Hook contributions**: script fragments to inject into existing hooks
+- **Hook contributions**: script files to install in `<project>/.claude/hooks/` with entries in `settings.local.json`
 - **Gitignore entries**: patterns to add to the global gitignore
 - **Supplementary doctor checks**: pack-level diagnostics not derivable from components
-- **Migrations**: versioned data migrations run by `doctor --fix`
-- **Project configuration**: pack-specific setup (e.g., iOS generates `.xcodebuildmcp/config.yaml`)
-
-The registry (`TechPackRegistry`) holds all compiled-in packs and provides filtering by installed state.
+- **Template values**: resolved via prompts or scripts during configure
+- **Project configuration**: pack-specific setup (e.g., generate config files)
 
 ## Doctor System
 
-`DoctorRunner` orchestrates checks across seven layers:
+`DoctorRunner` orchestrates checks across five layers:
 
 1. **Derived checks**: auto-generated from each component's `installAction` via `deriveDoctorCheck()`
 2. **Supplementary component checks**: additional checks declared on components
 3. **Supplementary pack checks**: pack-level concerns not tied to a specific component
-4. **Standalone checks**: cross-component concerns (hook event registration, settings validation, gitignore, manifest freshness)
-5. **Deprecation checks**: detect and optionally remove legacy components
-6. **Hook contribution checks**: verify pack hook fragments are injected and up to date
-7. **Project checks**: CLAUDE.local.md version, Serena memory migration, project state file
+4. **Standalone checks**: cross-component concerns (hook event registration, settings validation, gitignore)
+5. **Project checks**: CLAUDE.local.md version, Serena memory migration, project state file
 
 ### fix() Responsibility Boundary
 
 `doctor --fix` only handles:
 - **Cleanup**: removing deprecated components
-- **Migration**: one-time data moves (memories, state files)
-- **Trivial repairs**: permission fixes, gitignore additions
+- **Trivial repairs**: permission fixes, gitignore additions, symlink creation
+- **Project state**: creating missing `.mcs-project` by inferring from section markers
 
-`doctor --fix` does NOT handle additive operations (installing packages, registering servers, copying files). These are `mcs install`'s responsibility because only install manages the manifest. This prevents inconsistent state where a file exists but the manifest doesn't track it.
+`doctor --fix` does NOT handle additive operations (installing packages, registering servers, copying files). These are handled by `mcs install` and `mcs configure`.
 
 ### Pack Resolution
 
@@ -235,7 +283,7 @@ When determining which packs to check, doctor uses a priority chain:
 
 ### TemplateEngine
 
-Simple `__PLACEHOLDER__` substitution. Values are passed as `[String: String]` dictionaries.
+Simple `__PLACEHOLDER__` substitution. Values are passed as `[String: String]` dictionaries. Packs can resolve values via prompts (interactive) or scripts (automated) during configure.
 
 ### TemplateComposer
 
@@ -259,19 +307,6 @@ Key operations:
 - `extractUserContent()`: preserve content outside markers during updates
 - `parseSections()`: extract section identifiers and versions
 
-## Project Configuration
-
-`ProjectConfigurator` handles per-project setup:
-
-1. Auto-installs missing pack components via `PackInstaller`
-2. Resolves the repository name from git
-3. Gathers template contributions from CoreTechPack and the selected pack
-4. Writes/updates `CLAUDE.local.md` preserving user content
-5. Creates `.serena/memories` symlink to `.claude/memories` (if Serena is installed)
-6. Ensures global gitignore entries
-7. Runs pack-specific configuration (e.g., iOS creates `.xcodebuildmcp/config.yaml`)
-8. Writes `.claude/.mcs-project` state file
-
 ## Concurrency Model
 
-The codebase uses Swift 6's strict concurrency. All core types conform to `Sendable`. `TechPack` is a `Sendable` protocol. The registry is a static `let` singleton. No mutable global state exists outside the installer's in-progress mutation context.
+The codebase uses Swift 6's strict concurrency. All core types conform to `Sendable`. `TechPack` is a `Sendable` protocol. No mutable global state exists outside the installer's in-progress mutation context.

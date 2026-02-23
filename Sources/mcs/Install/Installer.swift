@@ -2,12 +2,17 @@ import Foundation
 
 /// Orchestrates the 5-phase install flow:
 /// welcome -> selection -> summary -> install -> post-summary.
+///
+/// Note: With the per-project pivot, `mcs install` is being superseded by
+/// `mcs configure`. This installer handles global-scope component installation
+/// for packs that declare brew packages, MCP servers, plugins, etc.
 struct Installer {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
     var backup: Backup
     let dryRun: Bool
+    let registry: TechPackRegistry
 
     private var installedItems: [String] = []
     private var skippedItems: [String] = []
@@ -17,13 +22,15 @@ struct Installer {
         output: CLIOutput,
         shell: ShellRunner,
         backup: Backup = Backup(),
-        dryRun: Bool
+        dryRun: Bool,
+        registry: TechPackRegistry = .shared
     ) {
         self.environment = environment
         self.output = output
         self.shell = shell
         self.backup = backup
         self.dryRun = dryRun
+        self.registry = registry
     }
 
     // MARK: - Phase 1: Welcome
@@ -73,11 +80,6 @@ struct Installer {
             throw MCSError.dependencyMissing("Homebrew")
         }
 
-        // Migrate old manifest file name if present
-        if environment.migrateManifestIfNeeded() {
-            output.dimmed("Migrated .setup-manifest → .mcs-manifest")
-        }
-
         output.plain("")
         output.info("Required dependencies are auto-resolved based on your choices.")
     }
@@ -90,22 +92,18 @@ struct Installer {
     ) -> SelectionState {
         var state = SelectionState()
 
-        let coreComponents = CoreComponents.all
-        let registry = TechPackRegistry.shared
         let allPacks = registry.availablePacks
-        let allComponents = registry.allComponents(includingCore: coreComponents)
+        let allComponents = registry.allPackComponents
 
         if installAll {
             state.selectAllCore(from: allComponents)
-            // --all explicitly includes all packs
             for pack in allPacks {
                 state.selectPack(
                     pack.identifier,
-                    coreComponents: coreComponents,
+                    coreComponents: [],
                     packComponents: pack.components
                 )
             }
-            askBranchPrefix(&state)
             return state
         }
 
@@ -113,53 +111,34 @@ struct Installer {
             if let pack = registry.pack(for: packName) {
                 state.selectPack(
                     packName,
-                    coreComponents: coreComponents,
+                    coreComponents: [],
                     packComponents: pack.components
                 )
                 output.info("Selected tech pack: \(pack.displayName)")
             } else {
                 output.warn("Unknown tech pack: \(packName)")
-                output.plain("  Available packs: \(allPacks.map(\.identifier).joined(separator: ", "))")
+                if !allPacks.isEmpty {
+                    output.plain("  Available packs: \(allPacks.map(\.identifier).joined(separator: ", "))")
+                }
             }
-            askBranchPrefix(&state)
             return state
         }
 
-        // Interactive multi-select
-        output.header("Component Selection")
-
-        let selection = CoreComponents.groupedForSelection
-        var numberToComponentIDs: [Int: [String]] = [:]
-        var number = 1
-
-        // Build selectable groups: bundles first, then individual components
-        var groups: [SelectableGroup] = []
-
-        // Feature bundles
-        let bundles = CoreComponents.bundles
-        if !bundles.isEmpty {
-            var bundleItems: [SelectableItem] = []
-            for bundle in bundles {
-                bundleItems.append(SelectableItem(
-                    number: number,
-                    name: bundle.name,
-                    description: bundle.description,
-                    isSelected: true
-                ))
-                numberToComponentIDs[number] = bundle.componentIDs
-                number += 1
-            }
-            groups.append(SelectableGroup(
-                title: "Features",
-                items: bundleItems,
-                requiredItems: []
-            ))
+        // Interactive: show only external pack components for selection
+        if allPacks.isEmpty {
+            output.info("No packs registered. Use 'mcs pack add <url>' to add tech packs.")
+            return state
         }
 
-        // Individual components (excludes bundled ones)
-        for (type, components) in selection.selectable {
+        output.header("Component Selection")
+
+        var numberToComponentIDs: [Int: [String]] = [:]
+        var number = 1
+        var groups: [SelectableGroup] = []
+
+        for pack in allPacks {
             var items: [SelectableItem] = []
-            for component in components {
+            for component in pack.components {
                 items.append(SelectableItem(
                     number: number,
                     name: component.displayName,
@@ -169,27 +148,17 @@ struct Installer {
                 numberToComponentIDs[number] = [component.id]
                 number += 1
             }
-            groups.append(SelectableGroup(
-                title: type.rawValue,
-                items: items,
-                requiredItems: []
-            ))
-        }
-
-        // Add required items to a dedicated group
-        let requiredItems = selection.required.map { RequiredItem(name: $0.displayName) }
-        if !requiredItems.isEmpty {
-            groups.append(SelectableGroup(
-                title: "",
-                items: [],
-                requiredItems: requiredItems
-            ))
+            if !items.isEmpty {
+                groups.append(SelectableGroup(
+                    title: pack.displayName,
+                    items: items,
+                    requiredItems: []
+                ))
+            }
         }
 
         let selectedNumbers = output.multiSelect(groups: &groups)
 
-        // Translate selections back to component IDs
-        state.selectRequiredCore(from: coreComponents)
         for (num, componentIDs) in numberToComponentIDs {
             if selectedNumbers.contains(num) {
                 for id in componentIDs {
@@ -198,7 +167,6 @@ struct Installer {
             }
         }
 
-        askBranchPrefix(&state)
         return state
     }
 
@@ -246,14 +214,18 @@ struct Installer {
     // MARK: - Phase 4: Install
 
     mutating func phaseInstall(plan: DependencyResolver.ResolvedPlan, state: SelectionState) {
+        // Add core gitignore entries
+        let gitignore = GitignoreManager(shell: shell)
+        do {
+            try gitignore.addCoreEntries()
+        } catch {
+            output.warn("Could not add gitignore entries: \(error.localizedDescription)")
+        }
+
         let components = plan.orderedComponents
         let total = components.count
 
         output.header("Installing...")
-
-        // Initialize manifest
-        var manifest = Manifest(path: environment.setupManifest)
-        manifest.initialize(sourceDirectory: Bundle.module.bundlePath)
 
         // Ensure directories exist
         let fm = FileManager.default
@@ -280,18 +252,15 @@ struct Installer {
             if isAlreadyInstalled(component) {
                 skippedItems.append("\(component.displayName) (already installed)")
                 output.dimmed("Already installed, skipping")
-                manifest.recordInstalledComponent(component.id)
                 continue
             }
 
             let success = installComponent(
                 component,
-                state: state,
-                manifest: &manifest
+                state: state
             )
             if success {
                 installedItems.append(component.displayName)
-                manifest.recordInstalledComponent(component.id)
                 output.success("\(component.displayName) installed")
             } else {
                 skippedItems.append("\(component.displayName) (failed)")
@@ -299,57 +268,16 @@ struct Installer {
             }
         }
 
-        // Record which packs were installed
+        // Post-processing: add pack gitignore entries
         let installedPackIDs = Set(
             plan.orderedComponents.compactMap(\.packIdentifier)
         )
         for packID in installedPackIDs {
-            manifest.recordInstalledPack(packID)
-        }
-
-        // Post-processing: inject pack hook contributions and gitignore entries.
-        // These run BEFORE manifest save so that hook file hashes can be
-        // re-recorded after injection modifies the installed files.
-        var modifiedHookFiles: Set<String> = []
-        for packID in installedPackIDs {
-            if let pack = TechPackRegistry.shared.pack(for: packID) {
-                injectHookContributions(from: pack)
+            if let pack = registry.pack(for: packID) {
                 addPackGitignoreEntries(from: pack)
-                for contribution in pack.hookContributions {
-                    modifiedHookFiles.insert(contribution.hookName + ".sh")
-                }
             }
         }
 
-        // Post-processing: continuous learning hook fragment + settings entry
-        if state.isSelected("core.docs-mcp-server") {
-            injectContinuousLearningHook()
-            registerContinuousLearningSettings()
-            modifiedHookFiles.insert(Constants.FileNames.sessionStartHook)
-        }
-
-        // Re-record hashes for hook files modified by post-processing injections.
-        // Without this, the manifest would contain the pre-injection source hash,
-        // causing doctor freshness checks to report drift on every run.
-        for hookFileName in modifiedHookFiles {
-            let installedHook = environment.hooksDirectory.appendingPathComponent(hookFileName)
-            let relativePath = "hooks/\(hookFileName)"
-            if FileManager.default.fileExists(atPath: installedHook.path) {
-                do {
-                    let hash = try Manifest.sha256(of: installedHook)
-                    manifest.recordHash(relativePath: relativePath, hash: hash)
-                } catch {
-                    output.warn("Could not update manifest hash for \(hookFileName): \(error.localizedDescription)")
-                }
-            }
-        }
-
-        // Save manifest after all post-processing to capture final state
-        do {
-            try manifest.save()
-        } catch {
-            output.warn("Could not save manifest: \(error.localizedDescription)")
-        }
     }
 
     // MARK: - Phase 5: Post-Summary
@@ -374,7 +302,7 @@ struct Installer {
         }
 
         // Offer inline project configuration (interactive installs only)
-        if !installAll && !dryRun && !TechPackRegistry.shared.availablePacks.isEmpty {
+        if !installAll && !dryRun && !registry.availablePacks.isEmpty {
             output.plain("")
             if output.askYesNo("Configure a project now?") {
                 let cwd = FileManager.default.currentDirectoryPath
@@ -390,7 +318,8 @@ struct Installer {
                 let configurator = ProjectConfigurator(
                     environment: environment,
                     output: output,
-                    shell: shell
+                    shell: shell,
+                    registry: registry
                 )
                 do {
                     try configurator.interactiveConfigure(at: projectPath)
@@ -414,7 +343,6 @@ struct Installer {
         output.plain("")
     }
 
-
     // MARK: - Component Installation
 
     private var executor: ComponentExecutor {
@@ -428,8 +356,7 @@ struct Installer {
 
     private mutating func installComponent(
         _ component: ComponentDefinition,
-        state: SelectionState,
-        manifest: inout Manifest
+        state: SelectionState
     ) -> Bool {
         switch component.installAction {
         case .brewInstall(let package):
@@ -452,239 +379,24 @@ struct Installer {
         case .plugin(let name):
             return executor.installPlugin(name)
 
-        case .copySkill(let source, let destination):
-            return copySkill(source: source, destination: destination, manifest: &manifest)
-
-        case .copyHook(let source, let destination):
-            return copyHook(source: source, destination: destination, manifest: &manifest)
-
-        case .copyCommand(let source, let destination, var placeholders):
-            placeholders["BRANCH_PREFIX"] = state.branchPrefix
-            return copyCommand(
-                source: source,
-                destination: destination,
-                placeholders: placeholders,
-                manifest: &manifest
-            )
-
-        case .settingsMerge:
-            return mergeSettings()
-
         case .gitignoreEntries(let entries):
             return executor.addGitignoreEntries(entries)
-        }
-    }
 
-    /// Resolve a bundled resource path relative to Resources/.
-    /// Returns nil (with a warning) if the bundle is missing.
-    private func resolvedResourceURL(_ relativePath: String) -> URL? {
-        guard let resourceURL = Bundle.module.url(
-            forResource: "Resources",
-            withExtension: nil
-        ) else {
-            output.warn("Resources bundle not found")
-            return nil
-        }
-        return resourceURL.appendingPathComponent(relativePath)
-    }
-
-    /// Record a manifest entry, warning on failure.
-    private func recordManifest(
-        _ manifest: inout Manifest,
-        relativePath: String,
-        sourceFile: URL
-    ) {
-        do {
-            try manifest.record(relativePath: relativePath, sourceFile: sourceFile)
-        } catch {
-            output.warn("Could not record manifest entry for \(relativePath): \(error.localizedDescription)")
-        }
-    }
-
-    private mutating func copySkill(
-        source: String,
-        destination: String,
-        manifest: inout Manifest
-    ) -> Bool {
-        let fm = FileManager.default
-        guard let sourceURL = resolvedResourceURL(source) else { return false }
-        let destURL = environment.skillsDirectory.appendingPathComponent(destination)
-
-        do {
-            try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
-
-            guard fm.fileExists(atPath: sourceURL.path) else {
-                output.warn("Source not found: \(source)")
-                return false
-            }
-
-            let contents = try fm.contentsOfDirectory(
-                at: sourceURL,
-                includingPropertiesForKeys: nil
+        case .copyPackFile(let source, let destination, let fileType):
+            var exec = executor
+            let success = exec.installCopyPackFile(
+                source: source,
+                destination: destination,
+                fileType: fileType
             )
-            for file in contents {
-                let destFile = destURL.appendingPathComponent(file.lastPathComponent)
-                do {
-                    try backup.backupFile(at: destFile)
-                } catch {
-                    output.warn("Could not backup \(destFile.lastPathComponent): \(error.localizedDescription)")
-                }
-                if fm.fileExists(atPath: destFile.path) {
-                    try fm.removeItem(at: destFile)
-                }
-                // copyItem handles directories recursively
-                try fm.copyItem(at: file, to: destFile)
-            }
+            backup = exec.backup
+            return success
 
-            // Record per-file hashes instead of per-directory
-            // (directories can't be hashed by Data(contentsOf:))
-            do {
-                let fileHashes = try Manifest.directoryFileHashes(at: sourceURL)
-                for entry in fileHashes {
-                    manifest.recordHash(
-                        relativePath: "\(source)/\(entry.relativePath)",
-                        hash: entry.hash
-                    )
-                }
-            } catch {
-                output.warn("Could not record manifest hashes for \(source): \(error.localizedDescription)")
-            }
+        case .settingsMerge:
+            // Settings merge is handled at the project level by ProjectConfigurator.
+            output.dimmed("Skipped settingsMerge for \(component.displayName)")
             return true
-        } catch {
-            output.warn(error.localizedDescription)
-            return false
         }
-    }
-
-    private mutating func copyHook(
-        source: String,
-        destination: String,
-        manifest: inout Manifest
-    ) -> Bool {
-        let fm = FileManager.default
-        guard let sourceURL = resolvedResourceURL(source) else { return false }
-        let destURL = environment.hooksDirectory.appendingPathComponent(destination)
-
-        do {
-            try fm.createDirectory(
-                at: destURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            do {
-                try backup.backupFile(at: destURL)
-            } catch {
-                output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
-            }
-            if fm.fileExists(atPath: destURL.path) {
-                try fm.removeItem(at: destURL)
-            }
-            try fm.copyItem(at: sourceURL, to: destURL)
-
-            // Make executable
-            try fm.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: destURL.path
-            )
-
-            recordManifest(&manifest, relativePath: source, sourceFile: destURL)
-            return true
-        } catch {
-            output.warn(error.localizedDescription)
-            return false
-        }
-    }
-
-    private mutating func copyCommand(
-        source: String,
-        destination: String,
-        placeholders: [String: String],
-        manifest: inout Manifest
-    ) -> Bool {
-        let fm = FileManager.default
-        guard let sourceURL = resolvedResourceURL(source) else { return false }
-        let destURL = environment.commandsDirectory.appendingPathComponent(destination)
-
-        do {
-            try fm.createDirectory(
-                at: destURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            var content = try String(contentsOf: sourceURL, encoding: .utf8)
-            content = TemplateEngine.substitute(template: content, values: placeholders)
-
-            do {
-                try backup.backupFile(at: destURL)
-            } catch {
-                output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
-            }
-            try content.write(to: destURL, atomically: true, encoding: .utf8)
-            recordManifest(&manifest, relativePath: source, sourceFile: destURL)
-            return true
-        } catch {
-            output.warn(error.localizedDescription)
-            return false
-        }
-    }
-
-    private mutating func mergeSettings() -> Bool {
-        guard let sourceURL = resolvedResourceURL("config/settings.json") else { return false }
-        let destURL = environment.claudeSettings
-
-        do {
-            let template = try Settings.load(from: sourceURL)
-            var existing = try Settings.load(from: destURL)
-
-            do {
-                try backup.backupFile(at: destURL)
-            } catch {
-                output.warn("Could not backup settings: \(error.localizedDescription)")
-            }
-
-            // Bootstrap ownership from legacy bash manifest if no sidecar exists yet
-            var ownership = SettingsOwnership(path: environment.settingsKeys)
-            if ownership.managedKeys.isEmpty {
-                if ownership.bootstrapFromLegacyManifest(at: environment.setupManifest) {
-                    output.dimmed("Migrated ownership from legacy bash installer manifest")
-                }
-            }
-
-            // Remove stale keys that mcs previously owned but are no longer in the template
-            let stale = ownership.staleKeys(comparedTo: template)
-            if !stale.isEmpty {
-                existing.removeKeys(stale)
-                for key in stale {
-                    ownership.remove(keyPath: key)
-                }
-                output.dimmed("Removed \(stale.count) stale setting(s): \(stale.joined(separator: ", "))")
-            }
-
-            existing.merge(with: template)
-            try existing.save(to: destURL)
-
-            // Record ownership of all template keys
-            ownership.recordAll(from: template, version: MCSVersion.current)
-            do {
-                try ownership.save()
-            } catch {
-                output.warn("Could not save settings ownership: \(error.localizedDescription)")
-            }
-
-            return true
-        } catch {
-            // Merge failed — report the error instead of silently overwriting user settings
-            output.warn("Settings merge failed: \(error.localizedDescription)")
-            output.warn("Your existing settings at \(destURL.path) were preserved.")
-            output.warn("Run 'mcs install' again or manually merge settings.")
-            return false
-        }
-    }
-
-    // MARK: - Pack Post-Processing
-
-    private mutating func injectHookContributions(from pack: any TechPack) {
-        var exec = executor
-        exec.injectHookContributions(from: pack)
-        backup = exec.backup
     }
 
     private func addPackGitignoreEntries(from pack: any TechPack) {
@@ -693,62 +405,5 @@ struct Installer {
 
     private func isAlreadyInstalled(_ component: ComponentDefinition) -> Bool {
         ComponentExecutor.isAlreadyInstalled(component)
-    }
-
-    // MARK: - Continuous Learning Post-Processing
-
-    /// Inject the Ollama/docs-mcp memory sync fragment into session_start.sh
-    /// using section markers for idempotent updates.
-    private mutating func injectContinuousLearningHook() {
-        let hookFile = environment.hooksDirectory.appendingPathComponent(Constants.FileNames.sessionStartHook)
-        HookInjector.inject(
-            fragment: CoreComponents.continuousLearningHookFragment,
-            identifier: Constants.Hooks.continuousLearningFragmentID,
-            into: hookFile,
-            backup: &backup,
-            output: output
-        )
-    }
-
-    /// Register the UserPromptSubmit hook for the continuous learning activator in settings.json.
-    private func registerContinuousLearningSettings() {
-        let settingsPath = environment.claudeSettings
-        let activatorCommand = "bash ~/.claude/hooks/\(Constants.FileNames.continuousLearningHook)"
-
-        do {
-            var settings = try Settings.load(from: settingsPath)
-
-            if settings.hooks == nil {
-                settings.hooks = [:]
-            }
-
-            // Check if already registered
-            let existing = settings.hooks?[Constants.Hooks.eventUserPromptSubmit] ?? []
-            let alreadyRegistered = existing.contains { group in
-                group.hooks?.contains { $0.command == activatorCommand } ?? false
-            }
-
-            if !alreadyRegistered {
-                let hookGroup = Settings.HookGroup(
-                    matcher: "",
-                    hooks: [Settings.HookEntry(type: "command", command: activatorCommand)]
-                )
-                settings.hooks?[Constants.Hooks.eventUserPromptSubmit, default: []].append(hookGroup)
-                try settings.save(to: settingsPath)
-                output.dimmed("Registered continuous learning hook in settings")
-            }
-        } catch {
-            output.warn("Could not register continuous learning hook: \(error.localizedDescription)")
-        }
-    }
-
-    // MARK: - Interactive Selection Helpers
-
-    private func askBranchPrefix(_ state: inout SelectionState) {
-        if state.isSelected("core.command.pr") || state.isSelected("core.command.commit") {
-            output.plain("")
-            output.plain("  Your name for branch naming (e.g. bruno \u{2192} bruno/ABC-123-fix-login)")
-            state.branchPrefix = output.promptInline("Branch prefix", default: "feature")
-        }
     }
 }

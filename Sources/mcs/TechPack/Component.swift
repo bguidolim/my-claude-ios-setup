@@ -58,13 +58,45 @@ struct ComponentDefinition: Sendable, Identifiable {
 enum ComponentInstallAction: Sendable {
     case mcpServer(MCPServerConfig)
     case plugin(name: String)
-    case copySkill(source: String, destination: String)
-    case copyHook(source: String, destination: String)
-    case copyCommand(source: String, destination: String, placeholders: [String: String])
     case brewInstall(package: String)
     case shellCommand(command: String)
-    case settingsMerge
+    case settingsMerge(source: URL?)
     case gitignoreEntries(entries: [String])
+    case copyPackFile(source: URL, destination: String, fileType: CopyFileType)
+}
+
+/// File type for `copyPackFile` actions — determines the target directory.
+enum CopyFileType: String, Sendable {
+    case skill
+    case hook
+    case command
+    case generic
+}
+
+extension CopyFileType {
+    func baseDirectory(in environment: Environment) -> URL {
+        switch self {
+        case .skill: return environment.skillsDirectory
+        case .hook: return environment.hooksDirectory
+        case .command: return environment.commandsDirectory
+        case .generic: return environment.claudeDirectory
+        }
+    }
+
+    func destinationURL(in environment: Environment, destination: String) -> URL {
+        baseDirectory(in: environment).appendingPathComponent(destination)
+    }
+
+    /// Project-scoped base directory under `<project>/.claude/`.
+    func projectBaseDirectory(projectPath: URL) -> URL {
+        let claudeDir = projectPath.appendingPathComponent(Constants.FileNames.claudeDirectory)
+        switch self {
+        case .skill: return claudeDir.appendingPathComponent("skills")
+        case .hook: return claudeDir.appendingPathComponent("hooks")
+        case .command: return claudeDir.appendingPathComponent("commands")
+        case .generic: return claudeDir
+        }
+    }
 }
 
 /// Configuration for an MCP server
@@ -73,9 +105,24 @@ struct MCPServerConfig: Sendable {
     let command: String
     let args: [String]
     let env: [String: String]
+    /// MCP scope: "local" (per-user, per-project — default), "project" (team-shared), or "user" (cross-project).
+    let scope: String?
+
+    init(name: String, command: String, args: [String], env: [String: String], scope: String? = nil) {
+        self.name = name
+        self.command = command
+        self.args = args
+        self.env = env
+        self.scope = scope
+    }
 
     /// HTTP transport MCP server (no command, just URL)
-    static func http(name: String, url: String) -> MCPServerConfig {
-        MCPServerConfig(name: name, command: "http", args: [url], env: [:])
+    static func http(name: String, url: String, scope: String? = nil) -> MCPServerConfig {
+        MCPServerConfig(name: name, command: "http", args: [url], env: [:], scope: scope)
+    }
+
+    /// The resolved scope, defaulting to "local" for per-project isolation.
+    var resolvedScope: String {
+        scope ?? "local"
     }
 }

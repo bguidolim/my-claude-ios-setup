@@ -21,11 +21,17 @@ struct InstallCommand: ParsableCommand {
         let output = CLIOutput()
         let shell = ShellRunner(environment: env)
 
+        let registry = TechPackRegistry.loadWithExternalPacks(
+            environment: env,
+            output: output
+        )
+
         var installer = Installer(
             environment: env,
             output: output,
             shell: shell,
-            dryRun: dryRun
+            dryRun: dryRun,
+            registry: registry
         )
 
         // Phase 1: Welcome
@@ -40,9 +46,7 @@ struct InstallCommand: ParsableCommand {
         }
 
         // Resolve dependencies
-        let allComponents = TechPackRegistry.shared.allComponents(
-            includingCore: CoreComponents.all
-        )
+        let allComponents = registry.allPackComponents
         let plan: DependencyResolver.ResolvedPlan
         do {
             plan = try DependencyResolver.resolve(

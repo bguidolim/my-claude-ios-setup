@@ -17,7 +17,7 @@ struct HookInjectionTests {
         let endMarker = "# --- mcs:end \(packID) ---"
 
         // Remove existing section for idempotency (matches both versioned and unversioned markers)
-        let pattern = #"# --- mcs:begin \#(packID)( v[0-9]+\.[0-9]+\.[0-9]+)? ---"#
+        let pattern = #"# --- mcs:begin \#(packID)( v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9._-]*)? ---"#
         if let beginRange = content.range(of: pattern, options: .regularExpression),
            let endRange = content.range(of: endMarker) {
             var removeEnd = endRange.upperBound
@@ -158,69 +158,4 @@ struct HookInjectionTests {
         #expect(hook.contains("echo \"web\""))
     }
 
-    @Test("PackMigrationCheck reports needed migration")
-    func migrationCheckNeeded() {
-        struct TestMigration: PackMigration {
-            var name: String { "test-migration" }
-            var version: String { "1.0.0" }
-            var displayName: String { "Test migration" }
-            func isNeeded() -> Bool { true }
-            func perform() throws -> String { "migrated" }
-        }
-
-        let check = PackMigrationCheck(
-            migration: TestMigration(),
-            packName: "TestPack"
-        )
-        let result = check.check()
-        if case .warn = result {
-            // Expected
-        } else {
-            Issue.record("Expected .warn, got \(result)")
-        }
-    }
-
-    @Test("PackMigrationCheck reports up-to-date")
-    func migrationCheckUpToDate() {
-        struct NoopMigration: PackMigration {
-            var name: String { "noop" }
-            var version: String { "1.0.0" }
-            var displayName: String { "No-op" }
-            func isNeeded() -> Bool { false }
-            func perform() throws -> String { "" }
-        }
-
-        let check = PackMigrationCheck(
-            migration: NoopMigration(),
-            packName: "TestPack"
-        )
-        let result = check.check()
-        if case .pass = result {
-            // Expected
-        } else {
-            Issue.record("Expected .pass, got \(result)")
-        }
-    }
-
-    @Test("PackMigrationCheck fix runs migration")
-    func migrationCheckFix() {
-        struct FixableMigration: PackMigration {
-            var name: String { "fixable" }
-            var version: String { "1.0.0" }
-            var displayName: String { "Fixable" }
-            func isNeeded() -> Bool { true }
-            func perform() throws -> String { "applied v1 migration" }
-        }
-
-        let check = PackMigrationCheck(
-            migration: FixableMigration(),
-            packName: "TestPack"
-        )
-        let result = check.fix()
-        if case .fixed(let msg) = result {
-            #expect(msg == "applied v1 migration")
-        } else {
-            Issue.record("Expected .fixed, got \(result)")
-        }
-    }
 }
