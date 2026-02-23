@@ -985,6 +985,80 @@ struct ExternalPackManifestTests {
         #expect(config.env == [:])
     }
 
+    @Test("ExternalMCPServerConfig passes scope through to MCPServerConfig")
+    func mcpServerConfigScopePassthrough() {
+        let external = ExternalMCPServerConfig(
+            name: "test-server",
+            command: "node",
+            args: ["server.js"],
+            env: nil,
+            transport: .stdio,
+            url: nil,
+            scope: .local
+        )
+
+        let config = external.toMCPServerConfig()
+        #expect(config.scope == "local")
+        #expect(config.resolvedScope == "local")
+    }
+
+    @Test("ExternalMCPServerConfig with project scope passes through")
+    func mcpServerConfigProjectScope() {
+        let external = ExternalMCPServerConfig(
+            name: "team-server",
+            command: "node",
+            args: [],
+            env: nil,
+            transport: nil,
+            url: nil,
+            scope: .project
+        )
+
+        let config = external.toMCPServerConfig()
+        #expect(config.scope == "project")
+        #expect(config.resolvedScope == "project")
+    }
+
+    @Test("MCPServerConfig resolvedScope defaults to local when nil")
+    func mcpServerConfigDefaultScope() {
+        let config = MCPServerConfig(name: "test", command: "node", args: [], env: [:])
+        #expect(config.scope == nil)
+        #expect(config.resolvedScope == "local")
+    }
+
+    @Test("ExternalScope includes local variant")
+    func externalScopeLocal() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        let yaml = """
+            schemaVersion: 1
+            identifier: scope-test
+            displayName: Scope Test
+            description: Test scope
+            version: "1.0.0"
+            components:
+              - id: scope-test.server
+                displayName: Server
+                description: A server
+                type: mcpServer
+                installAction:
+                  type: mcpServer
+                  name: test-mcp
+                  command: node
+                  args: ["server.js"]
+                  scope: local
+            """
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+        let manifest = try ExternalPackManifest.load(from: file)
+        let component = manifest.components!.first!
+        if case .mcpServer(let config) = component.installAction {
+            #expect(config.scope == .local)
+        } else {
+            Issue.record("Expected mcpServer action")
+        }
+    }
+
     // MARK: - Component with doctor checks
 
     @Test("Component with inline doctor checks deserializes correctly")

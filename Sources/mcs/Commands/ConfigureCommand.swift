@@ -4,7 +4,7 @@ import Foundation
 struct ConfigureCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "configure",
-        abstract: "Generate CLAUDE.local.md for a project"
+        abstract: "Configure a project with tech packs"
     )
 
     @Argument(help: "Path to the project directory (defaults to current directory)")
@@ -45,17 +45,17 @@ struct ConfigureCommand: ParsableCommand {
         )
 
         if pack.isEmpty {
-            // Interactive flow — same as post-install configure
+            // Interactive flow — multi-select of all registered packs
             try configurator.interactiveConfigure(at: projectPath)
         } else {
-            // Explicit --pack flag
-            let resolvedPacks = pack.compactMap { registry.pack(for: $0) }
+            // Non-interactive --pack flag (CI-friendly)
+            let resolvedPacks: [any TechPack] = pack.compactMap { registry.pack(for: $0) }
 
             for id in pack where registry.pack(for: id) == nil {
                 output.warn("Unknown tech pack: \(id)")
             }
 
-            guard let resolvedPack = resolvedPacks.first else {
+            guard !resolvedPacks.isEmpty else {
                 output.error("No valid tech pack specified.")
                 let available = registry.availablePacks.map(\.identifier).joined(separator: ", ")
                 output.plain("  Available packs: \(available)")
@@ -64,11 +64,10 @@ struct ConfigureCommand: ParsableCommand {
 
             output.header("Configure Project")
             output.plain("")
-            output.warn("This command should be run inside your project directory.")
             output.info("Project: \(projectPath.path)")
-            output.info("Tech pack: \(resolvedPack.displayName)")
+            output.info("Packs: \(resolvedPacks.map(\.displayName).joined(separator: ", "))")
 
-            try configurator.configure(at: projectPath, pack: resolvedPack)
+            try configurator.configure(at: projectPath, packs: resolvedPacks)
 
             output.header("Done")
             output.info("Run 'mcs doctor' to verify configuration")

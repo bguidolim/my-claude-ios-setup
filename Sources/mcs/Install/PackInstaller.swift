@@ -81,32 +81,13 @@ struct PackInstaller {
             }
         }
 
-        // Post-processing: hook contributions and gitignore
-        var exec = executor
-        exec.injectHookContributions(from: pack)
+        // Post-processing: gitignore entries
+        let exec = executor
         exec.addPackGitignoreEntries(from: pack)
-        backup = exec.backup
 
-        // Record pack in manifest and re-record hashes for hook files
-        // modified by injection (must happen after injection, not before)
+        // Record pack in manifest
         var manifest = Manifest(path: environment.setupManifest)
         manifest.recordInstalledPack(pack.identifier)
-
-        for contribution in pack.hookContributions {
-            let hookFileName = contribution.hookName + ".sh"
-            let installedHook = environment.hooksDirectory.appendingPathComponent(hookFileName)
-            let relativePath = "hooks/\(hookFileName)"
-            guard FileManager.default.fileExists(atPath: installedHook.path) else {
-                output.warn("Expected hook file \(hookFileName) not found — hash not recorded")
-                continue
-            }
-            do {
-                let hash = try Manifest.sha256(of: installedHook)
-                manifest.recordHash(relativePath: relativePath, hash: hash)
-            } catch {
-                output.warn("Could not update manifest hash for \(hookFileName): \(error.localizedDescription)")
-            }
-        }
 
         do {
             try manifest.save()
@@ -159,8 +140,8 @@ struct PackInstaller {
             backup = exec.backup
             return success
 
-        case .copySkill, .copyHook, .copyCommand, .settingsMerge:
-            // These are core-only actions, not used by pack components
+        case .settingsMerge:
+            // Settings merge is handled at the project level by ProjectConfigurator.
             return true
         }
     }

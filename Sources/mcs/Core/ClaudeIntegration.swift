@@ -15,7 +15,7 @@ struct ClaudeIntegration: Sendable {
     @discardableResult
     func mcpAdd(
         name: String,
-        scope: String = "user",
+        scope: String = "local",
         arguments: [String] = []
     ) -> ShellResult {
         // Remove first to avoid "already exists" errors
@@ -32,7 +32,7 @@ struct ClaudeIntegration: Sendable {
 
     /// Remove an MCP server.
     @discardableResult
-    func mcpRemove(name: String, scope: String = "user") -> ShellResult {
+    func mcpRemove(name: String, scope: String = "local") -> ShellResult {
         shell.run(
             Constants.CLI.env,
             arguments: [Constants.CLI.claudeCommand, "mcp", "remove", "-s", scope, name],

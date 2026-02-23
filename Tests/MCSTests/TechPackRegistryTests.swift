@@ -33,22 +33,10 @@ struct TechPackRegistryTests {
         #expect(checks.isEmpty)
     }
 
-    @Test("hookContributions returns empty when no packs installed")
-    func hookContributionsEmpty() {
-        let contributions = TechPackRegistry.shared.hookContributions(installedPacks: [])
-        #expect(contributions.isEmpty)
-    }
-
     @Test("gitignoreEntries returns empty when no packs installed")
     func gitignoreEntriesEmpty() {
         let entries = TechPackRegistry.shared.gitignoreEntries(installedPacks: [])
         #expect(entries.isEmpty)
-    }
-
-    @Test("migrations returns empty when no packs installed")
-    func migrationsEmpty() {
-        let migrations = TechPackRegistry.shared.migrations(installedPacks: [])
-        #expect(migrations.isEmpty)
     }
 
     // MARK: - installedPacks from manifest
@@ -189,24 +177,6 @@ struct TechPackRegistryTests {
         #expect(checks.first?.name == "test-check")
     }
 
-    @Test("hookContributions returns hooks for registered external pack")
-    func hookContributionsWithExternalPack() {
-        let contribution = HookContribution(
-            hookName: "session_start",
-            scriptFragment: "echo test",
-            position: .after
-        )
-        let fakePack = FakeTechPack(
-            identifier: "test-pack",
-            hookContributions: [contribution]
-        )
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
-        let contributions = registry.hookContributions(installedPacks: ["test-pack"])
-        #expect(!contributions.isEmpty)
-        #expect(contributions.first?.pack.identifier == "test-pack")
-        #expect(contributions.first?.contribution.hookName == "session_start")
-    }
-
     @Test("gitignoreEntries returns entries for registered external pack")
     func gitignoreEntriesWithExternalPack() {
         let fakePack = FakeTechPack(
@@ -230,7 +200,6 @@ private struct FakeTechPack: TechPack {
     let hookContributions: [HookContribution]
     let gitignoreEntries: [String]
     let supplementaryDoctorChecks: [any DoctorCheck]
-    let migrations: [any PackMigration]
 
     init(
         identifier: String,
@@ -238,8 +207,7 @@ private struct FakeTechPack: TechPack {
         templates: [TemplateContribution] = [],
         hookContributions: [HookContribution] = [],
         gitignoreEntries: [String] = [],
-        supplementaryDoctorChecks: [any DoctorCheck] = [],
-        migrations: [any PackMigration] = []
+        supplementaryDoctorChecks: [any DoctorCheck] = []
     ) {
         self.identifier = identifier
         self.components = components
@@ -247,7 +215,6 @@ private struct FakeTechPack: TechPack {
         self.hookContributions = hookContributions
         self.gitignoreEntries = gitignoreEntries
         self.supplementaryDoctorChecks = supplementaryDoctorChecks
-        self.migrations = migrations
     }
 
     func configureProject(at path: URL, context: ProjectConfigContext) throws {}

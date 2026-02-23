@@ -322,14 +322,6 @@ struct ExternalPackAdapterTests {
         #expect(adapter.gitignoreEntries.isEmpty)
     }
 
-    // MARK: - Migrations
-
-    @Test("Adapter returns empty migrations")
-    func emptyMigrations() throws {
-        let (adapter, _) = try makeAdapter(manifest: minimalManifest())
-        #expect(adapter.migrations.isEmpty)
-    }
-
     // MARK: - Path Traversal via Templates
 
     @Test("Template with ../ path traversal returns empty (logged error)")

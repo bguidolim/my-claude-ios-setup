@@ -28,7 +28,6 @@ struct DoctorRunner {
         output.header("My Claude Setup — Doctor")
 
         let env = Environment()
-        env.migrateManifestIfNeeded()
         let manifest = Manifest(path: env.setupManifest)
         let registry = self.registry
 
@@ -110,25 +109,7 @@ struct DoctorRunner {
         // Layer 4: Standalone checks (not tied to any component)
         allChecks.append(contentsOf: standaloneDoctorChecks())
 
-        // Layer 5: Migration/deprecated checks
-        allChecks.append(contentsOf: deprecationChecks())
-        allChecks.append(contentsOf: MigrationDetector.checks)
-
-        // Layer 6: Hook contribution checks
-        for (pack, contribution) in registry.hookContributions(installedPacks: installedPackIDs) {
-            allChecks.append(HookContributionCheck(
-                packIdentifier: pack.identifier,
-                packDisplayName: pack.displayName,
-                contribution: contribution
-            ))
-        }
-
-        // Layer 6 (cont.): Pack migrations as DoctorCheck adapters
-        for (pack, migration) in registry.migrations(installedPacks: installedPackIDs) {
-            allChecks.append(PackMigrationCheck(migration: migration, packName: pack.displayName))
-        }
-
-        // Layer 7: Project-scoped checks (only when inside a project)
+        // Layer 5: Project-scoped checks (only when inside a project)
         if let root = projectRoot {
             allChecks.append(contentsOf: ProjectDoctorChecks.checks(projectRoot: root))
         }
@@ -137,7 +118,7 @@ struct DoctorRunner {
         let grouped = Dictionary(grouping: allChecks, by: \.section)
         let sectionOrder = [
             "Dependencies", "MCP Servers", "Plugins", "Skills", "Commands",
-            "Hooks", "Settings", "Gitignore", "File Freshness", "Project", "Templates", "Migration",
+            "Hooks", "Settings", "Gitignore", "Project", "Templates",
         ]
 
         for section in sectionOrder {
@@ -174,27 +155,11 @@ struct DoctorRunner {
 
         // Settings value validation
         checks.append(SettingsCheck())
-        checks.append(SettingsOwnershipCheck())
 
         // Gitignore (cross-component aggregation)
         checks.append(GitignoreCheck(registry: registry))
 
-        // Manifest freshness (cross-file integrity)
-        checks.append(ManifestFreshnessCheck())
-
         return checks
-    }
-
-    /// Deprecated component checks (migration-era artifacts).
-    private func deprecationChecks() -> [any DoctorCheck] {
-        [
-            DeprecatedMCPServerCheck(name: "mcp-omnisearch", identifier: "mcp-omnisearch"),
-            DeprecatedPluginCheck(name: "claude-hud plugin", pluginName: "claude-hud@claude-hud"),
-            DeprecatedPluginCheck(
-                name: "code-simplifier plugin",
-                pluginName: "code-simplifier@claude-plugins-official"
-            ),
-        ]
     }
 
     // MARK: - Check execution

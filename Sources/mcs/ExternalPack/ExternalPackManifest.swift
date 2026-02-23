@@ -363,13 +363,14 @@ struct ExternalMCPServerConfig: Codable, Sendable {
     /// Convert to the internal `MCPServerConfig`.
     func toMCPServerConfig() -> MCPServerConfig {
         if transport == .http, let url {
-            return .http(name: name, url: url)
+            return .http(name: name, url: url, scope: scope?.rawValue)
         }
         return MCPServerConfig(
             name: name,
             command: command ?? "",
             args: args ?? [],
-            env: env ?? [:]
+            env: env ?? [:],
+            scope: scope?.rawValue
         )
     }
 }
@@ -380,6 +381,7 @@ enum ExternalTransport: String, Codable, Sendable {
 }
 
 enum ExternalScope: String, Codable, Sendable {
+    case local
     case user
     case project
 }

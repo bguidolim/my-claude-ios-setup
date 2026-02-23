@@ -50,7 +50,7 @@ struct ComponentExecutor {
             args.append(contentsOf: config.args)
         }
 
-        let result = claude.mcpAdd(name: config.name, arguments: args)
+        let result = claude.mcpAdd(name: config.name, scope: config.resolvedScope, arguments: args)
         return result.succeeded
     }
 
@@ -109,21 +109,6 @@ struct ComponentExecutor {
     }
 
     // MARK: - Pack Post-Processing
-
-    /// Inject a pack's hook contributions into installed hook files using section markers.
-    mutating func injectHookContributions(from pack: any TechPack) {
-        for contribution in pack.hookContributions {
-            let hookFile = environment.hooksDirectory
-                .appendingPathComponent(contribution.hookName + ".sh")
-            HookInjector.inject(
-                fragment: contribution.scriptFragment,
-                identifier: pack.identifier,
-                into: hookFile,
-                backup: &backup,
-                output: output
-            )
-        }
-    }
 
     /// Add a pack's gitignore entries to the global gitignore.
     func addPackGitignoreEntries(from pack: any TechPack) {
@@ -222,6 +207,92 @@ struct ComponentExecutor {
             output.warn(error.localizedDescription)
             return false
         }
+    }
+
+    // MARK: - Project-Scoped File Installation
+
+    /// Copy a file or directory from an external pack into the project's `.claude/` tree.
+    /// Returns the project-relative paths of installed files (for artifact tracking).
+    mutating func installProjectFile(
+        source: URL,
+        destination: String,
+        fileType: CopyFileType,
+        projectPath: URL
+    ) -> [String] {
+        let fm = FileManager.default
+        let baseDir = fileType.projectBaseDirectory(projectPath: projectPath)
+        let destURL = baseDir.appendingPathComponent(destination)
+
+        guard fm.fileExists(atPath: source.path) else {
+            output.warn("Pack source not found: \(source.path)")
+            return []
+        }
+
+        do {
+            try fm.createDirectory(
+                at: destURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: source.path, isDirectory: &isDir)
+            var installedPaths: [String] = []
+
+            if isDir.boolValue {
+                try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
+                let contents = try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+                for file in contents {
+                    let destFile = destURL.appendingPathComponent(file.lastPathComponent)
+                    if fm.fileExists(atPath: destFile.path) {
+                        try fm.removeItem(at: destFile)
+                    }
+                    try fm.copyItem(at: file, to: destFile)
+                    installedPaths.append(projectRelativePath(destFile, projectPath: projectPath))
+                }
+            } else {
+                if fm.fileExists(atPath: destURL.path) {
+                    try fm.removeItem(at: destURL)
+                }
+                try fm.copyItem(at: source, to: destURL)
+                if fileType == .hook {
+                    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destURL.path)
+                }
+                installedPaths.append(projectRelativePath(destURL, projectPath: projectPath))
+            }
+            return installedPaths
+        } catch {
+            output.warn(error.localizedDescription)
+            return []
+        }
+    }
+
+    /// Remove a file from the project by its project-relative path.
+    func removeProjectFile(relativePath: String, projectPath: URL) {
+        let fm = FileManager.default
+        let fullPath = projectPath.appendingPathComponent(relativePath)
+        if fm.fileExists(atPath: fullPath.path) {
+            do {
+                try fm.removeItem(at: fullPath)
+            } catch {
+                output.warn("Could not remove \(relativePath): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Remove an MCP server by name and scope.
+    func removeMCPServer(name: String, scope: String) {
+        let claude = ClaudeIntegration(shell: shell)
+        claude.mcpRemove(name: name, scope: scope)
+    }
+
+    private func projectRelativePath(_ url: URL, projectPath: URL) -> String {
+        let full = url.path
+        let base = projectPath.path
+        let prefix = base.hasSuffix("/") ? base : base + "/"
+        if full.hasPrefix(prefix) {
+            return String(full.dropFirst(prefix.count))
+        }
+        return full
     }
 
     // MARK: - Already-Installed Detection

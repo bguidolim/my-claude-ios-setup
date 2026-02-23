@@ -69,43 +69,6 @@ struct PackUninstallerTests {
         #expect(!final.trackedPaths.contains("packs/continuous-learning/skills/SKILL.md"))
     }
 
-    // MARK: - Hook fragment removal
-
-    @Test("Removes hook fragment from hook file")
-    func hookFragmentRemoval() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let hookFile = tmpDir.appendingPathComponent("session_start.sh")
-        let hookContent = """
-            #!/bin/bash
-            check_status() {
-                # --- mcs:begin learning-check v2.0.0 ---
-                echo "learning check"
-                # --- mcs:end learning-check ---
-
-                \(Constants.Hooks.extensionMarker)
-                echo "done"
-            }
-            """
-        try hookContent.write(to: hookFile, atomically: true, encoding: .utf8)
-
-        var backup = Backup()
-        let output = CLIOutput(colorsEnabled: false)
-
-        let removed = HookInjector.remove(
-            identifier: "learning-check",
-            from: hookFile,
-            backup: &backup,
-            output: output
-        )
-
-        #expect(removed == true)
-        let updated = try String(contentsOf: hookFile, encoding: .utf8)
-        #expect(!updated.contains("learning-check"))
-        #expect(updated.contains(Constants.Hooks.extensionMarker))
-    }
-
     // MARK: - RemovalSummary
 
     @Test("RemovalSummary counts total removals")
@@ -113,9 +76,8 @@ struct PackUninstallerTests {
         var summary = PackUninstaller.RemovalSummary()
         summary.mcpServers = ["docs-mcp-server"]
         summary.files = ["skills/SKILL.md", "hooks/activator.sh"]
-        summary.hookFragments = ["learning-check"]
 
-        #expect(summary.totalRemoved == 4)
+        #expect(summary.totalRemoved == 3)
     }
 
     @Test("Empty summary has zero total")

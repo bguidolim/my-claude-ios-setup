@@ -20,7 +20,6 @@ struct PackUninstaller {
         var mcpServers: [String] = []
         var plugins: [String] = []
         var files: [String] = []
-        var hookFragments: [String] = []
         var templateSections: [String] = []
         var gitignoreEntries: [String] = []
         var manifestEntries: [String] = []
@@ -28,7 +27,7 @@ struct PackUninstaller {
 
         var totalRemoved: Int {
             mcpServers.count + plugins.count + files.count
-                + hookFragments.count + templateSections.count
+                + templateSections.count
                 + gitignoreEntries.count + manifestEntries.count
         }
     }
@@ -47,14 +46,7 @@ struct PackUninstaller {
             }
         }
 
-        // 2. Remove hook contributions
-        if let hookContributions = manifest.hookContributions {
-            for contribution in hookContributions {
-                removeHookContribution(contribution, identifier: manifest.identifier, summary: &summary)
-            }
-        }
-
-        // 3. Remove gitignore entries
+        // 2. Remove gitignore entries
         if let entries = manifest.gitignoreEntries {
             let gitignore = GitignoreManager(shell: shell)
             for entry in entries {
@@ -100,7 +92,7 @@ struct PackUninstaller {
     ) {
         switch component.installAction {
         case .mcpServer(let config):
-            let scope = config.scope == .project ? "project" : "user"
+            let scope = config.scope?.rawValue ?? "local"
             let claude = ClaudeIntegration(shell: shell)
             let result = claude.mcpRemove(name: config.name, scope: scope)
             if result.succeeded {
@@ -150,29 +142,6 @@ struct PackUninstaller {
         case .brewInstall, .shellCommand:
             // Not reversed by design
             break
-        }
-    }
-
-    private mutating func removeHookContribution(
-        _ contribution: ExternalHookContribution,
-        identifier: String,
-        summary: inout RemovalSummary
-    ) {
-        let hookFile = environment.hooksDirectory
-            .appendingPathComponent("\(contribution.hookName).sh")
-
-        // The fragment identifier follows the pattern used during injection
-        let fragmentID = contribution.fragmentFile
-            .replacingOccurrences(of: ".sh", with: "")
-
-        let removed = HookInjector.remove(
-            identifier: fragmentID,
-            from: hookFile,
-            backup: &backup,
-            output: output
-        )
-        if removed {
-            summary.hookFragments.append(fragmentID)
         }
     }
 

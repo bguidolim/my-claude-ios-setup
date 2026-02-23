@@ -62,59 +62,6 @@ struct DerivedDoctorCheckTests {
         #expect(check?.section == "Dependencies")
     }
 
-    @Test("copySkill action derives SkillFreshnessCheck")
-    func copySkillDerivation() {
-        let component = ComponentDefinition(
-            id: "test.skill",
-            displayName: "test-skill",
-            description: "test",
-            type: .skill,
-            packIdentifier: nil,
-            dependencies: [],
-            isRequired: false,
-            installAction: .copySkill(source: "skills/test", destination: "test")
-        )
-        let check = component.deriveDoctorCheck()
-        #expect(check != nil)
-        #expect(check?.name == "test-skill")
-        #expect(check?.section == "Skills")
-    }
-
-    @Test("copyHook action derives HookCheck")
-    func copyHookDerivation() {
-        let component = ComponentDefinition(
-            id: "test.hook",
-            displayName: "test-hook",
-            description: "test",
-            type: .hookFile,
-            packIdentifier: nil,
-            dependencies: [],
-            isRequired: true,
-            installAction: .copyHook(source: "hooks/test.sh", destination: "test.sh")
-        )
-        let check = component.deriveDoctorCheck()
-        #expect(check != nil)
-        #expect(check?.section == "Hooks")
-    }
-
-    @Test("copyCommand action derives CommandFileCheck")
-    func copyCommandDerivation() {
-        let component = ComponentDefinition(
-            id: "test.command",
-            displayName: "test-command",
-            description: "test",
-            type: .command,
-            packIdentifier: nil,
-            dependencies: [],
-            isRequired: false,
-            installAction: .copyCommand(source: "commands/test.md", destination: "test.md", placeholders: [:])
-        )
-        let check = component.deriveDoctorCheck()
-        #expect(check != nil)
-        #expect(check?.name == "test-command")
-        #expect(check?.section == "Commands")
-    }
-
     @Test("shellCommand action returns nil (not derivable)")
     func shellCommandReturnsNil() {
         let component = ComponentDefinition(

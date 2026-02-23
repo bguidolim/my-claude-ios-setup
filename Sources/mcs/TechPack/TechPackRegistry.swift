@@ -83,22 +83,6 @@ struct TechPackRegistry: Sendable {
             .flatMap { $0.supplementaryDoctorChecks }
     }
 
-    /// Get hook contributions only for installed packs.
-    func hookContributions(installedPacks ids: Set<String>) -> [(pack: any TechPack, contribution: HookContribution)] {
-        availablePacks.filter { ids.contains($0.identifier) }
-            .flatMap { pack in
-                pack.hookContributions.map { (pack: pack, contribution: $0) }
-            }
-    }
-
-    /// Get migrations only for installed packs, sorted by version.
-    func migrations(installedPacks ids: Set<String>) -> [(pack: any TechPack, migration: any PackMigration)] {
-        availablePacks.filter { ids.contains($0.identifier) }
-            .flatMap { pack in
-                pack.migrations.map { (pack: pack, migration: $0) }
-            }.sorted { $0.migration.version < $1.migration.version }
-    }
-
     /// Get gitignore entries only for installed packs.
     func gitignoreEntries(installedPacks ids: Set<String>) -> [String] {
         availablePacks.filter { ids.contains($0.identifier) }

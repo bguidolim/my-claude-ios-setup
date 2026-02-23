@@ -2,6 +2,10 @@ import Foundation
 
 /// Orchestrates the 5-phase install flow:
 /// welcome -> selection -> summary -> install -> post-summary.
+///
+/// Note: With the per-project pivot, `mcs install` is being superseded by
+/// `mcs configure`. This installer handles global-scope component installation
+/// for packs that declare brew packages, MCP servers, plugins, etc.
 struct Installer {
     let environment: Environment
     let output: CLIOutput
@@ -74,11 +78,6 @@ struct Installer {
             output.plain("")
             output.plain("  Then re-run: mcs install")
             throw MCSError.dependencyMissing("Homebrew")
-        }
-
-        // Migrate old manifest file name if present
-        if environment.migrateManifestIfNeeded() {
-            output.dimmed("Migrated .setup-manifest → .mcs-manifest")
         }
 
         output.plain("")
@@ -215,8 +214,13 @@ struct Installer {
     // MARK: - Phase 4: Install
 
     mutating func phaseInstall(plan: DependencyResolver.ResolvedPlan, state: SelectionState) {
-        // Silent base infrastructure install (session_start.sh, settings.json, gitignore)
-        installBaseInfrastructure()
+        // Add core gitignore entries
+        let gitignore = GitignoreManager(shell: shell)
+        do {
+            try gitignore.addCoreEntries()
+        } catch {
+            output.warn("Could not add gitignore entries: \(error.localizedDescription)")
+        }
 
         let components = plan.orderedComponents
         let total = components.count
@@ -225,7 +229,7 @@ struct Installer {
 
         // Initialize manifest
         var manifest = Manifest(path: environment.setupManifest)
-        manifest.initialize(sourceDirectory: Bundle.module.bundlePath)
+        manifest.initialize(sourceDirectory: environment.claudeDirectory.path)
 
         // Ensure directories exist
         let fm = FileManager.default
@@ -279,37 +283,14 @@ struct Installer {
             manifest.recordInstalledPack(packID)
         }
 
-        // Post-processing: inject pack hook contributions and gitignore entries.
-        // These run BEFORE manifest save so that hook file hashes can be
-        // re-recorded after injection modifies the installed files.
-        var modifiedHookFiles: Set<String> = []
+        // Post-processing: add pack gitignore entries
         for packID in installedPackIDs {
             if let pack = registry.pack(for: packID) {
-                injectHookContributions(from: pack)
                 addPackGitignoreEntries(from: pack)
-                for contribution in pack.hookContributions {
-                    modifiedHookFiles.insert(contribution.hookName + ".sh")
-                }
             }
         }
 
-        // Re-record hashes for hook files modified by post-processing injections.
-        // Without this, the manifest would contain the pre-injection source hash,
-        // causing doctor freshness checks to report drift on every run.
-        for hookFileName in modifiedHookFiles {
-            let installedHook = environment.hooksDirectory.appendingPathComponent(hookFileName)
-            let relativePath = "hooks/\(hookFileName)"
-            if FileManager.default.fileExists(atPath: installedHook.path) {
-                do {
-                    let hash = try Manifest.sha256(of: installedHook)
-                    manifest.recordHash(relativePath: relativePath, hash: hash)
-                } catch {
-                    output.warn("Could not update manifest hash for \(hookFileName): \(error.localizedDescription)")
-                }
-            }
-        }
-
-        // Save manifest after all post-processing to capture final state
+        // Save manifest
         do {
             try manifest.save()
         } catch {
@@ -380,51 +361,6 @@ struct Installer {
         output.plain("")
     }
 
-    // MARK: - Base Infrastructure
-
-    /// Silently install the base infrastructure that all packs depend on:
-    /// session_start.sh, settings.json (deep-merged), and core gitignore entries.
-    /// This runs before any pack component installation.
-    private mutating func installBaseInfrastructure() {
-        let fm = FileManager.default
-
-        // Ensure directories exist
-        do {
-            try fm.createDirectory(at: environment.hooksDirectory, withIntermediateDirectories: true)
-        } catch {
-            output.warn("Could not create hooks directory: \(error.localizedDescription)")
-        }
-
-        // 1. Copy session_start.sh
-        if let sourceURL = resolvedResourceURL("hooks/session_start.sh") {
-            let destURL = environment.hooksDirectory.appendingPathComponent(Constants.FileNames.sessionStartHook)
-            do {
-                try backup.backupFile(at: destURL)
-                if fm.fileExists(atPath: destURL.path) {
-                    try fm.removeItem(at: destURL)
-                }
-                try fm.copyItem(at: sourceURL, to: destURL)
-                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destURL.path)
-            } catch {
-                output.warn("Could not install base hook: \(error.localizedDescription)")
-            }
-        }
-
-        // 2. Deep-merge settings.json
-        let settingsMerged = mergeSettings()
-        if !settingsMerged {
-            output.dimmed("Settings merge skipped or failed")
-        }
-
-        // 3. Add core gitignore entries
-        let gitignore = GitignoreManager(shell: shell)
-        do {
-            try gitignore.addCoreEntries()
-        } catch {
-            output.warn("Could not add gitignore entries: \(error.localizedDescription)")
-        }
-    }
-
     // MARK: - Component Installation
 
     private var executor: ComponentExecutor {
@@ -462,23 +398,6 @@ struct Installer {
         case .plugin(let name):
             return executor.installPlugin(name)
 
-        case .copySkill(let source, let destination):
-            return copySkill(source: source, destination: destination, manifest: &manifest)
-
-        case .copyHook(let source, let destination):
-            return copyHook(source: source, destination: destination, manifest: &manifest)
-
-        case .copyCommand(let source, let destination, let placeholders):
-            return copyCommand(
-                source: source,
-                destination: destination,
-                placeholders: placeholders,
-                manifest: &manifest
-            )
-
-        case .settingsMerge:
-            return mergeSettings()
-
         case .gitignoreEntries(let entries):
             return executor.addGitignoreEntries(entries)
 
@@ -492,220 +411,12 @@ struct Installer {
             )
             backup = exec.backup
             return success
-        }
-    }
 
-    /// Resolve a bundled resource path relative to Resources/.
-    /// Returns nil (with a warning) if the bundle is missing.
-    private func resolvedResourceURL(_ relativePath: String) -> URL? {
-        guard let resourceURL = Bundle.module.url(
-            forResource: "Resources",
-            withExtension: nil
-        ) else {
-            output.warn("Resources bundle not found")
-            return nil
-        }
-        return resourceURL.appendingPathComponent(relativePath)
-    }
-
-    /// Record a manifest entry, warning on failure.
-    private func recordManifest(
-        _ manifest: inout Manifest,
-        relativePath: String,
-        sourceFile: URL
-    ) {
-        do {
-            try manifest.record(relativePath: relativePath, sourceFile: sourceFile)
-        } catch {
-            output.warn("Could not record manifest entry for \(relativePath): \(error.localizedDescription)")
-        }
-    }
-
-    private mutating func copySkill(
-        source: String,
-        destination: String,
-        manifest: inout Manifest
-    ) -> Bool {
-        let fm = FileManager.default
-        guard let sourceURL = resolvedResourceURL(source) else { return false }
-        let destURL = environment.skillsDirectory.appendingPathComponent(destination)
-
-        do {
-            try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
-
-            guard fm.fileExists(atPath: sourceURL.path) else {
-                output.warn("Source not found: \(source)")
-                return false
-            }
-
-            let contents = try fm.contentsOfDirectory(
-                at: sourceURL,
-                includingPropertiesForKeys: nil
-            )
-            for file in contents {
-                let destFile = destURL.appendingPathComponent(file.lastPathComponent)
-                do {
-                    try backup.backupFile(at: destFile)
-                } catch {
-                    output.warn("Could not backup \(destFile.lastPathComponent): \(error.localizedDescription)")
-                }
-                if fm.fileExists(atPath: destFile.path) {
-                    try fm.removeItem(at: destFile)
-                }
-                // copyItem handles directories recursively
-                try fm.copyItem(at: file, to: destFile)
-            }
-
-            // Record per-file hashes instead of per-directory
-            // (directories can't be hashed by Data(contentsOf:))
-            do {
-                let fileHashes = try Manifest.directoryFileHashes(at: sourceURL)
-                for entry in fileHashes {
-                    manifest.recordHash(
-                        relativePath: "\(source)/\(entry.relativePath)",
-                        hash: entry.hash
-                    )
-                }
-            } catch {
-                output.warn("Could not record manifest hashes for \(source): \(error.localizedDescription)")
-            }
+        case .settingsMerge:
+            // Settings merge is handled at the project level by ProjectConfigurator.
+            output.dimmed("Skipped settingsMerge for \(component.displayName)")
             return true
-        } catch {
-            output.warn(error.localizedDescription)
-            return false
         }
-    }
-
-    private mutating func copyHook(
-        source: String,
-        destination: String,
-        manifest: inout Manifest
-    ) -> Bool {
-        let fm = FileManager.default
-        guard let sourceURL = resolvedResourceURL(source) else { return false }
-        let destURL = environment.hooksDirectory.appendingPathComponent(destination)
-
-        do {
-            try fm.createDirectory(
-                at: destURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            do {
-                try backup.backupFile(at: destURL)
-            } catch {
-                output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
-            }
-            if fm.fileExists(atPath: destURL.path) {
-                try fm.removeItem(at: destURL)
-            }
-            try fm.copyItem(at: sourceURL, to: destURL)
-
-            // Make executable
-            try fm.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: destURL.path
-            )
-
-            recordManifest(&manifest, relativePath: source, sourceFile: destURL)
-            return true
-        } catch {
-            output.warn(error.localizedDescription)
-            return false
-        }
-    }
-
-    private mutating func copyCommand(
-        source: String,
-        destination: String,
-        placeholders: [String: String],
-        manifest: inout Manifest
-    ) -> Bool {
-        let fm = FileManager.default
-        guard let sourceURL = resolvedResourceURL(source) else { return false }
-        let destURL = environment.commandsDirectory.appendingPathComponent(destination)
-
-        do {
-            try fm.createDirectory(
-                at: destURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            var content = try String(contentsOf: sourceURL, encoding: .utf8)
-            content = TemplateEngine.substitute(template: content, values: placeholders)
-
-            do {
-                try backup.backupFile(at: destURL)
-            } catch {
-                output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
-            }
-            try content.write(to: destURL, atomically: true, encoding: .utf8)
-            recordManifest(&manifest, relativePath: source, sourceFile: destURL)
-            return true
-        } catch {
-            output.warn(error.localizedDescription)
-            return false
-        }
-    }
-
-    @discardableResult
-    private mutating func mergeSettings() -> Bool {
-        guard let sourceURL = resolvedResourceURL("config/settings.json") else { return false }
-        let destURL = environment.claudeSettings
-
-        do {
-            let template = try Settings.load(from: sourceURL)
-            var existing = try Settings.load(from: destURL)
-
-            do {
-                try backup.backupFile(at: destURL)
-            } catch {
-                output.warn("Could not backup settings: \(error.localizedDescription)")
-            }
-
-            // Bootstrap ownership from legacy bash manifest if no sidecar exists yet
-            var ownership = SettingsOwnership(path: environment.settingsKeys)
-            if ownership.managedKeys.isEmpty {
-                if ownership.bootstrapFromLegacyManifest(at: environment.setupManifest) {
-                    output.dimmed("Migrated ownership from legacy bash installer manifest")
-                }
-            }
-
-            // Remove stale keys that mcs previously owned but are no longer in the template
-            let stale = ownership.staleKeys(comparedTo: template)
-            if !stale.isEmpty {
-                existing.removeKeys(stale)
-                for key in stale {
-                    ownership.remove(keyPath: key)
-                }
-                output.dimmed("Removed \(stale.count) stale setting(s): \(stale.joined(separator: ", "))")
-            }
-
-            existing.merge(with: template)
-            try existing.save(to: destURL)
-
-            // Record ownership of all template keys
-            ownership.recordAll(from: template, version: MCSVersion.current)
-            do {
-                try ownership.save()
-            } catch {
-                output.warn("Could not save settings ownership: \(error.localizedDescription)")
-            }
-
-            return true
-        } catch {
-            // Merge failed — report the error instead of silently overwriting user settings
-            output.warn("Settings merge failed: \(error.localizedDescription)")
-            output.warn("Your existing settings at \(destURL.path) were preserved.")
-            output.warn("Run 'mcs install' again or manually merge settings.")
-            return false
-        }
-    }
-
-    // MARK: - Pack Post-Processing
-
-    private mutating func injectHookContributions(from pack: any TechPack) {
-        var exec = executor
-        exec.injectHookContributions(from: pack)
-        backup = exec.backup
     }
 
     private func addPackGitignoreEntries(from pack: any TechPack) {

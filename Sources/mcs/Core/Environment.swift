@@ -6,7 +6,6 @@ struct Environment: Sendable {
     let claudeDirectory: URL
     let claudeJSON: URL
     let claudeSettings: URL
-    let settingsKeys: URL
     let hooksDirectory: URL
     let skillsDirectory: URL
     let commandsDirectory: URL
@@ -32,7 +31,6 @@ struct Environment: Sendable {
         self.claudeDirectory = claudeDir
         self.claudeJSON = home.appendingPathComponent(".claude.json")
         self.claudeSettings = claudeDir.appendingPathComponent("settings.json")
-        self.settingsKeys = claudeDir.appendingPathComponent(".mcs-settings-keys")
         self.hooksDirectory = claudeDir.appendingPathComponent("hooks")
         self.skillsDirectory = claudeDir.appendingPathComponent("skills")
         self.commandsDirectory = claudeDir.appendingPathComponent("commands")
@@ -73,34 +71,6 @@ struct Environment: Sendable {
     /// YAML registry of installed external packs.
     var packsRegistry: URL {
         claudeDirectory.appendingPathComponent(Constants.ExternalPacks.registryFilename)
-    }
-
-    /// The path where the old bash installer stored its manifest.
-    var legacyManifest: URL {
-        claudeDirectory.appendingPathComponent(".setup-manifest")
-    }
-
-    /// Migrate the old `.setup-manifest` to `.mcs-manifest` if needed.
-    /// Returns true if a migration was performed.
-    @discardableResult
-    func migrateManifestIfNeeded() -> Bool {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: legacyManifest.path),
-              !fm.fileExists(atPath: setupManifest.path)
-        else { return false }
-
-        do {
-            try fm.moveItem(at: legacyManifest, to: setupManifest)
-            return true
-        } catch {
-            // Fall back to copy if move fails (e.g., cross-volume)
-            do {
-                try fm.copyItem(at: legacyManifest, to: setupManifest)
-                return true
-            } catch {
-                return false
-            }
-        }
     }
 
     /// PATH string that includes the Homebrew bin directory.

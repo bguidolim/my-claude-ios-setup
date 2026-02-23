@@ -98,10 +98,6 @@ struct ExternalPackAdapter: TechPack {
         }
     }
 
-    // MARK: - Migrations
-
-    var migrations: [any PackMigration] { [] }
-
     // MARK: - Template Values (Prompt Execution)
 
     func templateValues(context: ProjectConfigContext) -> [String: String] {
