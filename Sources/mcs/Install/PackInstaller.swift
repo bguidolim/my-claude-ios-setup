@@ -95,11 +95,7 @@ struct PackInstaller {
 
         switch component.installAction {
         case .brewInstall(let package):
-            let success = exec.installBrewPackage(package)
-            if success {
-                exec.postInstall(component)
-            }
-            return success
+            return exec.installBrewPackage(package)
 
         case .shellCommand(let command):
             let result = shell.shell(command)

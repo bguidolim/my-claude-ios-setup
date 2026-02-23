@@ -34,22 +34,6 @@ enum Constants {
         static let claudeCommand = "claude"
     }
 
-    // MARK: - Ollama
-
-    enum Ollama {
-        /// The embedding model name used by docs-mcp-server.
-        static let embeddingModel = "nomic-embed-text"
-
-        /// The embedding model ID in OpenAI-compatible format.
-        static var embeddingModelID: String { "openai:\(embeddingModel)" }
-
-        /// The local Ollama API base URL (OpenAI-compatible endpoint).
-        static let apiBase = "http://localhost:11434/v1"
-
-        /// The local Ollama API tags endpoint (for health checks).
-        static let apiTagsURL = "http://localhost:11434/api/tags"
-    }
-
     // MARK: - Hooks
 
     enum Hooks {

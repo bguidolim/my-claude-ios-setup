@@ -93,14 +93,11 @@ struct Installer {
         var state = SelectionState()
 
         let allPacks = registry.availablePacks
-        let allComponents = registry.allPackComponents
 
         if installAll {
-            state.selectAllCore(from: allComponents)
             for pack in allPacks {
                 state.selectPack(
                     pack.identifier,
-                    coreComponents: [],
                     packComponents: pack.components
                 )
             }
@@ -111,7 +108,6 @@ struct Installer {
             if let pack = registry.pack(for: packName) {
                 state.selectPack(
                     packName,
-                    coreComponents: [],
                     packComponents: pack.components
                 )
                 output.info("Selected tech pack: \(pack.displayName)")
@@ -360,11 +356,7 @@ struct Installer {
     ) -> Bool {
         switch component.installAction {
         case .brewInstall(let package):
-            let success = executor.installBrewPackage(package)
-            if success {
-                executor.postInstall(component)
-            }
-            return success
+            return executor.installBrewPackage(package)
 
         case .shellCommand(let command):
             let result = shell.shell(command)

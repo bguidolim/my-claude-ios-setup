@@ -83,31 +83,6 @@ struct ComponentExecutor {
         }
     }
 
-    // MARK: - Post-Install
-
-    /// Run post-install steps for specific components (e.g., start services, pull models).
-    func postInstall(_ component: ComponentDefinition) {
-        switch component.id {
-        case "core.ollama":
-            let ollama = OllamaService(shell: shell, environment: environment)
-            if ollama.isRunning() {
-                output.dimmed("Ollama already running")
-            } else {
-                output.dimmed("Starting Ollama...")
-                if !ollama.start() {
-                    output.warn("Could not start Ollama automatically.")
-                    output.warn("Start it manually with 'ollama serve' or open the Ollama app, then re-run.")
-                }
-            }
-            output.dimmed("Pulling \(Constants.Ollama.embeddingModel) model...")
-            if let result = ollama.pullEmbeddingModelIfNeeded(), !result.succeeded {
-                output.warn("Could not pull \(Constants.Ollama.embeddingModel): \(result.stderr)")
-            }
-        default:
-            break
-        }
-    }
-
     // MARK: - Pack Post-Processing
 
     /// Add a pack's gitignore entries to the global gitignore.

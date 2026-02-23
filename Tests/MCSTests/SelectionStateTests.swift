@@ -37,55 +37,19 @@ struct SelectionStateTests {
         #expect(state.isSelected("b"))
     }
 
-    @Test("selectAllCore skips brewPackage and pack components")
-    func selectAllCoreSkipsBrewAndPacks() {
-        var state = SelectionState()
-        let components = [
-            component(id: "plugin.a", type: .plugin),
-            component(id: "brew.b", type: .brewPackage),
-            component(id: "hook.c", type: .hookFile),
-            component(id: "ios.mcp", type: .mcpServer, packIdentifier: "ios"),
-            component(id: "ios.skill", type: .skill, packIdentifier: "ios"),
-        ]
-        state.selectAllCore(from: components)
-
-        #expect(state.isSelected("plugin.a"))
-        #expect(!state.isSelected("brew.b"))
-        #expect(state.isSelected("hook.c"))
-        #expect(!state.isSelected("ios.mcp"))
-        #expect(!state.isSelected("ios.skill"))
-    }
-
-    @Test("selectPack selects pack components and required core")
+    @Test("selectPack selects non-brew pack components")
     func selectPack() {
         var state = SelectionState()
-        let core = [
-            component(id: "core.required", isRequired: true),
-            component(id: "core.optional", isRequired: false),
-        ]
         let pack = [
             component(id: "ios.mcp"),
             component(id: "ios.brew", type: .brewPackage),
+            component(id: "ios.skill", type: .skill),
         ]
-        state.selectPack("ios", coreComponents: core, packComponents: pack)
+        state.selectPack("ios", packComponents: pack)
 
-        #expect(state.isSelected("core.required"))
-        #expect(!state.isSelected("core.optional"))
         #expect(state.isSelected("ios.mcp"))
         #expect(!state.isSelected("ios.brew"))
-    }
-
-    @Test("selectRequiredCore only selects required components")
-    func selectRequiredCore() {
-        var state = SelectionState()
-        let core = [
-            component(id: "core.req", isRequired: true),
-            component(id: "core.opt", isRequired: false),
-        ]
-        state.selectRequiredCore(from: core)
-
-        #expect(state.isSelected("core.req"))
-        #expect(!state.isSelected("core.opt"))
+        #expect(state.isSelected("ios.skill"))
     }
 
     @Test("Default branch prefix is feature")

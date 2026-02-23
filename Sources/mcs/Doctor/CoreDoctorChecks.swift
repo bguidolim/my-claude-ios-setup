@@ -13,8 +13,7 @@ import Foundation
 // - **Additive operations**: Installing packages, registering servers, copying hooks/skills/commands.
 //   These are `mcs install`'s responsibility.
 //
-// This separation prevents inconsistent state where a file is present but
-// the manifest doesn't know about it, causing repeated false doctor warnings.
+// This separation keeps `doctor --fix` predictable and non-destructive.
 
 struct CommandCheck: DoctorCheck, Sendable {
     let name: String
@@ -35,35 +34,6 @@ struct CommandCheck: DoctorCheck, Sendable {
 
     func fix() -> FixResult {
         .notFixable("Run 'mcs install' to install dependencies")
-    }
-}
-
-/// Supplementary check for Ollama's daemon and model state.
-/// Used as a supplementaryCheck on the core.ollama component.
-/// Binary existence is handled by the auto-derived CommandCheck.
-struct OllamaRuntimeCheck: DoctorCheck, Sendable {
-    var name: String { "Ollama runtime" }
-    var section: String { "Dependencies" }
-
-    func check() -> CheckResult {
-        let env = Environment()
-        let shell = ShellRunner(environment: env)
-        let ollama = OllamaService(shell: shell, environment: env)
-
-        guard shell.commandExists("ollama") else {
-            return .skip("ollama not installed")
-        }
-        guard ollama.isRunning() else {
-            return .warn("not running — start with 'ollama serve' or open the Ollama app")
-        }
-        guard ollama.hasEmbeddingModel() else {
-            return .warn("running but \(Constants.Ollama.embeddingModel) model not installed — run 'ollama pull \(Constants.Ollama.embeddingModel)'")
-        }
-        return .pass("running with \(Constants.Ollama.embeddingModel)")
-    }
-
-    func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to configure Ollama")
     }
 }
 
@@ -164,7 +134,7 @@ struct HookCheck: DoctorCheck, Sendable {
         let fm = FileManager.default
 
         // Only fix permissions — additive operations (installing/replacing hooks) are
-        // handled by `mcs install`, which also records manifest hashes.
+        // handled by `mcs install`.
         guard fm.fileExists(atPath: hookPath.path) else {
             return .notFixable("Run 'mcs install' to install hooks")
         }
