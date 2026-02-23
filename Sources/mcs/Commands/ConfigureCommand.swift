@@ -13,6 +13,9 @@ struct ConfigureCommand: ParsableCommand {
     @Option(name: .long, help: "Tech pack to apply (e.g. ios). Can be specified multiple times.")
     var pack: [String] = []
 
+    @Flag(name: .long, help: "Show what would change without making any modifications")
+    var dryRun = false
+
     mutating func run() throws {
         let env = Environment()
         let output = CLIOutput()
@@ -46,7 +49,7 @@ struct ConfigureCommand: ParsableCommand {
 
         if pack.isEmpty {
             // Interactive flow — multi-select of all registered packs
-            try configurator.interactiveConfigure(at: projectPath)
+            try configurator.interactiveConfigure(at: projectPath, dryRun: dryRun)
         } else {
             // Non-interactive --pack flag (CI-friendly)
             let resolvedPacks: [any TechPack] = pack.compactMap { registry.pack(for: $0) }
@@ -67,10 +70,14 @@ struct ConfigureCommand: ParsableCommand {
             output.info("Project: \(projectPath.path)")
             output.info("Packs: \(resolvedPacks.map(\.displayName).joined(separator: ", "))")
 
-            try configurator.configure(at: projectPath, packs: resolvedPacks)
+            if dryRun {
+                configurator.dryRun(at: projectPath, packs: resolvedPacks)
+            } else {
+                try configurator.configure(at: projectPath, packs: resolvedPacks)
 
-            output.header("Done")
-            output.info("Run 'mcs doctor' to verify configuration")
+                output.header("Done")
+                output.info("Run 'mcs doctor' to verify configuration")
+            }
         }
     }
 }

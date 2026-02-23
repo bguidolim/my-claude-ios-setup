@@ -14,7 +14,7 @@ struct ProjectConfigurator {
     // MARK: - Interactive Flow
 
     /// Full interactive configure flow — multi-select of registered packs.
-    func interactiveConfigure(at projectPath: URL) throws {
+    func interactiveConfigure(at projectPath: URL, dryRun: Bool = false) throws {
         output.header("Configure Project")
         output.plain("")
         output.info("Project: \(projectPath.path)")
@@ -61,10 +61,163 @@ struct ProjectConfigurator {
             return
         }
 
-        try configure(at: projectPath, packs: selectedPacks)
+        if dryRun {
+            self.dryRun(at: projectPath, packs: selectedPacks)
+        } else {
+            try configure(at: projectPath, packs: selectedPacks)
 
-        output.header("Done")
-        output.info("Run 'mcs doctor' to verify configuration")
+            output.header("Done")
+            output.info("Run 'mcs doctor' to verify configuration")
+        }
+    }
+
+    // MARK: - Dry Run
+
+    /// Compute and display what `configure` would do, without making any changes.
+    func dryRun(at projectPath: URL, packs: [any TechPack]) {
+        let selectedIDs = Set(packs.map(\.identifier))
+
+        let projectState = ProjectState(projectRoot: projectPath)
+        let previousIDs = projectState.configuredPacks
+
+        let removals = previousIDs.subtracting(selectedIDs)
+        let additions = selectedIDs.subtracting(previousIDs)
+        let updates = selectedIDs.intersection(previousIDs)
+
+        output.header("Plan")
+
+        if removals.isEmpty && additions.isEmpty && updates.isEmpty && packs.isEmpty {
+            output.plain("")
+            output.info("No packs selected. Nothing would change.")
+            output.plain("")
+            output.dimmed("No changes made (dry run).")
+            return
+        }
+
+        // Show additions
+        for pack in packs where additions.contains(pack.identifier) {
+            output.plain("")
+            output.success("+ \(pack.displayName) (new)")
+            printPackArtifactSummary(pack)
+        }
+
+        // Show removals
+        for packID in removals.sorted() {
+            output.plain("")
+            output.warn("- \(packID) (remove)")
+            if let artifacts = projectState.artifacts(for: packID) {
+                printRemovalSummary(artifacts)
+            } else {
+                output.dimmed("  No artifact record available")
+            }
+        }
+
+        // Show updates (unchanged packs that would be refreshed)
+        for pack in packs where updates.contains(pack.identifier) {
+            output.plain("")
+            output.info("~ \(pack.displayName) (update)")
+            printPackArtifactSummary(pack)
+        }
+
+        output.plain("")
+        let totalChanges = additions.count + removals.count
+        if totalChanges == 0 {
+            output.info("\(updates.count) pack(s) would be refreshed, no additions or removals.")
+        } else {
+            var parts: [String] = []
+            if !additions.isEmpty { parts.append("+\(additions.count) added") }
+            if !removals.isEmpty { parts.append("-\(removals.count) removed") }
+            if !updates.isEmpty { parts.append("~\(updates.count) updated") }
+            output.info(parts.joined(separator: ", "))
+        }
+        output.plain("")
+        output.dimmed("No changes made (dry run).")
+    }
+
+    /// Print what a pack would install (for dry-run display).
+    private func printPackArtifactSummary(_ pack: any TechPack) {
+        // MCP servers
+        let mcpServers = pack.components.compactMap { component -> String? in
+            if case .mcpServer(let config) = component.installAction {
+                return "+\(config.name) (\(config.resolvedScope))"
+            }
+            return nil
+        }
+        if !mcpServers.isEmpty {
+            output.dimmed("  MCP servers:  \(mcpServers.joined(separator: ", "))")
+        }
+
+        // Files (skills, hooks, commands)
+        let files = pack.components.compactMap { component -> String? in
+            if case .copyPackFile(_, let destination, let fileType) = component.installAction {
+                let prefix: String
+                switch fileType {
+                case .skill: prefix = ".claude/skills/"
+                case .hook: prefix = ".claude/hooks/"
+                case .command: prefix = ".claude/commands/"
+                case .generic: prefix = ".claude/"
+                }
+                return "+\(prefix)\(destination)"
+            }
+            return nil
+        }
+        if !files.isEmpty {
+            output.dimmed("  Files:        \(files.joined(separator: ", "))")
+        }
+
+        // Templates
+        let templateSections = pack.templates.map { "+\($0.sectionIdentifier) section" }
+        if !templateSections.isEmpty {
+            output.dimmed("  Templates:    \(templateSections.joined(separator: ", ")) in CLAUDE.local.md")
+        }
+
+        // Hook entries (settings.local.json)
+        let hookEntries = pack.hookContributions.map { "+\(hookEventName(for: $0.hookName)) hook entry" }
+        if !hookEntries.isEmpty {
+            output.dimmed("  Settings:     \(hookEntries.joined(separator: ", "))")
+        }
+
+        // Brew packages
+        let brewPackages = pack.components.compactMap { component -> String? in
+            if case .brewInstall(let package) = component.installAction {
+                return package
+            }
+            return nil
+        }
+        if !brewPackages.isEmpty {
+            output.dimmed("  Brew:         \(brewPackages.joined(separator: ", ")) (global)")
+        }
+
+        // Plugins
+        let plugins = pack.components.compactMap { component -> String? in
+            if case .plugin(let name) = component.installAction {
+                return name
+            }
+            return nil
+        }
+        if !plugins.isEmpty {
+            output.dimmed("  Plugins:      \(plugins.joined(separator: ", ")) (global)")
+        }
+    }
+
+    /// Print what a removal would clean up (for dry-run display).
+    private func printRemovalSummary(_ artifacts: PackArtifactRecord) {
+        if !artifacts.mcpServers.isEmpty {
+            let servers = artifacts.mcpServers.map { "-\($0.name) (\($0.scope))" }
+            output.dimmed("  MCP servers:  \(servers.joined(separator: ", "))")
+        }
+        if !artifacts.files.isEmpty {
+            let files = artifacts.files.map { "-\($0)" }
+            output.dimmed("  Files:        \(files.joined(separator: ", "))")
+        }
+        if !artifacts.templateSections.isEmpty {
+            let sections = artifacts.templateSections.map { "-\($0) section" }
+            output.dimmed("  Templates:    \(sections.joined(separator: ", ")) from CLAUDE.local.md")
+        }
+        if !artifacts.hookCommands.isEmpty {
+            let hooks = artifacts.hookCommands.map { "-\($0)" }
+            output.dimmed("  Settings:     \(hooks.joined(separator: ", "))")
+        }
     }
 
     // MARK: - Configure (Multi-Pack)

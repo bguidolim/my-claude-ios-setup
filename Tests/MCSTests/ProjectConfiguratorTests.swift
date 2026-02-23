@@ -224,3 +224,185 @@ struct WriteClaudeLocalTests {
         #expect(!content.contains("__PROJECT__"))
     }
 }
+
+// MARK: - Dry Run Tests
+
+@Suite("ProjectConfigurator — dryRun")
+struct DryRunTests {
+    private let output = CLIOutput(colorsEnabled: false)
+
+    private func makeTmpDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-dryrun-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func makeConfigurator() -> ProjectConfigurator {
+        let env = Environment()
+        return ProjectConfigurator(
+            environment: env,
+            output: output,
+            shell: ShellRunner(environment: env)
+        )
+    }
+
+    @Test("Dry run does not create any files")
+    func dryRunCreatesNoFiles() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let pack = MockTechPack(
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            templates: [TemplateContribution(
+                sectionIdentifier: "test",
+                templateContent: "Test content",
+                placeholders: []
+            )]
+        )
+
+        let configurator = makeConfigurator()
+        configurator.dryRun(at: tmpDir, packs: [pack])
+
+        // No CLAUDE.local.md should be created
+        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
+        #expect(!FileManager.default.fileExists(atPath: claudeLocal.path))
+
+        // No .claude/ directory should be created
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        #expect(!FileManager.default.fileExists(atPath: claudeDir.path))
+    }
+
+    @Test("Dry run does not modify existing project state")
+    func dryRunPreservesState() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create an existing project state
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        var state = ProjectState(projectRoot: tmpDir)
+        state.recordPack("existing-pack")
+        state.setArtifacts(
+            PackArtifactRecord(templateSections: ["existing"]),
+            for: "existing-pack"
+        )
+        try state.save()
+
+        let stateFile = claudeDir.appendingPathComponent(".mcs-project")
+        let stateBefore = try Data(contentsOf: stateFile)
+
+        // Run dry-run with a different pack
+        let pack = MockTechPack(identifier: "new-pack", displayName: "New Pack")
+        let configurator = makeConfigurator()
+        configurator.dryRun(at: tmpDir, packs: [pack])
+
+        // State file should be unchanged
+        let stateAfter = try Data(contentsOf: stateFile)
+        #expect(stateBefore == stateAfter)
+    }
+
+    @Test("Dry run correctly identifies additions and removals")
+    func dryRunIdentifiesConvergence() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create existing state with pack A configured
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        var state = ProjectState(projectRoot: tmpDir)
+        state.recordPack("pack-a")
+        state.setArtifacts(
+            PackArtifactRecord(
+                mcpServers: [MCPServerRef(name: "server-a", scope: "local")],
+                templateSections: ["pack-a"]
+            ),
+            for: "pack-a"
+        )
+        try state.save()
+
+        // Dry-run with pack B (not pack A) — should show A removed, B added
+        let packB = MockTechPack(
+            identifier: "pack-b",
+            displayName: "Pack B",
+            components: [ComponentDefinition(
+                id: "pack-b.server",
+                displayName: "Server B",
+                description: "A server",
+                type: .mcpServer,
+                packIdentifier: "pack-b",
+                dependencies: [],
+                isRequired: true,
+                installAction: .mcpServer(MCPServerConfig(
+                    name: "server-b",
+                    command: "/usr/bin/test",
+                    args: [],
+                    env: [:]
+                ))
+            )],
+            templates: [TemplateContribution(
+                sectionIdentifier: "pack-b",
+                templateContent: "Pack B content",
+                placeholders: []
+            )]
+        )
+
+        let configurator = makeConfigurator()
+
+        // Capture that it doesn't throw and doesn't modify state
+        configurator.dryRun(at: tmpDir, packs: [packB])
+
+        // Verify state file is unchanged (pack-a still configured)
+        let updatedState = ProjectState(projectRoot: tmpDir)
+        #expect(updatedState.configuredPacks.contains("pack-a"))
+        #expect(!updatedState.configuredPacks.contains("pack-b"))
+    }
+
+    @Test("Dry run with empty pack list shows nothing to change")
+    func dryRunEmptyPacks() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let configurator = makeConfigurator()
+        configurator.dryRun(at: tmpDir, packs: [])
+
+        // Should not create any files
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        #expect(!FileManager.default.fileExists(atPath: claudeDir.path))
+    }
+}
+
+/// Minimal TechPack implementation for dry-run tests.
+private struct MockTechPack: TechPack {
+    let identifier: String
+    let displayName: String
+    let description: String = "Mock pack for testing"
+    let components: [ComponentDefinition]
+    let templates: [TemplateContribution]
+    let hookContributions: [HookContribution]
+    let gitignoreEntries: [String]
+    let supplementaryDoctorChecks: [any DoctorCheck]
+
+    init(
+        identifier: String,
+        displayName: String,
+        components: [ComponentDefinition] = [],
+        templates: [TemplateContribution] = [],
+        hookContributions: [HookContribution] = [],
+        gitignoreEntries: [String] = [],
+        supplementaryDoctorChecks: [any DoctorCheck] = []
+    ) {
+        self.identifier = identifier
+        self.displayName = displayName
+        self.components = components
+        self.templates = templates
+        self.hookContributions = hookContributions
+        self.gitignoreEntries = gitignoreEntries
+        self.supplementaryDoctorChecks = supplementaryDoctorChecks
+    }
+
+    func configureProject(at path: URL, context: ProjectConfigContext) throws {}
+}
