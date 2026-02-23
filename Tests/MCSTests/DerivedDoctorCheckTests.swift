@@ -87,7 +87,7 @@ struct DerivedDoctorCheckTests {
             packIdentifier: nil,
             dependencies: [],
             isRequired: true,
-            installAction: .settingsMerge
+            installAction: .settingsMerge(source: nil)
         )
         #expect(component.deriveDoctorCheck() == nil)
     }

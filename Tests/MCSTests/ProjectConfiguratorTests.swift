@@ -375,6 +375,229 @@ struct DryRunTests {
     }
 }
 
+// MARK: - Settings Merge Tests
+
+@Suite("ProjectConfigurator — packSettingsMerge")
+struct PackSettingsMergeTests {
+    private let output = CLIOutput(colorsEnabled: false)
+
+    private func makeTmpDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-settings-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func makeConfigurator() -> ProjectConfigurator {
+        let env = Environment()
+        return ProjectConfigurator(
+            environment: env,
+            output: output,
+            shell: ShellRunner(environment: env)
+        )
+    }
+
+    /// Write a JSON settings file and return its URL.
+    private func writeSettingsFile(in dir: URL, name: String, settings: Settings) throws -> URL {
+        let url = dir.appendingPathComponent(name)
+        try settings.save(to: url)
+        return url
+    }
+
+    @Test("Pack with settingsFile merges settings into settings.local.json")
+    func settingsFileMerge() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create a pack settings file
+        var packSettings = Settings()
+        packSettings.env = ["MY_KEY": "my_value"]
+        packSettings.alwaysThinkingEnabled = true
+        let settingsURL = try writeSettingsFile(
+            in: tmpDir, name: "pack-settings.json", settings: packSettings
+        )
+
+        let pack = MockTechPack(
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            components: [ComponentDefinition(
+                id: "test-pack.settings",
+                displayName: "Test Settings",
+                description: "Merges settings",
+                type: .configuration,
+                packIdentifier: "test-pack",
+                dependencies: [],
+                isRequired: true,
+                installAction: .settingsMerge(source: settingsURL)
+            )]
+        )
+
+        // Create .claude/ dir and run compose
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        let configurator = makeConfigurator()
+        // Use the internal compose method by triggering configure path
+        // Directly test composeProjectSettings by checking the output file
+        let settingsPath = claudeDir.appendingPathComponent("settings.local.json")
+
+        // Simulate what configure does: compose settings
+        // We need to call the private method indirectly — use a full configure
+        var state = ProjectState(projectRoot: tmpDir)
+        state.recordPack("test-pack")
+        try state.save()
+
+        try configurator.configure(at: tmpDir, packs: [pack])
+
+        // Check settings.local.json was created with merged settings
+        let result = try Settings.load(from: settingsPath)
+        #expect(result.env?["MY_KEY"] == "my_value")
+        #expect(result.alwaysThinkingEnabled == true)
+    }
+
+    @Test("Multiple packs merge settings additively")
+    func multiPackSettingsMerge() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Pack A settings
+        var settingsA = Settings()
+        settingsA.env = ["KEY_A": "value_a"]
+        let urlA = try writeSettingsFile(
+            in: tmpDir, name: "settings-a.json", settings: settingsA
+        )
+
+        // Pack B settings
+        var settingsB = Settings()
+        settingsB.env = ["KEY_B": "value_b"]
+        settingsB.enabledPlugins = ["my-plugin": true]
+        let urlB = try writeSettingsFile(
+            in: tmpDir, name: "settings-b.json", settings: settingsB
+        )
+
+        let packA = MockTechPack(
+            identifier: "pack-a",
+            displayName: "Pack A",
+            components: [ComponentDefinition(
+                id: "pack-a.settings",
+                displayName: "Pack A Settings",
+                description: "Settings A",
+                type: .configuration,
+                packIdentifier: "pack-a",
+                dependencies: [],
+                isRequired: true,
+                installAction: .settingsMerge(source: urlA)
+            )]
+        )
+        let packB = MockTechPack(
+            identifier: "pack-b",
+            displayName: "Pack B",
+            components: [ComponentDefinition(
+                id: "pack-b.settings",
+                displayName: "Pack B Settings",
+                description: "Settings B",
+                type: .configuration,
+                packIdentifier: "pack-b",
+                dependencies: [],
+                isRequired: true,
+                installAction: .settingsMerge(source: urlB)
+            )]
+        )
+
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        let configurator = makeConfigurator()
+        try configurator.configure(at: tmpDir, packs: [packA, packB])
+
+        let settingsPath = claudeDir.appendingPathComponent("settings.local.json")
+        let result = try Settings.load(from: settingsPath)
+        #expect(result.env?["KEY_A"] == "value_a")
+        #expect(result.env?["KEY_B"] == "value_b")
+        #expect(result.enabledPlugins?["my-plugin"] == true)
+    }
+
+    @Test("Removing a pack excludes its settings on next configure")
+    func removePackExcludesSettings() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Pack settings
+        var packSettings = Settings()
+        packSettings.env = ["PACK_KEY": "pack_value"]
+        let settingsURL = try writeSettingsFile(
+            in: tmpDir, name: "pack-settings.json", settings: packSettings
+        )
+
+        let pack = MockTechPack(
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            components: [ComponentDefinition(
+                id: "test-pack.settings",
+                displayName: "Test Settings",
+                description: "Merges settings",
+                type: .configuration,
+                packIdentifier: "test-pack",
+                dependencies: [],
+                isRequired: true,
+                installAction: .settingsMerge(source: settingsURL)
+            )]
+        )
+
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        // First configure with the pack
+        let configurator = makeConfigurator()
+        try configurator.configure(at: tmpDir, packs: [pack])
+
+        let settingsPath = claudeDir.appendingPathComponent("settings.local.json")
+        let afterAdd = try Settings.load(from: settingsPath)
+        #expect(afterAdd.env?["PACK_KEY"] == "pack_value")
+
+        // Re-configure with no packs (simulate removal)
+        try configurator.configure(at: tmpDir, packs: [])
+
+        // settings.local.json should either not exist or not have the pack's key
+        if FileManager.default.fileExists(atPath: settingsPath.path) {
+            let afterRemove = try Settings.load(from: settingsPath)
+            #expect(afterRemove.env?["PACK_KEY"] == nil)
+        }
+        // If file doesn't exist, that's also fine — no settings to write
+    }
+
+    @Test("settingsMerge with nil source is a no-op")
+    func settingsMergeNilSource() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let pack = MockTechPack(
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            components: [ComponentDefinition(
+                id: "test-pack.settings",
+                displayName: "Test Settings",
+                description: "No-op settings",
+                type: .configuration,
+                packIdentifier: "test-pack",
+                dependencies: [],
+                isRequired: true,
+                installAction: .settingsMerge(source: nil)
+            )]
+        )
+
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        let configurator = makeConfigurator()
+        try configurator.configure(at: tmpDir, packs: [pack])
+
+        // No settings.local.json should be created for a nil-source settingsMerge
+        let settingsPath = claudeDir.appendingPathComponent("settings.local.json")
+        #expect(!FileManager.default.fileExists(atPath: settingsPath.path))
+    }
+}
+
 /// Minimal TechPack implementation for dry-run tests.
 private struct MockTechPack: TechPack {
     let identifier: String

@@ -3,7 +3,7 @@ import Foundation
 /// Bridges an `ExternalPackManifest` (loaded from `techpack.yaml`) to the
 /// `TechPack` protocol, allowing external packs to participate in the same install,
 /// doctor, and configure flows as compiled-in packs.
-/// Note: migrations and settingsFile actions are not yet supported.
+/// Note: migrations are not yet supported.
 struct ExternalPackAdapter: TechPack {
     let manifest: ExternalPackManifest
     let packPath: URL
@@ -205,11 +205,11 @@ struct ExternalPackAdapter: TechPack {
             return .gitignoreEntries(entries: entries)
 
         case .settingsMerge:
-            return .settingsMerge
+            return .settingsMerge(source: nil)
 
-        case .settingsFile:
-            output.warn("settingsFile is not yet supported; treating as settingsMerge. Use settingsMerge instead.")
-            return .settingsMerge
+        case .settingsFile(let source):
+            let sourceURL = packPath.appendingPathComponent(source)
+            return .settingsMerge(source: sourceURL)
 
         case .copyPackFile(let config):
             let sourceURL = packPath.appendingPathComponent(config.source)

@@ -60,7 +60,7 @@ enum ComponentInstallAction: Sendable {
     case plugin(name: String)
     case brewInstall(package: String)
     case shellCommand(command: String)
-    case settingsMerge
+    case settingsMerge(source: URL?)
     case gitignoreEntries(entries: [String])
     case copyPackFile(source: URL, destination: String, fileType: CopyFileType)
 }

@@ -174,7 +174,18 @@ struct ProjectConfigurator {
         // Hook entries (settings.local.json)
         let hookEntries = pack.hookContributions.map { "+\(hookEventName(for: $0.hookName)) hook entry" }
         if !hookEntries.isEmpty {
-            output.dimmed("  Settings:     \(hookEntries.joined(separator: ", "))")
+            output.dimmed("  Hooks:        \(hookEntries.joined(separator: ", "))")
+        }
+
+        // Settings files
+        let settingsFiles = pack.components.compactMap { component -> String? in
+            if case .settingsMerge(let source) = component.installAction, source != nil {
+                return "+settings merge from \(component.displayName)"
+            }
+            return nil
+        }
+        if !settingsFiles.isEmpty {
+            output.dimmed("  Settings:     \(settingsFiles.joined(separator: ", "))")
         }
 
         // Brew packages
@@ -448,13 +459,14 @@ struct ProjectConfigurator {
 
     // MARK: - Settings Composition
 
-    /// Build `settings.local.json` from all selected packs' hook entries.
+    /// Build `settings.local.json` from all selected packs' hook entries and settings files.
     private func composeProjectSettings(at projectPath: URL, packs: [any TechPack]) {
         let settingsPath = projectPath
             .appendingPathComponent(Constants.FileNames.claudeDirectory)
             .appendingPathComponent("settings.local.json")
 
         var settings = Settings()
+        var hasContent = false
 
         // Gather hook entries from all packs
         for pack in packs {
@@ -472,17 +484,37 @@ struct ProjectConfigurator {
                 }
                 existing[event] = groups
                 settings.hooks = existing
+                hasContent = true
             }
         }
 
-        // Only write if there's content
-        guard settings.hooks != nil else { return }
+        // Merge settings files from packs
+        for pack in packs {
+            for component in pack.components {
+                if case .settingsMerge(let source) = component.installAction, let source {
+                    do {
+                        let packSettings = try Settings.load(from: source)
+                        settings.merge(with: packSettings)
+                        hasContent = true
+                    } catch {
+                        output.warn("Could not load settings from \(source.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
 
-        do {
-            try settings.save(to: settingsPath)
-            output.success("Composed settings.local.json")
-        } catch {
-            output.warn("Could not write settings.local.json: \(error.localizedDescription)")
+        // Write composed settings or clean up stale file
+        if hasContent {
+            do {
+                try settings.save(to: settingsPath)
+                output.success("Composed settings.local.json")
+            } catch {
+                output.warn("Could not write settings.local.json: \(error.localizedDescription)")
+            }
+        } else if FileManager.default.fileExists(atPath: settingsPath.path) {
+            // No packs contribute settings — remove stale file
+            try? FileManager.default.removeItem(at: settingsPath)
+            output.dimmed("Removed empty settings.local.json")
         }
     }
 
