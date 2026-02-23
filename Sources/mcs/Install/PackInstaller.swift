@@ -120,8 +120,8 @@ struct PackInstaller {
 
     // MARK: - Component Installation
 
-    private func installComponent(_ component: ComponentDefinition) -> Bool {
-        let exec = executor
+    private mutating func installComponent(_ component: ComponentDefinition) -> Bool {
+        var exec = executor
 
         switch component.installAction {
         case .brewInstall(let package):
@@ -148,19 +148,17 @@ struct PackInstaller {
             return exec.addGitignoreEntries(entries)
 
         case .copyPackFile(let source, let destination, let fileType):
-            var mutableExec = ComponentExecutor(
-                environment: environment,
-                output: output,
-                shell: shell,
-                backup: backup
-            )
             var manifest = Manifest(path: environment.setupManifest)
-            return mutableExec.installCopyPackFile(
+            let success = exec.installCopyPackFile(
                 source: source,
                 destination: destination,
                 fileType: fileType,
                 manifest: &manifest
             )
+            // Persist manifest and sync backup state
+            try? manifest.save()
+            backup = exec.backup
+            return success
 
         case .copySkill, .copyHook, .copyCommand, .settingsMerge:
             // These are core-only actions, not used by pack components

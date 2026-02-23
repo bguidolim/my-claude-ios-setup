@@ -3,7 +3,7 @@ import os
 
 /// Higher-level wrapper around `ShellRunner` for executing scripts from external packs.
 /// Adds pack-specific concerns: path containment validation, standard environment
-/// variables, timeout enforcement, and executable permission checks.
+/// variables, timeout enforcement, and executable permission enforcement (auto-chmod).
 struct ScriptRunner: Sendable {
     let shell: ShellRunner
     let output: CLIOutput
@@ -87,6 +87,7 @@ struct ScriptRunner: Sendable {
     }
 
     /// Run a single command string (for fixCommand in doctor checks).
+    /// This method executes via `/bin/bash -c` **without** path containment.
     ///
     /// - Parameters:
     ///   - command: Shell command to execute via `/bin/bash -c`
@@ -104,8 +105,18 @@ struct ScriptRunner: Sendable {
                 additionalEnvironment: ["MCS_VERSION": MCSVersion.current],
                 timeout: timeout
             )
+        } catch let error as ScriptError {
+            return ScriptResult(
+                exitCode: 1,
+                stdout: "",
+                stderr: error.errorDescription ?? error.localizedDescription
+            )
         } catch {
-            return ScriptResult(exitCode: 1, stdout: "", stderr: error.localizedDescription)
+            return ScriptResult(
+                exitCode: 1,
+                stdout: "",
+                stderr: "[launch error] \(error.localizedDescription)"
+            )
         }
     }
 
@@ -155,7 +166,7 @@ struct ScriptRunner: Sendable {
         do {
             try process.run()
         } catch {
-            return ScriptResult(exitCode: 1, stdout: "", stderr: error.localizedDescription)
+            throw ScriptError.scriptNotFound("\(executable) (launch failed: \(error.localizedDescription))")
         }
 
         // Schedule timeout on a background queue

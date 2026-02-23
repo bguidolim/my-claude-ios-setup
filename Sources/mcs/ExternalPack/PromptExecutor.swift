@@ -147,8 +147,7 @@ struct PromptExecutor: Sendable {
             .sorted()
     }
 
-    /// Instance method that delegates to the static implementation.
-    /// Enables tests to override file detection via dependency injection.
+    /// Delegates to the static implementation for consistent file detection.
     private func detectFiles(matching pattern: String, in directory: URL) -> [String] {
         Self.detectFiles(matching: pattern, in: directory)
     }

@@ -31,6 +31,21 @@ struct AddPack: ParsableCommand {
         let output = CLIOutput()
         let shell = ShellRunner(environment: env)
 
+        // Validate URL to prevent git argument injection and restrict to safe protocols
+        guard !url.hasPrefix("-") else {
+            output.error("Invalid URL: must not start with '-'")
+            throw ExitCode.failure
+        }
+        let allowedPrefixes = ["https://", "git@", "ssh://", "git://", "file://"]
+        guard allowedPrefixes.contains(where: { url.hasPrefix($0) }) else {
+            output.error("Invalid URL: must start with https://, git@, ssh://, git://, or file://")
+            throw ExitCode.failure
+        }
+        if let ref, ref.hasPrefix("-") {
+            output.error("Invalid ref: must not start with '-'")
+            throw ExitCode.failure
+        }
+
         let fetcher = PackFetcher(
             shell: shell,
             output: output,
@@ -62,6 +77,17 @@ struct AddPack: ParsableCommand {
         }
 
         output.success("Found pack: \(manifest.displayName) v\(manifest.version)")
+
+        // 2b. Warn if overriding a built-in pack
+        let builtInIDs = Set(TechPackRegistry.shared.availablePacks.map(\.identifier))
+        if builtInIDs.contains(manifest.identifier) {
+            output.warn("Pack '\(manifest.identifier)' will override the built-in pack with the same identifier.")
+            if !output.askYesNo("Override built-in pack?", default: false) {
+                try? fetcher.remove(packPath: fetchResult.localPath)
+                output.info("Pack not added.")
+                return
+            }
+        }
 
         // 3. Check for collisions with existing packs
         let registryData: PackRegistryFile.RegistryData
@@ -464,12 +490,15 @@ struct ListPacks: ParsableCommand {
 
         output.header("Tech Packs")
 
-        // Built-in packs
-        let builtInPacks = TechPackRegistry.shared.availablePacks
-        if !builtInPacks.isEmpty {
+        // Built-in packs (show compiled-in packs, noting overrides)
+        let compiledPacks = TechPackRegistry.shared.availablePacks
+        let fullRegistry = TechPackRegistry.loadWithExternalPacks(environment: env, output: output)
+        if !compiledPacks.isEmpty {
             output.sectionHeader("Built-in")
-            for pack in builtInPacks {
-                output.plain("  \(pack.identifier)  \(pack.displayName)  (built-in)")
+            for pack in compiledPacks {
+                let overridden = fullRegistry.isExternalPack(pack.identifier)
+                let suffix = overridden ? "  (overridden by external)" : ""
+                output.plain("  \(pack.identifier)  \(pack.displayName)  (built-in)\(suffix)")
             }
         }
 

@@ -330,6 +330,176 @@ struct ExternalPackAdapterTests {
         #expect(adapter.migrations.isEmpty)
     }
 
+    // MARK: - Path Traversal via Templates
+
+    @Test("Template with ../ path traversal returns empty (logged error)")
+    func templatePathTraversal() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create a file outside the pack directory
+        let outsideFile = tmpDir.appendingPathComponent("secret.md")
+        try "SECRET DATA".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        let packDir = tmpDir.appendingPathComponent("pack")
+        try FileManager.default.createDirectory(at: packDir, withIntermediateDirectories: true)
+
+        let manifest = ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            description: "A test pack",
+            version: "1.0.0",
+            minMCSVersion: nil,
+            peerDependencies: nil,
+            components: nil,
+            templates: [
+                ExternalTemplateDefinition(
+                    sectionIdentifier: "evil",
+                    placeholders: nil,
+                    contentFile: "../secret.md"
+                )
+            ],
+            hookContributions: nil,
+            gitignoreEntries: nil,
+            prompts: nil,
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+        let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
+
+        // Path traversal should be blocked — templates returns empty
+        #expect(adapter.templates.isEmpty)
+    }
+
+    @Test("Template via symlink escaping pack directory returns empty")
+    func templateSymlinkEscape() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create a secret file outside pack
+        let outsideDir = tmpDir.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        try "SECRET".write(to: outsideDir.appendingPathComponent("secret.md"), atomically: true, encoding: .utf8)
+
+        // Set up pack directory with a symlink pointing outside
+        let packDir = tmpDir.appendingPathComponent("pack")
+        let templatesDir = packDir.appendingPathComponent("templates")
+        try FileManager.default.createDirectory(at: templatesDir, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: templatesDir.appendingPathComponent("link.md"),
+            withDestinationURL: outsideDir.appendingPathComponent("secret.md")
+        )
+
+        let manifest = ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            description: "A test pack",
+            version: "1.0.0",
+            minMCSVersion: nil,
+            peerDependencies: nil,
+            components: nil,
+            templates: [
+                ExternalTemplateDefinition(
+                    sectionIdentifier: "evil",
+                    placeholders: nil,
+                    contentFile: "templates/link.md"
+                )
+            ],
+            hookContributions: nil,
+            gitignoreEntries: nil,
+            prompts: nil,
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+        let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
+
+        // Symlink escapes pack dir — should be blocked
+        #expect(adapter.templates.isEmpty)
+    }
+
+    @Test("Hook fragment with ../ path traversal returns empty")
+    func hookFragmentPathTraversal() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let outsideFile = tmpDir.appendingPathComponent("evil.sh")
+        try "rm -rf /".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        let packDir = tmpDir.appendingPathComponent("pack")
+        try FileManager.default.createDirectory(at: packDir, withIntermediateDirectories: true)
+
+        let manifest = ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            description: "A test pack",
+            version: "1.0.0",
+            minMCSVersion: nil,
+            peerDependencies: nil,
+            components: nil,
+            templates: nil,
+            hookContributions: [
+                ExternalHookContribution(
+                    hookName: "session_start",
+                    fragmentFile: "../evil.sh",
+                    position: nil
+                )
+            ],
+            gitignoreEntries: nil,
+            prompts: nil,
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+        let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
+
+        // Path traversal should be blocked
+        #expect(adapter.hookContributions.isEmpty)
+    }
+
+    @Test("Template with valid path inside pack loads successfully")
+    func templateValidPath() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let packDir = tmpDir.appendingPathComponent("pack")
+        let templatesDir = packDir.appendingPathComponent("templates")
+        try FileManager.default.createDirectory(at: templatesDir, withIntermediateDirectories: true)
+        try "## Valid Content".write(
+            to: templatesDir.appendingPathComponent("section.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manifest = ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            description: "A test pack",
+            version: "1.0.0",
+            minMCSVersion: nil,
+            peerDependencies: nil,
+            components: nil,
+            templates: [
+                ExternalTemplateDefinition(
+                    sectionIdentifier: "test-section",
+                    placeholders: nil,
+                    contentFile: "templates/section.md"
+                )
+            ],
+            hookContributions: nil,
+            gitignoreEntries: nil,
+            prompts: nil,
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+        let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
+
+        #expect(adapter.templates.count == 1)
+        #expect(adapter.templates[0].templateContent == "## Valid Content")
+    }
+
     // MARK: - Helpers
 
     private func minimalManifest() -> ExternalPackManifest {

@@ -84,11 +84,25 @@ struct PackTrustManager: Sendable {
                 let scriptFile = packPath.appendingPathComponent(hook.fragmentFile)
                 let content = try readFileContent(at: scriptFile, fallback: hook.fragmentFile)
                 items.append(TrustableItem(
-                    type: .shellCommand,
+                    type: .hookFragment,
                     relativePath: hook.fragmentFile,
                     content: content,
-                    description: "Hook fragment injected into \(hook.hookName)"
+                    description: "Hook fragment injected into \(hook.hookName) — runs on every session"
                 ))
+            }
+        }
+
+        // Prompt script commands
+        if let prompts = manifest.prompts {
+            for prompt in prompts where prompt.type == .script {
+                if let scriptCommand = prompt.scriptCommand {
+                    items.append(TrustableItem(
+                        type: .shellCommand,
+                        relativePath: nil,
+                        content: scriptCommand,
+                        description: "Prompt script for '\(prompt.key)' — runs during configure"
+                    ))
+                }
             }
         }
 
@@ -114,7 +128,9 @@ struct PackTrustManager: Sendable {
         // Group items by type for display
         let shellCommands = items.filter { $0.type == .shellCommand && $0.relativePath == nil }
         let mcpServers = items.filter { $0.type == .mcpServerCommand }
-        let scripts = items.filter { $0.relativePath != nil }
+        let hookFragments = items.filter { $0.type == .hookFragment }
+        let doctorCommands = items.filter { $0.type == .doctorCommand || $0.type == .fixScript }
+        let scripts = items.filter { $0.relativePath != nil && $0.type != .hookFragment }
 
         if !shellCommands.isEmpty {
             output.plain("")
@@ -128,6 +144,24 @@ struct PackTrustManager: Sendable {
             output.plain("")
             output.sectionHeader("MCP Servers (run on every Claude Code session)")
             for item in mcpServers {
+                output.plain("    \(item.content)")
+            }
+        }
+
+        if !hookFragments.isEmpty {
+            output.plain("")
+            output.sectionHeader("Hook Fragments (run on every session)")
+            for item in hookFragments {
+                let lineCount = item.content.components(separatedBy: "\n").count
+                let path = item.relativePath ?? "inline"
+                output.plain("    \(path) (\(lineCount) lines) — \(item.description)")
+            }
+        }
+
+        if !doctorCommands.isEmpty {
+            output.plain("")
+            output.sectionHeader("Doctor Check/Fix Commands (run during 'mcs doctor')")
+            for item in doctorCommands {
                 output.plain("    \(item.content)")
             }
         }
@@ -162,16 +196,29 @@ struct PackTrustManager: Sendable {
         packPath: URL
     ) -> [String] {
         var modified: [String] = []
+        let fm = FileManager.default
 
         for (relativePath, expectedHash) in trustedHashes {
+            // Skip synthetic keys for inline commands (they have no file on disk)
+            if relativePath.hasPrefix("inline:") {
+                continue
+            }
+
             let fileURL = packPath.appendingPathComponent(relativePath)
-            guard let currentHash = try? Manifest.sha256(of: fileURL) else {
-                // File missing or unreadable — treat as modified
+
+            guard fm.fileExists(atPath: fileURL.path) else {
                 modified.append(relativePath)
                 continue
             }
-            if currentHash != expectedHash {
-                modified.append(relativePath)
+
+            do {
+                let currentHash = try Manifest.sha256(of: fileURL)
+                if currentHash != expectedHash {
+                    modified.append(relativePath)
+                }
+            } catch {
+                // I/O error is distinct from tampering — surface the cause
+                modified.append("\(relativePath) (unreadable: \(error.localizedDescription))")
             }
         }
 
@@ -194,7 +241,7 @@ struct PackTrustManager: Sendable {
                 let contentData = Data(item.content.utf8)
                 let hash = SHA256.hash(data: contentData)
                     .map { String(format: "%02x", $0) }.joined()
-                let syntheticKey = "inline:\(item.description.hashValue)"
+                let syntheticKey = Self.syntheticKey(for: item)
                 if let trustedHash = currentHashes[syntheticKey], trustedHash == hash {
                     return false // Unchanged
                 }
@@ -204,14 +251,28 @@ struct PackTrustManager: Sendable {
                 return true // New script not in trusted set
             }
             let fileURL = updatedPackPath.appendingPathComponent(relativePath)
-            guard let hash = try? Manifest.sha256(of: fileURL) else {
-                return true // Can't hash — flag it
+            let hash: String
+            do {
+                hash = try Manifest.sha256(of: fileURL)
+            } catch {
+                return true // Can't verify — flag for re-trust
             }
             return hash != trustedHash // Changed since last trust
         }
     }
 
     // MARK: - Helpers
+
+    /// Deterministic synthetic key for inline commands (not backed by a file).
+    /// Uses SHA-256 of the description to ensure stability across process invocations.
+    /// Note: Swift's `String.hashValue` is randomized per-process (SE-0206) and must not
+    /// be used for persistent keys.
+    private static func syntheticKey(for item: TrustableItem) -> String {
+        let descData = Data(item.description.utf8)
+        let descHash = SHA256.hash(data: descData)
+            .map { String(format: "%02x", $0) }.joined()
+        return "inline:\(descHash)"
+    }
 
     private func readFileContent(at url: URL, fallback: String) throws -> String {
         if FileManager.default.fileExists(atPath: url.path) {
@@ -225,6 +286,17 @@ struct PackTrustManager: Sendable {
         packPath: URL
     ) throws -> [TrustableItem] {
         var items: [TrustableItem] = []
+
+        // commandExists checks run arbitrary commands — surface them for trust review
+        if check.type == .commandExists, let command = check.command {
+            let fullCommand = ([command] + (check.args ?? [])).joined(separator: " ")
+            items.append(TrustableItem(
+                type: .doctorCommand,
+                relativePath: nil,
+                content: fullCommand,
+                description: "Doctor check command: \(check.name) — runs during 'mcs doctor'"
+            ))
+        }
 
         if check.type == .shellScript, let command = check.command {
             // The command field may be a script file path or inline command
@@ -253,7 +325,7 @@ struct PackTrustManager: Sendable {
                 type: .fixScript,
                 relativePath: nil,
                 content: fixCommand,
-                description: "Fix command for: \(check.name)"
+                description: "Fix command for: \(check.name) — runs during 'mcs doctor --fix'"
             ))
         }
 
@@ -295,11 +367,11 @@ struct PackTrustManager: Sendable {
                     hashes[relativePath] = try Manifest.sha256(of: fileURL)
                 }
             } else {
-                // Inline command — hash the content with a synthetic key
+                // Inline command — hash the content with a deterministic synthetic key
                 let contentData = Data(item.content.utf8)
                 let hash = SHA256.hash(data: contentData)
                     .map { String(format: "%02x", $0) }.joined()
-                let syntheticKey = "inline:\(item.description.hashValue)"
+                let syntheticKey = Self.syntheticKey(for: item)
                 hashes[syntheticKey] = hash
             }
         }
@@ -318,8 +390,10 @@ struct TrustableItem: Sendable {
     let description: String    // Human-readable description
 
     enum TrustableType: Sendable {
-        case shellCommand      // From component install actions and hook fragments
+        case shellCommand      // From component install actions
+        case hookFragment      // From hook contributions (runs on every session)
         case configureScript   // From configureProject
+        case doctorCommand     // From commandExists doctor checks (runs during doctor)
         case doctorScript      // From shellScript doctor checks
         case fixScript         // From fix scripts / fix commands
         case mcpServerCommand  // MCP server command (runs with user privs)

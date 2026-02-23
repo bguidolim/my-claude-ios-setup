@@ -479,4 +479,126 @@ struct ExternalDoctorCheckTests {
 
         #expect(check.section == "External Pack")
     }
+
+    // MARK: - ScopedPathCheck Path Traversal
+
+    @Test("Project-scoped file check blocks ../ path traversal")
+    func fileExistsProjectScopeTraversal() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let projectDir = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        // Create a secret file outside the project
+        try "secret".write(to: tmpDir.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
+
+        let check = ExternalFileExistsCheck(
+            name: "traversal attempt",
+            section: "Test",
+            path: "../secret.txt",
+            scope: .project,
+            projectRoot: projectDir
+        )
+        let result = check.check()
+        // Should NOT pass — path escapes project root
+        if case .pass = result {
+            Issue.record("Expected path traversal to be blocked, but check passed")
+        }
+    }
+
+    @Test("Project-scoped file check blocks symlink escaping project root")
+    func fileExistsProjectScopeSymlinkEscape() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let projectDir = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        // Create secret file outside project
+        let outsideFile = tmpDir.appendingPathComponent("secret.txt")
+        try "secret data".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        // Create symlink inside project pointing outside
+        try FileManager.default.createSymbolicLink(
+            at: projectDir.appendingPathComponent("link.txt"),
+            withDestinationURL: outsideFile
+        )
+
+        let check = ExternalFileExistsCheck(
+            name: "symlink escape",
+            section: "Test",
+            path: "link.txt",
+            scope: .project,
+            projectRoot: projectDir
+        )
+        let result = check.check()
+        // Symlink resolves outside project root — should be blocked
+        if case .pass = result {
+            Issue.record("Expected symlink escape to be blocked, but check passed")
+        }
+    }
+
+    @Test("Project-scoped directory check blocks symlink escaping project root")
+    func dirExistsProjectScopeSymlinkEscape() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let projectDir = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        // Create directory outside project
+        let outsideDir = tmpDir.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+
+        // Symlink from inside project to outside directory
+        try FileManager.default.createSymbolicLink(
+            at: projectDir.appendingPathComponent("link-dir"),
+            withDestinationURL: outsideDir
+        )
+
+        let check = ExternalDirectoryExistsCheck(
+            name: "symlink dir escape",
+            section: "Test",
+            path: "link-dir",
+            scope: .project,
+            projectRoot: projectDir
+        )
+        let result = check.check()
+        if case .pass = result {
+            Issue.record("Expected symlink directory escape to be blocked, but check passed")
+        }
+    }
+
+    @Test("Project-scoped fileContains check blocks symlink escape")
+    func fileContainsProjectScopeSymlinkEscape() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let projectDir = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        // Secret file with known pattern outside project
+        let outsideFile = tmpDir.appendingPathComponent("config.txt")
+        try "API_KEY=secret123".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        // Symlink inside project
+        try FileManager.default.createSymbolicLink(
+            at: projectDir.appendingPathComponent("config.txt"),
+            withDestinationURL: outsideFile
+        )
+
+        let check = ExternalFileContainsCheck(
+            name: "symlink config escape",
+            section: "Test",
+            path: "config.txt",
+            pattern: "API_KEY",
+            scope: .project,
+            projectRoot: projectDir
+        )
+        let result = check.check()
+        if case .pass = result {
+            Issue.record("Expected symlink escape to be blocked for fileContains, but check passed")
+        }
+    }
 }

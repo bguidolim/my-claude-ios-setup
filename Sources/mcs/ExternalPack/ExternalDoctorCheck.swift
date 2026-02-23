@@ -1,8 +1,27 @@
 import Foundation
 
+// MARK: - Misconfigured Check
+
+/// A diagnostic check returned when a doctor check definition has missing required fields.
+/// Always reports a warning so the user knows the pack manifest is misconfigured.
+struct MisconfiguredDoctorCheck: DoctorCheck, Sendable {
+    let name: String
+    let section: String
+    let reason: String
+
+    func check() -> CheckResult {
+        .warn("misconfigured: \(reason)")
+    }
+
+    func fix() -> FixResult {
+        .notFixable("Fix the pack's techpack.yaml: \(reason)")
+    }
+}
+
 // MARK: - Command Exists Check
 
-/// Checks that a command exists and is runnable with the given arguments.
+/// Checks that a command is available. First attempts to run with the given arguments;
+/// if that fails, falls back to checking PATH presence.
 struct ExternalCommandExistsCheck: DoctorCheck, Sendable {
     let name: String
     let section: String
@@ -35,7 +54,7 @@ struct ExternalCommandExistsCheck: DoctorCheck, Sendable {
             }
             return .failed(result.stderr)
         }
-        // Fallback for compiled-in checks without script runner
+        // Fallback when no script runner is injected (uses ShellRunner directly)
         let shell = ShellRunner(environment: Environment())
         let result = shell.shell(fixCommand)
         if result.succeeded {
@@ -212,11 +231,12 @@ struct ExternalShellScriptCheck: DoctorCheck, Sendable {
 // MARK: - Factory
 
 /// Creates concrete `DoctorCheck` instances from declarative `ExternalDoctorCheckDefinition`.
+/// Definitions are expected to be pre-validated by `ExternalPackManifest.validate()`.
 enum ExternalDoctorCheckFactory {
     /// Build a `DoctorCheck` from a declarative definition.
     ///
     /// - Parameters:
-    ///   - definition: The declarative check from the manifest
+    ///   - definition: The declarative check from the manifest (must be pre-validated)
     ///   - packPath: Root directory of the external pack
     ///   - projectRoot: Project root for project-scoped checks (nil if not in a project)
     ///   - scriptRunner: Runner for shell script checks
@@ -231,60 +251,88 @@ enum ExternalDoctorCheckFactory {
 
         switch definition.type {
         case .commandExists:
+            guard let command = definition.command, !command.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "commandExists requires non-empty 'command'"
+                )
+            }
             return ExternalCommandExistsCheck(
                 name: definition.name,
                 section: section,
-                command: definition.command ?? "",
+                command: command,
                 args: definition.args ?? [],
                 fixCommand: definition.fixCommand,
                 scriptRunner: scriptRunner
             )
 
         case .fileExists:
+            guard let path = definition.path, !path.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "fileExists requires non-empty 'path'"
+                )
+            }
             return ExternalFileExistsCheck(
                 name: definition.name,
                 section: section,
-                path: definition.path ?? "",
+                path: path,
                 scope: scope,
                 projectRoot: projectRoot
             )
 
         case .directoryExists:
+            guard let path = definition.path, !path.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "directoryExists requires non-empty 'path'"
+                )
+            }
             return ExternalDirectoryExistsCheck(
                 name: definition.name,
                 section: section,
-                path: definition.path ?? "",
+                path: path,
                 scope: scope,
                 projectRoot: projectRoot
             )
 
         case .fileContains:
+            guard let path = definition.path, !path.isEmpty,
+                  let pattern = definition.pattern, !pattern.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "fileContains requires non-empty 'path' and 'pattern'"
+                )
+            }
             return ExternalFileContainsCheck(
                 name: definition.name,
                 section: section,
-                path: definition.path ?? "",
-                pattern: definition.pattern ?? "",
+                path: path,
+                pattern: pattern,
                 scope: scope,
                 projectRoot: projectRoot
             )
 
         case .fileNotContains:
+            guard let path = definition.path, !path.isEmpty,
+                  let pattern = definition.pattern, !pattern.isEmpty else {
+                return MisconfiguredDoctorCheck(
+                    name: definition.name, section: section,
+                    reason: "fileNotContains requires non-empty 'path' and 'pattern'"
+                )
+            }
             return ExternalFileNotContainsCheck(
                 name: definition.name,
                 section: section,
-                path: definition.path ?? "",
-                pattern: definition.pattern ?? "",
+                path: path,
+                pattern: pattern,
                 scope: scope,
                 projectRoot: projectRoot
             )
 
         case .shellScript:
-            let scriptURL: URL
-            if let command = definition.command {
-                scriptURL = packPath.appendingPathComponent(command)
-            } else {
-                scriptURL = packPath.appendingPathComponent("doctor-check.sh")
-            }
+            // command is guaranteed non-empty by manifest validation
+            let scriptURL = packPath.appendingPathComponent(definition.command ?? "")
             let fixURL: URL? = definition.fixScript.map {
                 packPath.appendingPathComponent($0)
             }
@@ -318,7 +366,14 @@ extension ScopedPathCheck {
             return expandTilde(path)
         case .project:
             guard let root = projectRoot else { return nil }
-            return root.appendingPathComponent(path).path
+            let resolved = root.appendingPathComponent(path).resolvingSymlinksInPath().path
+            let rootBase = root.resolvingSymlinksInPath().path
+            let rootPrefix = rootBase.hasSuffix("/") ? rootBase : rootBase + "/"
+            // Ensure the resolved path stays within the project root
+            guard resolved.hasPrefix(rootPrefix) || resolved == rootBase else {
+                return nil
+            }
+            return resolved
         }
     }
 

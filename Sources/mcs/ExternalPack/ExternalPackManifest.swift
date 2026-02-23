@@ -237,6 +237,18 @@ enum ExternalComponentType: String, Codable, Sendable {
 
 // MARK: - Install Actions
 
+/// String-backed install action type discriminator for YAML serialization.
+enum ExternalInstallActionType: String, Codable, Sendable {
+    case mcpServer
+    case plugin
+    case brewInstall
+    case shellCommand
+    case gitignoreEntries
+    case settingsMerge
+    case settingsFile
+    case copyPackFile
+}
+
 /// Declarative install action types that can be expressed in YAML.
 enum ExternalInstallAction: Codable, Sendable {
     case mcpServer(ExternalMCPServerConfig)
@@ -266,38 +278,32 @@ enum ExternalInstallAction: Codable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
+        let actionType = try container.decode(ExternalInstallActionType.self, forKey: .type)
 
-        switch type {
-        case "mcpServer":
+        switch actionType {
+        case .mcpServer:
             let config = try ExternalMCPServerConfig(from: decoder)
             self = .mcpServer(config)
-        case "plugin":
+        case .plugin:
             let name = try container.decode(String.self, forKey: .name)
             self = .plugin(name: name)
-        case "brewInstall":
+        case .brewInstall:
             let package = try container.decode(String.self, forKey: .package)
             self = .brewInstall(package: package)
-        case "shellCommand":
+        case .shellCommand:
             let command = try container.decode(String.self, forKey: .command)
             self = .shellCommand(command: command)
-        case "gitignoreEntries":
+        case .gitignoreEntries:
             let entries = try container.decode([String].self, forKey: .entries)
             self = .gitignoreEntries(entries: entries)
-        case "settingsMerge":
+        case .settingsMerge:
             self = .settingsMerge
-        case "settingsFile":
+        case .settingsFile:
             let source = try container.decode(String.self, forKey: .source)
             self = .settingsFile(source: source)
-        case "copyPackFile":
+        case .copyPackFile:
             let config = try ExternalCopyPackFileConfig(from: decoder)
             self = .copyPackFile(config)
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type,
-                in: container,
-                debugDescription: "Unknown install action type: '\(type)'"
-            )
         }
     }
 
@@ -306,27 +312,27 @@ enum ExternalInstallAction: Codable, Sendable {
 
         switch self {
         case .mcpServer(let config):
-            try container.encode("mcpServer", forKey: .type)
+            try container.encode(ExternalInstallActionType.mcpServer, forKey: .type)
             try config.encode(to: encoder)
         case .plugin(let name):
-            try container.encode("plugin", forKey: .type)
+            try container.encode(ExternalInstallActionType.plugin, forKey: .type)
             try container.encode(name, forKey: .name)
         case .brewInstall(let package):
-            try container.encode("brewInstall", forKey: .type)
+            try container.encode(ExternalInstallActionType.brewInstall, forKey: .type)
             try container.encode(package, forKey: .package)
         case .shellCommand(let command):
-            try container.encode("shellCommand", forKey: .type)
+            try container.encode(ExternalInstallActionType.shellCommand, forKey: .type)
             try container.encode(command, forKey: .command)
         case .gitignoreEntries(let entries):
-            try container.encode("gitignoreEntries", forKey: .type)
+            try container.encode(ExternalInstallActionType.gitignoreEntries, forKey: .type)
             try container.encode(entries, forKey: .entries)
         case .settingsMerge:
-            try container.encode("settingsMerge", forKey: .type)
+            try container.encode(ExternalInstallActionType.settingsMerge, forKey: .type)
         case .settingsFile(let source):
-            try container.encode("settingsFile", forKey: .type)
+            try container.encode(ExternalInstallActionType.settingsFile, forKey: .type)
             try container.encode(source, forKey: .source)
         case .copyPackFile(let config):
-            try container.encode("copyPackFile", forKey: .type)
+            try container.encode(ExternalInstallActionType.copyPackFile, forKey: .type)
             try config.encode(to: encoder)
         }
     }

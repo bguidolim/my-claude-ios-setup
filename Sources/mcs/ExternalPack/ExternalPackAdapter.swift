@@ -1,8 +1,9 @@
 import Foundation
 
 /// Bridges an `ExternalPackManifest` (loaded from `techpack.yaml`) to the
-/// `TechPack` protocol, making external packs indistinguishable from compiled-in
-/// packs to the rest of the system (installer, doctor, configurator).
+/// `TechPack` protocol, allowing external packs to participate in the same install,
+/// doctor, and configure flows as compiled-in packs.
+/// Note: migrations and settingsFile actions are not yet supported.
 struct ExternalPackAdapter: TechPack {
     let manifest: ExternalPackManifest
     let packPath: URL
@@ -53,7 +54,8 @@ struct ExternalPackAdapter: TechPack {
                     placeholders: ext.placeholders ?? []
                 ))
             } catch {
-                output.warn("Skipping template '\(ext.sectionIdentifier)': \(error.localizedDescription)")
+                output.error("Template '\(ext.sectionIdentifier)' could not be loaded: \(error.localizedDescription)")
+                output.plain("  The generated CLAUDE.local.md will be missing the '\(ext.sectionIdentifier)' section.")
             }
         }
         return result
@@ -73,7 +75,7 @@ struct ExternalPackAdapter: TechPack {
                     position: ext.position?.hookPosition ?? .after
                 ))
             } catch {
-                output.warn("Skipping hook '\(ext.hookName)': \(error.localizedDescription)")
+                output.error("Hook fragment '\(ext.hookName)' could not be loaded: \(error.localizedDescription)")
             }
         }
         return result
@@ -113,7 +115,8 @@ struct ExternalPackAdapter: TechPack {
                 projectPath: context.projectPath
             )
         } catch {
-            context.output.warn("Failed to resolve template values: \(error.localizedDescription)")
+            context.output.error("Failed to resolve template values for pack '\(manifest.identifier)': \(error.localizedDescription)")
+            context.output.plain("  Template placeholders will not be substituted. Re-run 'mcs configure' after fixing the issue.")
             return [:]
         }
     }
@@ -209,7 +212,7 @@ struct ExternalPackAdapter: TechPack {
             return .settingsMerge
 
         case .settingsFile:
-            // TODO: settingsFile is a future feature — for now treat as settingsMerge
+            output.warn("settingsFile is not yet supported; treating as settingsMerge. Use settingsMerge instead.")
             return .settingsMerge
 
         case .copyPackFile(let config):

@@ -21,6 +21,7 @@ struct TechPackRegistry: Sendable {
 
     /// Create a registry that includes external packs alongside compiled-in packs.
     /// External packs with the same identifier override compiled-in ones.
+    /// NOTE: Keep this compiled-in pack list in sync with `TechPackRegistry.shared`.
     static func withExternalPacks(_ external: [any TechPack]) -> TechPackRegistry {
         TechPackRegistry(
             compiledPacks: [CoreTechPack(), IOSTechPack()],
