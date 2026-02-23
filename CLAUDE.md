@@ -46,8 +46,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `CLIOutput.swift` — ANSI colors, logging, prompts, multi-select, doctor summary
 - `ShellRunner.swift` — Process execution wrapper
 - `Settings.swift` — Codable model for `settings.json` and `settings.local.json`, deep-merge
-- `Manifest.swift` — SHA-256 tracking via CryptoKit, per-file directory hashing, installed component/pack tracking
-- `Backup.swift` — timestamped backups before file writes, backup discovery and deletion
+- `Backup.swift` — timestamped backups for mixed-ownership files (CLAUDE.local.md), backup discovery and deletion
 - `GitignoreManager.swift` — global gitignore management, core entry list
 - `ClaudeIntegration.swift` — `claude mcp add/remove` (with scope support), `claude plugin install/remove`
 - `Homebrew.swift` — brew detection, package install
@@ -116,6 +115,6 @@ mcs cleanup --force              # Delete backups without confirmation
 - **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
 - **File-based memory**: memories stored in `<project>/.claude/memories/*.md`, indexed by docs-mcp-server for semantic search
 - **Settings composition**: each pack's hook entries compose into `<project>/.claude/settings.local.json` as individual `HookGroup` entries
-- **Backup on every write**: timestamped backup created before any file modification
+- **Backup for mixed-ownership files**: timestamped backup before modifying files with user content (CLAUDE.local.md); tool-managed files are not backed up since they can be regenerated
 - **Component-derived doctor checks**: `ComponentDefinition` is the single source of truth — `deriveDoctorCheck()` auto-generates verification from `installAction`, supplementary checks handle extras
 - **Project awareness**: doctor detects project root (walk-up for `.git/`), resolves packs from `.claude/.mcs-project` before falling back to section marker inference, then to global manifest

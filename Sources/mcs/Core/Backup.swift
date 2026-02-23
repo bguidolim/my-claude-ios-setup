@@ -5,6 +5,9 @@ struct Backup {
     /// All backups created during this session.
     private(set) var createdBackups: [URL] = []
 
+    /// Monotonic counter ensuring unique names within a single session.
+    private var sequence: Int = 0
+
     /// Create a timestamped backup of the file at `path` if it exists.
     /// Returns the backup URL, or nil if the original file didn't exist.
     @discardableResult
@@ -13,9 +16,10 @@ struct Backup {
         guard fm.fileExists(atPath: path.path) else { return nil }
 
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
         let timestamp = formatter.string(from: Date())
-        let backupPath = URL(fileURLWithPath: "\(path.path).backup.\(timestamp)")
+        sequence += 1
+        let backupPath = URL(fileURLWithPath: "\(path.path).backup.\(timestamp)_\(sequence)")
 
         try fm.copyItem(at: path, to: backupPath)
         createdBackups.append(backupPath)

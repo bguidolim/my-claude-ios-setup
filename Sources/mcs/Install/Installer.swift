@@ -10,7 +10,6 @@ struct Installer {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
-    var backup: Backup
     let dryRun: Bool
     let registry: TechPackRegistry
 
@@ -21,14 +20,12 @@ struct Installer {
         environment: Environment,
         output: CLIOutput,
         shell: ShellRunner,
-        backup: Backup = Backup(),
         dryRun: Bool,
         registry: TechPackRegistry = .shared
     ) {
         self.environment = environment
         self.output = output
         self.shell = shell
-        self.backup = backup
         self.dryRun = dryRun
         self.registry = registry
     }
@@ -345,12 +342,11 @@ struct Installer {
         ComponentExecutor(
             environment: environment,
             output: output,
-            shell: shell,
-            backup: backup
+            shell: shell
         )
     }
 
-    private mutating func installComponent(
+    private func installComponent(
         _ component: ComponentDefinition,
         state: SelectionState
     ) -> Bool {
@@ -375,14 +371,11 @@ struct Installer {
             return executor.addGitignoreEntries(entries)
 
         case .copyPackFile(let source, let destination, let fileType):
-            var exec = executor
-            let success = exec.installCopyPackFile(
+            return executor.installCopyPackFile(
                 source: source,
                 destination: destination,
                 fileType: fileType
             )
-            backup = exec.backup
-            return success
 
         case .settingsMerge:
             // Settings merge is handled at the project level by ProjectConfigurator.

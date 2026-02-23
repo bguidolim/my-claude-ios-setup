@@ -7,7 +7,6 @@ struct ComponentExecutor {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
-    var backup: Backup
 
     // MARK: - Brew Packages
 
@@ -101,7 +100,7 @@ struct ComponentExecutor {
     // MARK: - Copy Pack File
 
     /// Copy files from an external pack checkout to the appropriate Claude directory.
-    mutating func installCopyPackFile(
+    func installCopyPackFile(
         source: URL,
         destination: String,
         fileType: CopyFileType
@@ -140,11 +139,6 @@ struct ComponentExecutor {
                 let contents = try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
                 for file in contents {
                     let destFile = destURL.appendingPathComponent(file.lastPathComponent)
-                    do {
-                        try backup.backupFile(at: destFile)
-                    } catch {
-                        output.warn("Could not backup \(destFile.lastPathComponent): \(error.localizedDescription)")
-                    }
                     if fm.fileExists(atPath: destFile.path) {
                         try fm.removeItem(at: destFile)
                     }
@@ -152,11 +146,6 @@ struct ComponentExecutor {
                 }
             } else {
                 // Source is a single file
-                do {
-                    try backup.backupFile(at: destURL)
-                } catch {
-                    output.warn("Could not backup \(destURL.lastPathComponent): \(error.localizedDescription)")
-                }
                 if fm.fileExists(atPath: destURL.path) {
                     try fm.removeItem(at: destURL)
                 }

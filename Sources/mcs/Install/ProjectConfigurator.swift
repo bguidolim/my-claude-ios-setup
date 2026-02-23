@@ -642,13 +642,9 @@ struct ProjectConfigurator {
             )
         }
 
-        var backup = Backup()
         if fm.fileExists(atPath: claudeLocalPath.path) {
-            do {
-                try backup.backupFile(at: claudeLocalPath)
-            } catch {
-                output.warn("Could not create backup: \(error.localizedDescription)")
-            }
+            var backup = Backup()
+            try backup.backupFile(at: claudeLocalPath)
         }
         try composed.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
         output.success("Generated CLAUDE.local.md")
@@ -667,8 +663,7 @@ struct ProjectConfigurator {
         ComponentExecutor(
             environment: environment,
             output: output,
-            shell: shell,
-            backup: Backup()
+            shell: shell
         )
     }
 

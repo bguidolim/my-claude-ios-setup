@@ -8,20 +8,17 @@ struct PackInstaller {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
-    var backup: Backup
     let registry: TechPackRegistry
 
     init(
         environment: Environment,
         output: CLIOutput,
         shell: ShellRunner,
-        backup: Backup = Backup(),
         registry: TechPackRegistry = .shared
     ) {
         self.environment = environment
         self.output = output
         self.shell = shell
-        self.backup = backup
         self.registry = registry
     }
 
@@ -29,14 +26,13 @@ struct PackInstaller {
         ComponentExecutor(
             environment: environment,
             output: output,
-            shell: shell,
-            backup: backup
+            shell: shell
         )
     }
 
     /// Install missing components for a pack. Returns true if all succeeded.
     @discardableResult
-    mutating func installPack(_ pack: any TechPack) -> Bool {
+    func installPack(_ pack: any TechPack) -> Bool {
         let allComponents = registry.allPackComponents
 
         // Select all pack components
@@ -82,16 +78,15 @@ struct PackInstaller {
         }
 
         // Post-processing: gitignore entries
-        let exec = executor
-        exec.addPackGitignoreEntries(from: pack)
+        executor.addPackGitignoreEntries(from: pack)
 
         return allSucceeded
     }
 
     // MARK: - Component Installation
 
-    private mutating func installComponent(_ component: ComponentDefinition) -> Bool {
-        var exec = executor
+    private func installComponent(_ component: ComponentDefinition) -> Bool {
+        let exec = executor
 
         switch component.installAction {
         case .brewInstall(let package):
@@ -114,13 +109,11 @@ struct PackInstaller {
             return exec.addGitignoreEntries(entries)
 
         case .copyPackFile(let source, let destination, let fileType):
-            let success = exec.installCopyPackFile(
+            return exec.installCopyPackFile(
                 source: source,
                 destination: destination,
                 fileType: fileType
             )
-            backup = exec.backup
-            return success
 
         case .settingsMerge:
             // Settings merge is handled at the project level by ProjectConfigurator.

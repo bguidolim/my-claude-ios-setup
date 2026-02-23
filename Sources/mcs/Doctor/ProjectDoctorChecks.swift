@@ -108,13 +108,22 @@ struct ProjectSerenaMemoryCheck: DoctorCheck, Sendable {
                 try fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
             }
 
-            // Copy files if any exist
-            if let files = try? fm.contentsOfDirectory(at: serenaDir, includingPropertiesForKeys: nil) {
-                for file in files {
-                    let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
-                    if !fm.fileExists(atPath: dest.path) {
-                        try fm.copyItem(at: file, to: dest)
-                    }
+            // List source files — fail hard if listing fails
+            let sourceFiles = try fm.contentsOfDirectory(at: serenaDir, includingPropertiesForKeys: nil)
+
+            // Copy all files
+            for file in sourceFiles {
+                let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
+                if !fm.fileExists(atPath: dest.path) {
+                    try fm.copyItem(at: file, to: dest)
+                }
+            }
+
+            // Verify all source files exist at destination before deleting source
+            for file in sourceFiles {
+                let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
+                guard fm.fileExists(atPath: dest.path) else {
+                    return .failed("\(file.lastPathComponent) not found at destination after copy")
                 }
             }
 
@@ -122,7 +131,7 @@ struct ProjectSerenaMemoryCheck: DoctorCheck, Sendable {
             try fm.removeItem(at: serenaDir)
             try fm.createSymbolicLink(at: serenaDir, withDestinationURL: claudeDir)
 
-            return .fixed("migrated files and created symlink")
+            return .fixed("migrated \(sourceFiles.count) file(s) and created symlink")
         } catch {
             return .failed(error.localizedDescription)
         }

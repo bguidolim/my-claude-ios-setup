@@ -13,7 +13,6 @@ struct PackUninstaller {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
-    var backup: Backup
 
     /// Summary of what was removed and any errors encountered.
     struct RemovalSummary {

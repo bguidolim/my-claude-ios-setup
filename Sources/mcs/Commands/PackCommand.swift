@@ -355,8 +355,7 @@ struct RemovePack: LockedCommand {
             var uninstaller = PackUninstaller(
                 environment: env,
                 output: output,
-                shell: shell,
-                backup: Backup()
+                shell: shell
             )
             let summary = uninstaller.uninstall(manifest: manifest, packPath: packPath)
             if summary.totalRemoved > 0 {
