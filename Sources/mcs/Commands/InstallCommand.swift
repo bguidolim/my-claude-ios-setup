@@ -4,7 +4,8 @@ import Foundation
 struct InstallCommand: LockedCommand {
     static let configuration = CommandConfiguration(
         commandName: "install",
-        abstract: "Install and configure Claude Code components"
+        abstract: "Install and configure Claude Code components",
+        shouldDisplay: false
     )
 
     @Flag(name: .long, help: "Install all components without prompts")
@@ -21,6 +22,8 @@ struct InstallCommand: LockedCommand {
     func perform() throws {
         let env = Environment()
         let output = CLIOutput()
+
+        output.warn("'mcs install' is deprecated. Use 'mcs sync' instead.")
         let shell = ShellRunner(environment: env)
 
         guard ensureClaudeCLI(shell: shell, environment: env, output: output) else {

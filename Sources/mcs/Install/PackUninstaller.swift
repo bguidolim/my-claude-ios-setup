@@ -116,7 +116,7 @@ struct PackUninstaller {
 
         case .settingsFile, .settingsMerge:
             // Settings are deep-merged; removing individual keys requires ownership tracking.
-            // For now, settings are not reversed — user runs `mcs install` to rebuild.
+            // For now, settings are not reversed — user runs `mcs sync` to rebuild.
             break
 
         case .brewInstall, .shellCommand:

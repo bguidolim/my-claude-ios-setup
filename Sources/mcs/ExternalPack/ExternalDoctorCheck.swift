@@ -45,7 +45,7 @@ struct ExternalCommandExistsCheck: DoctorCheck, Sendable {
 
     func fix() -> FixResult {
         guard let fixCommand else {
-            return .notFixable("Run 'mcs install' to install dependencies")
+            return .notFixable("Run 'mcs sync' to install dependencies")
         }
         if let scriptRunner {
             let result = scriptRunner.runCommand(fixCommand)
@@ -258,7 +258,7 @@ struct ExternalHookEventExistsCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to merge settings")
+        .notFixable("Run 'mcs sync' to merge settings")
     }
 }
 
@@ -294,7 +294,7 @@ struct ExternalSettingsKeyEqualsCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to merge settings")
+        .notFixable("Run 'mcs sync' to merge settings")
     }
 
     private func resolveKeyPath(_ keyPath: String, in json: [String: Any]) -> String? {
@@ -492,7 +492,7 @@ extension ScopedPathCheck {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to install")
+        .notFixable("Run 'mcs sync' to install")
     }
 }
 

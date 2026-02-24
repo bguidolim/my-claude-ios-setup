@@ -11,7 +11,7 @@ import Foundation
 //
 // `doctor --fix` does NOT handle:
 // - **Additive operations**: Installing packages, registering servers, copying hooks/skills/commands.
-//   These are `mcs install`'s responsibility.
+//   These are `mcs sync`'s responsibility.
 //
 // This separation keeps `doctor --fix` predictable and non-destructive.
 
@@ -33,7 +33,7 @@ struct CommandCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to install dependencies")
+        .notFixable("Run 'mcs sync' to install dependencies")
     }
 }
 
@@ -65,7 +65,7 @@ struct MCPServerCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to register MCP servers")
+        .notFixable("Run 'mcs sync' to register MCP servers")
     }
 }
 
@@ -92,7 +92,7 @@ struct PluginCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to install plugins")
+        .notFixable("Run 'mcs sync' to install plugins")
     }
 }
 
@@ -106,7 +106,7 @@ struct FileExistsCheck: DoctorCheck, Sendable {
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to install")
+        .notFixable("Run 'mcs sync' to install")
     }
 }
 
@@ -134,9 +134,9 @@ struct HookCheck: DoctorCheck, Sendable {
         let fm = FileManager.default
 
         // Only fix permissions — additive operations (installing/replacing hooks) are
-        // handled by `mcs install`.
+        // handled by `mcs sync`.
         guard fm.fileExists(atPath: hookPath.path) else {
-            return .notFixable("Run 'mcs install' to install hooks")
+            return .notFixable("Run 'mcs sync' to install hooks")
         }
 
         if !fm.isExecutableFile(atPath: hookPath.path) {
@@ -148,7 +148,7 @@ struct HookCheck: DoctorCheck, Sendable {
             }
         }
 
-        return .notFixable("Run 'mcs install' to reinstall hooks")
+        return .notFixable("Run 'mcs sync' to reinstall hooks")
     }
 }
 
@@ -222,13 +222,13 @@ struct CommandFileCheck: DoctorCheck, Sendable {
         }
         // Verify file has the managed marker (v2+ format)
         if !content.contains(Self.managedMarker) {
-            return .warn("legacy format — run 'mcs install' to update")
+            return .warn("legacy format — run 'mcs sync' to update")
         }
         return .pass("present")
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs install' to install, or 'mcs configure' to fill placeholders")
+        .notFixable("Run 'mcs sync' to install and fill placeholders")
     }
 }
 

@@ -220,7 +220,7 @@ struct AddPack: LockedCommand {
 
         output.success("Pack '\(manifest.displayName)' v\(manifest.version) added successfully.")
         output.plain("")
-        output.info("Next step: run 'mcs install --pack \(manifest.identifier)' to install components.")
+        output.info("Next step: run 'mcs sync' to apply the pack to your project.")
     }
 
     private func displayPackSummary(manifest: ExternalPackManifest, output: CLIOutput) {
@@ -384,7 +384,7 @@ struct RemovePack: LockedCommand {
         }
 
         output.success("Pack '\(entry.displayName)' removed.")
-        output.info("Note: Project-level CLAUDE.local.md may still reference this pack. Run 'mcs configure' to update.")
+        output.info("Note: Project-level CLAUDE.local.md may still reference this pack. Run 'mcs sync' to update.")
     }
 }
 
@@ -533,7 +533,7 @@ struct UpdatePack: LockedCommand {
                 throw ExitCode.failure
             }
             output.plain("")
-            output.info("Run 'mcs install' to apply updated pack components.")
+            output.info("Run 'mcs sync' to apply updated pack components.")
         }
     }
 }

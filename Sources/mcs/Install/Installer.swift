@@ -3,8 +3,8 @@ import Foundation
 /// Orchestrates the 5-phase install flow:
 /// welcome -> selection -> summary -> install -> post-summary.
 ///
-/// Note: With the per-project pivot, `mcs install` is being superseded by
-/// `mcs configure`. This installer handles global-scope component installation
+/// Note: `mcs install` is deprecated in favor of `mcs sync`.
+/// This installer handles global-scope component installation
 /// for packs that declare brew packages, MCP servers, plugins, etc.
 struct Installer {
     let environment: Environment
@@ -73,7 +73,7 @@ struct Installer {
             output.plain("  Install it with:")
             output.plain("    /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"")
             output.plain("")
-            output.plain("  Then re-run: mcs install")
+            output.plain("  Then re-run: mcs sync")
             throw MCSError.dependencyMissing("Homebrew")
         }
 
@@ -304,7 +304,7 @@ struct Installer {
 
                 guard FileManager.default.fileExists(atPath: projectPath.path) else {
                     output.warn("Directory does not exist: \(projectPath.path)")
-                    output.plain("  You can configure later with: cd /path/to/project && mcs configure")
+                    output.plain("  You can configure later with: cd /path/to/project && mcs sync")
                     return
                 }
 
@@ -318,7 +318,7 @@ struct Installer {
                     try configurator.interactiveConfigure(at: projectPath)
                 } catch {
                     output.warn("Configuration failed: \(error.localizedDescription)")
-                    output.plain("  You can retry later with: cd \(projectPath.path) && mcs configure")
+                    output.plain("  You can retry later with: cd \(projectPath.path) && mcs sync")
                 }
             }
         }
@@ -329,7 +329,7 @@ struct Installer {
         output.plain("    1. Restart your terminal to pick up PATH changes")
         output.plain("")
         output.plain("    2. Configure more projects:")
-        output.plain("       cd /path/to/project && mcs configure")
+        output.plain("       cd /path/to/project && mcs sync")
         output.plain("")
         output.plain("    3. Verify your setup:")
         output.plain("       mcs doctor")

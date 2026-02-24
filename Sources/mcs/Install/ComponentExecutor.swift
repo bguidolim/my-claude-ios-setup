@@ -1,8 +1,8 @@
 import Foundation
 
-/// Shared component installation logic used by both `Installer` (mcs install)
-/// and `PackInstaller` (mcs configure). Eliminates duplication and ensures
-/// consistent behavior across install paths.
+/// Shared component installation logic used by `Installer`, `PackInstaller`,
+/// and `ProjectConfigurator`. Eliminates duplication and ensures consistent
+/// behavior across install paths.
 struct ComponentExecutor {
     let environment: Environment
     let output: CLIOutput

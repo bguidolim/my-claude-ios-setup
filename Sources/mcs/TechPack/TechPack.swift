@@ -36,7 +36,7 @@ struct HookContribution: Sendable {
 }
 
 /// Protocol that all tech packs must conform to.
-/// Packs are explicitly installed via `mcs install --pack <id>`.
+/// Packs are applied to projects via `mcs sync`.
 /// Doctor and configure only run pack-specific logic for installed packs.
 protocol TechPack: Sendable {
     var identifier: String { get }
