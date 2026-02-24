@@ -332,6 +332,9 @@ struct ProjectConfigurator {
             allValues[key] = value
         }
 
+        // 4b. Persist resolved values for doctor freshness checks
+        projectState.setResolvedValues(allValues)
+
         // 5. Install per-project files with resolved values
         for pack in packs {
             let excluded = excludedComponents[pack.identifier] ?? []

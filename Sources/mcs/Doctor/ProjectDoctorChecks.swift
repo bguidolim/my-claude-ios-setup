@@ -1,27 +1,34 @@
 import Foundation
 
+/// Context passed to project-scoped doctor checks.
+struct ProjectDoctorContext: Sendable {
+    let projectRoot: URL
+    let registry: TechPackRegistry
+}
+
 /// Doctor checks that only run when inside a detected project root.
 enum ProjectDoctorChecks {
-    static func checks(projectRoot: URL) -> [any DoctorCheck] {
+    static func checks(context: ProjectDoctorContext) -> [any DoctorCheck] {
         [
-            CLAUDELocalVersionCheck(projectRoot: projectRoot),
-            ProjectSerenaMemoryCheck(projectRoot: projectRoot),
-            ProjectStateFileCheck(projectRoot: projectRoot),
+            CLAUDELocalFreshnessCheck(context: context),
+            ProjectSerenaMemoryCheck(projectRoot: context.projectRoot),
+            ProjectStateFileCheck(projectRoot: context.projectRoot),
         ]
     }
 }
 
-// MARK: - CLAUDE.local.md version check
+// MARK: - CLAUDE.local.md freshness check
 
-/// Verifies that section markers in CLAUDE.local.md have the current MCS version.
-struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
-    let projectRoot: URL
+/// Verifies CLAUDE.local.md sections via content-hash comparison (when stored values exist)
+/// or version-only comparison (legacy fallback).
+struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
+    let context: ProjectDoctorContext
 
-    var name: String { "CLAUDE.local.md version" }
+    var name: String { "CLAUDE.local.md freshness" }
     var section: String { "Project" }
 
     func check() -> CheckResult {
-        let claudeLocal = projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
+        let claudeLocal = context.projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
         guard FileManager.default.fileExists(atPath: claudeLocal.path) else {
             return .skip("CLAUDE.local.md not found")
         }
@@ -37,6 +44,21 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
             return .warn("CLAUDE.local.md has no mcs section markers — run 'mcs sync'")
         }
 
+        let state = ProjectState(projectRoot: context.projectRoot)
+
+        // If we have stored resolved values, use content-hash comparison
+        if let storedValues = state.resolvedValues {
+            let expectedSections = buildExpectedSections(state: state, values: storedValues)
+            let result = SectionValidator.validate(fileURL: claudeLocal, expectedSections: expectedSections)
+
+            if result.hasOutdated {
+                let outdated = result.outdatedSections.map { "\($0.identifier) (\($0.detail))" }
+                return .fail("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync' or 'mcs doctor --fix'")
+            }
+            return .pass("all sections up to date (content verified)")
+        }
+
+        // Legacy fallback: version-only check
         let currentVersion = MCSVersion.current
         var outdated: [String] = []
         for section in sections {
@@ -46,13 +68,56 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
         }
 
         if outdated.isEmpty {
-            return .pass("all sections at v\(currentVersion)")
+            return .pass("all sections at v\(currentVersion) (version-only)")
         }
-        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync'")
+        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync' (version-only)")
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs sync' to update CLAUDE.local.md")
+        let state = ProjectState(projectRoot: context.projectRoot)
+        guard let storedValues = state.resolvedValues else {
+            return .notFixable("Run 'mcs sync' to update CLAUDE.local.md (no stored values for auto-fix)")
+        }
+
+        let claudeLocal = context.projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
+        let expectedSections = buildExpectedSections(state: state, values: storedValues)
+
+        do {
+            let updated = try SectionValidator.fix(fileURL: claudeLocal, expectedSections: expectedSections)
+            if updated {
+                return .fixed("re-rendered outdated sections from stored values")
+            }
+            return .fixed("no changes needed")
+        } catch {
+            return .failed("could not fix CLAUDE.local.md: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Build expected sections by re-rendering current pack templates with stored values.
+    private func buildExpectedSections(
+        state: ProjectState,
+        values: [String: String]
+    ) -> [String: (version: String, content: String)] {
+        var expected: [String: (version: String, content: String)] = [:]
+
+        for packID in state.configuredPacks {
+            guard let pack = context.registry.pack(for: packID) else { continue }
+            guard let templates = try? pack.templates else { continue }
+            for contribution in templates {
+                let rendered = TemplateEngine.substitute(
+                    template: contribution.templateContent,
+                    values: values
+                )
+                expected[contribution.sectionIdentifier] = (
+                    version: MCSVersion.current,
+                    content: rendered
+                )
+            }
+        }
+
+        return expected
     }
 }
 

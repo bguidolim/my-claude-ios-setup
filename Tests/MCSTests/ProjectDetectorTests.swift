@@ -300,14 +300,15 @@ struct ProjectDoctorCheckTests {
         return dir
     }
 
-    // MARK: - CLAUDELocalVersionCheck
+    // MARK: - CLAUDELocalFreshnessCheck
 
-    @Test("CLAUDELocalVersionCheck skips when no CLAUDE.local.md")
-    func versionCheckSkipsWhenMissing() throws {
+    @Test("CLAUDELocalFreshnessCheck skips when no CLAUDE.local.md")
+    func freshnessCheckSkipsWhenMissing() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let check = CLAUDELocalVersionCheck(projectRoot: tmpDir)
+        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
+        let check = CLAUDELocalFreshnessCheck(context: context)
         if case .skip = check.check() {
             // expected
         } else {
@@ -315,8 +316,8 @@ struct ProjectDoctorCheckTests {
         }
     }
 
-    @Test("CLAUDELocalVersionCheck warns when no section markers")
-    func versionCheckWarnsNoMarkers() throws {
+    @Test("CLAUDELocalFreshnessCheck warns when no section markers")
+    func freshnessCheckWarnsNoMarkers() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -325,7 +326,8 @@ struct ProjectDoctorCheckTests {
             atomically: true, encoding: .utf8
         )
 
-        let check = CLAUDELocalVersionCheck(projectRoot: tmpDir)
+        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
+        let check = CLAUDELocalFreshnessCheck(context: context)
         if case .warn = check.check() {
             // expected
         } else {
@@ -333,8 +335,8 @@ struct ProjectDoctorCheckTests {
         }
     }
 
-    @Test("CLAUDELocalVersionCheck passes with current version")
-    func versionCheckPassesCurrent() throws {
+    @Test("CLAUDELocalFreshnessCheck passes with current version (legacy fallback)")
+    func freshnessCheckPassesCurrent() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -349,7 +351,8 @@ struct ProjectDoctorCheckTests {
             atomically: true, encoding: .utf8
         )
 
-        let check = CLAUDELocalVersionCheck(projectRoot: tmpDir)
+        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
+        let check = CLAUDELocalFreshnessCheck(context: context)
         if case .pass = check.check() {
             // expected
         } else {
