@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   build-and-release:
+    name: Build and Release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -52,7 +53,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           TARBALL="mcs-${TAG_NAME}-macos-universal.tar.gz"
-          tar -czf "${TARBALL}" -C "${BIN_DIR}" mcs my-claude-setup_mcs.bundle
+          tar -czf "${TARBALL}" -C "${BIN_DIR}" mcs
           shasum -a 256 "${TARBALL}" > SHA256SUMS
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
@@ -89,7 +90,6 @@ jobs:
 
             def install
               libexec.install "mcs"
-              libexec.install "my-claude-setup_mcs.bundle"
               bin.install_symlink libexec/"mcs"
               bin.install_symlink libexec/"mcs" => "my-claude-setup"
             end

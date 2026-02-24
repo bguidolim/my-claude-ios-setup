@@ -189,7 +189,7 @@ struct ExternalPackLoaderTests {
         try FileManager.default.createDirectory(at: packDir, withIntermediateDirectories: true)
 
         // Use a very high version that current mcs cannot satisfy
-        let yaml = minimalManifestYAML(minMCSVersion: "99.0.0")
+        let yaml = minimalManifestYAML(minMCSVersion: "3000.0.0")
         let manifestURL = packDir.appendingPathComponent("techpack.yaml")
         try yaml.write(to: manifestURL, atomically: true, encoding: .utf8)
 
