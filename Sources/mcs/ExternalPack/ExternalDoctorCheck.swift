@@ -480,13 +480,10 @@ extension ScopedPathCheck {
             return expandTilde(path)
         case .project:
             guard let root = projectRoot else { return nil }
-            let resolved = root.appendingPathComponent(path).resolvingSymlinksInPath().path
-            let rootBase = root.resolvingSymlinksInPath().path
-            // Ensure the resolved path stays within the project root
-            guard PathContainment.isContained(path: resolved, within: rootBase) else {
+            guard let safe = PathContainment.safePath(relativePath: path, within: root) else {
                 return nil
             }
-            return resolved
+            return safe.resolvingSymlinksInPath().path
         }
     }
 

@@ -183,7 +183,14 @@ struct AddPack: LockedCommand {
         }
 
         // 6. Move from temp location to final location
-        let finalPath = env.packsDirectory.appendingPathComponent(manifest.identifier)
+        guard let finalPath = PathContainment.safePath(
+            relativePath: manifest.identifier,
+            within: env.packsDirectory
+        ) else {
+            try? fetcher.remove(packPath: fetchResult.localPath)
+            output.error("Pack identifier escapes packs directory — refusing to install")
+            throw ExitCode.failure
+        }
         let fm = FileManager.default
         do {
             if fm.fileExists(atPath: finalPath.path) {
@@ -296,7 +303,13 @@ struct RemovePack: LockedCommand {
             throw ExitCode.failure
         }
 
-        let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+        guard let packPath = PathContainment.safePath(
+            relativePath: entry.localPath,
+            within: env.packsDirectory
+        ) else {
+            output.error("Pack localPath escapes packs directory — refusing to proceed")
+            throw ExitCode.failure
+        }
 
         // 2. Load manifest from checkout (if available) to know what to reverse
         let manifest: ExternalPackManifest?

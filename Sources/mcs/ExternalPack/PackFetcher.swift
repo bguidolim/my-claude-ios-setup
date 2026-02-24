@@ -23,7 +23,12 @@ struct PackFetcher: Sendable {
         try validateIdentifier(identifier)
         if let ref { try validateRef(ref) }
 
-        let packPath = packsDirectory.appendingPathComponent(identifier)
+        guard let packPath = PathContainment.safePath(
+            relativePath: identifier,
+            within: packsDirectory
+        ) else {
+            throw PackFetchError.pathEscapesPacksDirectory(path: identifier)
+        }
 
         // Clean state: remove existing checkout if present
         let fm = FileManager.default
@@ -138,6 +143,12 @@ struct PackFetcher: Sendable {
     /// Remove a pack's local checkout.
     func remove(packPath: URL) throws {
         let fm = FileManager.default
+
+        // Validate path doesn't escape packs directory via traversal or symlinks
+        guard PathContainment.isContained(url: packPath, within: packsDirectory) else {
+            throw PackFetchError.pathEscapesPacksDirectory(path: packPath.path)
+        }
+
         guard fm.fileExists(atPath: packPath.path) else { return }
         try fm.removeItem(at: packPath)
     }
@@ -191,6 +202,7 @@ enum PackFetchError: Error, LocalizedError, Sendable {
     case commitResolutionFailed(path: String, stderr: String)
     case invalidIdentifier(String)
     case invalidRef(String)
+    case pathEscapesPacksDirectory(path: String)
 
     var errorDescription: String? {
         switch self {
@@ -210,6 +222,8 @@ enum PackFetchError: Error, LocalizedError, Sendable {
             return "Invalid pack identifier '\(id)': must not contain '..', '/', or start with '-'"
         case .invalidRef(let ref):
             return "Invalid git ref '\(ref)': contains unsafe characters"
+        case .pathEscapesPacksDirectory(let path):
+            return "Path '\(path)' escapes packs directory — refusing to remove"
         }
     }
 }

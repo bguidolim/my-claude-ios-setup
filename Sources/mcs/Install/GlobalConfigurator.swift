@@ -325,7 +325,14 @@ struct GlobalConfigurator {
         // Remove files from ~/.claude/ tree
         let fm = FileManager.default
         for relativePath in artifacts.files {
-            let fullPath = environment.claudeDirectory.appendingPathComponent(relativePath)
+            guard let fullPath = PathContainment.safePath(
+                relativePath: relativePath,
+                within: environment.claudeDirectory
+            ) else {
+                output.warn("Path '\(relativePath)' escapes claude directory — skipping removal")
+                continue
+            }
+
             if fm.fileExists(atPath: fullPath.path) {
                 do {
                     try fm.removeItem(at: fullPath)

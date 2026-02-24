@@ -149,10 +149,7 @@ struct PackUninstaller {
         }
 
         // Validate destination doesn't escape expected directory via path traversal
-        let resolvedDest = destURL.resolvingSymlinksInPath()
-        let parentPath = expectedParent.resolvingSymlinksInPath().path
-        let parentPrefix = parentPath.hasSuffix("/") ? parentPath : parentPath + "/"
-        guard resolvedDest.path.hasPrefix(parentPrefix) || resolvedDest.path == parentPath else {
+        guard PathContainment.isContained(url: destURL, within: expectedParent) else {
             return nil
         }
         return destURL

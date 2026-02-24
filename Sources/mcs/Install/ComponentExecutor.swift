@@ -107,14 +107,9 @@ struct ComponentExecutor {
         fileType: CopyFileType
     ) -> Bool {
         let fm = FileManager.default
-        let destURL = fileType.destinationURL(in: environment, destination: destination)
-
-        // Validate destination doesn't escape expected directory via symlinks
-        let resolvedDest = destURL.resolvingSymlinksInPath()
         let expectedParent = fileType.baseDirectory(in: environment)
-        let parentPath = expectedParent.resolvingSymlinksInPath().path
-        let destPath = resolvedDest.path
-        guard PathContainment.isContained(path: destPath, within: parentPath) else {
+
+        guard let destURL = PathContainment.safePath(relativePath: destination, within: expectedParent) else {
             output.warn("Destination '\(destination)' escapes expected directory")
             return false
         }
@@ -178,12 +173,8 @@ struct ComponentExecutor {
     ) -> [String] {
         let fm = FileManager.default
         let baseDir = fileType.projectBaseDirectory(projectPath: projectPath)
-        let destURL = baseDir.appendingPathComponent(destination)
 
-        // Validate destination doesn't escape expected directory via symlinks
-        let resolvedDest = destURL.resolvingSymlinksInPath()
-        let expectedParent = baseDir.resolvingSymlinksInPath()
-        guard PathContainment.isContained(path: resolvedDest.path, within: expectedParent.path) else {
+        guard let destURL = PathContainment.safePath(relativePath: destination, within: baseDir) else {
             output.warn("Destination '\(destination)' escapes project directory")
             return []
         }
@@ -254,8 +245,12 @@ struct ComponentExecutor {
 
     /// Remove a file from the project by its project-relative path.
     func removeProjectFile(relativePath: String, projectPath: URL) {
+        guard let fullPath = PathContainment.safePath(relativePath: relativePath, within: projectPath) else {
+            output.warn("Path '\(relativePath)' escapes project directory — skipping removal")
+            return
+        }
+
         let fm = FileManager.default
-        let fullPath = projectPath.appendingPathComponent(relativePath)
         if fm.fileExists(atPath: fullPath.path) {
             do {
                 try fm.removeItem(at: fullPath)
