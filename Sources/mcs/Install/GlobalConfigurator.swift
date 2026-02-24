@@ -355,25 +355,34 @@ struct GlobalConfigurator {
         // Remove auto-derived hook commands from settings.json
         if !artifacts.hookCommands.isEmpty {
             let settingsPath = environment.claudeSettings
+            var settings: Settings
             do {
-                var settings = try Settings.load(from: settingsPath)
-                let commandsToRemove = Set(artifacts.hookCommands)
-                if var hooks = settings.hooks {
-                    for (event, groups) in hooks {
-                        hooks[event] = groups.filter { group in
-                            guard let cmd = group.hooks?.first?.command else { return true }
-                            return !commandsToRemove.contains(cmd)
-                        }
+                settings = try Settings.load(from: settingsPath)
+            } catch {
+                output.warn("  Could not parse settings.json: \(error.localizedDescription)")
+                output.warn("  Hook entries for \(packID) were not cleaned up. Fix settings.json and re-run.")
+                state.removePack(packID)
+                return
+            }
+            let commandsToRemove = Set(artifacts.hookCommands)
+            if var hooks = settings.hooks {
+                for (event, groups) in hooks {
+                    hooks[event] = groups.filter { group in
+                        guard let cmd = group.hooks?.first?.command else { return true }
+                        return !commandsToRemove.contains(cmd)
                     }
-                    hooks = hooks.filter { !$0.value.isEmpty }
-                    settings.hooks = hooks.isEmpty ? nil : hooks
                 }
+                hooks = hooks.filter { !$0.value.isEmpty }
+                settings.hooks = hooks.isEmpty ? nil : hooks
+            }
+            do {
                 try settings.save(to: settingsPath)
                 for cmd in artifacts.hookCommands {
                     output.dimmed("  Removed hook: \(cmd)")
                 }
             } catch {
-                output.warn("  Could not update settings.json: \(error.localizedDescription)")
+                output.warn("  Could not write settings.json: \(error.localizedDescription)")
+                output.warn("  Hook entries may still be present. Re-run 'mcs sync --global' to retry.")
             }
         }
 
@@ -575,7 +584,7 @@ struct GlobalConfigurator {
                         settings.merge(with: packSettings)
                         hasContent = true
                     } catch {
-                        output.warn("Could not load settings from \(source.lastPathComponent): \(error.localizedDescription)")
+                        output.warn("Could not load settings from \(pack.displayName)/\(source.lastPathComponent): \(error.localizedDescription)")
                     }
                 }
             }

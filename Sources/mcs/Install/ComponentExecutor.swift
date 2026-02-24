@@ -146,6 +146,9 @@ struct ComponentExecutor {
                         try fm.removeItem(at: destFile)
                     }
                     try Self.copyWithSubstitution(from: file, to: destFile, values: resolvedValues)
+                    if fileType == .hook {
+                        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destFile.path)
+                    }
                 }
             } else {
                 // Source is a single file
