@@ -427,11 +427,21 @@ struct GlobalConfigurator {
                 _ = exec.addGitignoreEntries(entries)
 
             case .shellCommand(let command):
-                // Interactive shell commands cannot run through mcs (stdin is /dev/null).
-                // Warn the user with manual install instructions.
-                output.warn("  \(component.displayName) requires manual installation:")
-                output.plain("    \(command)")
-                output.dimmed("  Run the command above in your terminal, then re-run 'mcs sync --global'.")
+                // Attempt to run the command. ShellRunner sets stdin to /dev/null,
+                // so non-interactive commands (npx -y, etc.) work fine.
+                // Only commands needing interactive input (sudo, prompts) will fail.
+                output.dimmed("  Running \(component.displayName)...")
+                let result = shell.shell(command)
+                if result.succeeded {
+                    output.success("  \(component.displayName) installed")
+                } else {
+                    output.warn("  \(component.displayName) requires manual installation:")
+                    output.plain("    \(command)")
+                    if !result.stderr.isEmpty {
+                        output.dimmed("  Error: \(String(result.stderr.prefix(200)))")
+                    }
+                    output.dimmed("  Run the command above in your terminal, then re-run 'mcs sync --global'.")
+                }
 
             case .settingsMerge:
                 // Handled by composeGlobalSettings at the configure level.
@@ -580,21 +590,30 @@ struct GlobalConfigurator {
     }
 
     /// Find all `__PLACEHOLDER__` tokens in a file or directory of files.
+    /// Recurses into subdirectories and skips non-text files gracefully.
     private static func findPlaceholdersInSource(_ source: URL) -> [String] {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: source.path, isDirectory: &isDir) else { return [] }
 
-        let files: [URL]
-        if isDir.boolValue {
-            files = (try? fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)) ?? []
-        } else {
-            files = [source]
+        guard isDir.boolValue else {
+            // Single file
+            guard let text = try? String(contentsOf: source, encoding: .utf8) else { return [] }
+            return TemplateEngine.findUnreplacedPlaceholders(in: text)
         }
 
+        // Directory — enumerate recursively, skipping subdirectory entries themselves
+        guard let enumerator = fm.enumerator(
+            at: source,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
         var results: [String] = []
-        for file in files {
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
+                  values.isRegularFile == true else { continue }
+            guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
             results.append(contentsOf: TemplateEngine.findUnreplacedPlaceholders(in: text))
         }
         return results

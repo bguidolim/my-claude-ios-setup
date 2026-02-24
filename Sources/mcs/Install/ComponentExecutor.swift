@@ -234,13 +234,28 @@ struct ComponentExecutor {
         }
     }
 
-    /// Copy a file, substituting `__PLACEHOLDER__` values in text files.
-    /// Falls back to binary copy for non-UTF-8 files or when no values are provided.
+    /// Copy a file or directory, substituting `__PLACEHOLDER__` values in text files.
+    /// Recurses into subdirectories. Falls back to binary copy for non-UTF-8 files
+    /// or when no values are provided.
     static func copyWithSubstitution(
         from source: URL,
         to destination: URL,
         values: [String: String]
     ) throws {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        fm.fileExists(atPath: source.path, isDirectory: &isDir)
+
+        if isDir.boolValue {
+            try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+            let contents = try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+            for child in contents {
+                let destChild = destination.appendingPathComponent(child.lastPathComponent)
+                try copyWithSubstitution(from: child, to: destChild, values: values)
+            }
+            return
+        }
+
         if !values.isEmpty {
             // Read as Data first to surface I/O errors (permission, disk),
             // then attempt UTF-8 decode to detect binary vs text files.
@@ -252,7 +267,7 @@ struct ComponentExecutor {
             }
         }
         // Binary file or no values to substitute
-        try FileManager.default.copyItem(at: source, to: destination)
+        try fm.copyItem(at: source, to: destination)
     }
 
     /// Remove a file from the project by its project-relative path.
