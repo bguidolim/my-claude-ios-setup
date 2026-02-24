@@ -556,7 +556,7 @@ struct PackSettingsMergeTests {
         #expect(afterAdd.env?["PACK_KEY"] == "pack_value")
 
         // Re-configure with no packs (simulate removal)
-        try configurator.configure(at: tmpDir, packs: [])
+        try configurator.configure(at: tmpDir, packs: [], confirmRemovals: false)
 
         // settings.local.json should either not exist or not have the pack's key
         if FileManager.default.fileExists(atPath: settingsPath.path) {

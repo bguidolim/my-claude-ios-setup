@@ -34,7 +34,7 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
 
         let sections = TemplateComposer.parseSections(from: content)
         guard !sections.isEmpty else {
-            return .warn("CLAUDE.local.md has no mcs section markers — run 'mcs configure'")
+            return .warn("CLAUDE.local.md has no mcs section markers — run 'mcs sync'")
         }
 
         let currentVersion = MCSVersion.current
@@ -48,11 +48,11 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
         if outdated.isEmpty {
             return .pass("all sections at v\(currentVersion)")
         }
-        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs configure'")
+        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync'")
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs configure' to update CLAUDE.local.md")
+        .notFixable("Run 'mcs sync' to update CLAUDE.local.md")
     }
 }
 
@@ -153,7 +153,7 @@ struct ProjectStateFileCheck: DoctorCheck, Sendable {
         let state = ProjectState(projectRoot: projectRoot)
 
         guard FileManager.default.fileExists(atPath: claudeLocal.path) else {
-            return .skip("no CLAUDE.local.md — run 'mcs configure'")
+            return .skip("no CLAUDE.local.md — run 'mcs sync'")
         }
 
         if state.exists {

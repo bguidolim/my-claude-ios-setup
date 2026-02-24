@@ -8,7 +8,7 @@ enum Constants {
     // MARK: - File Names
 
     enum FileNames {
-        /// The per-project instructions file managed by `mcs configure`.
+        /// The per-project instructions file managed by `mcs sync`.
         static let claudeLocalMD = "CLAUDE.local.md"
 
         /// The per-project state file tracking configured packs.

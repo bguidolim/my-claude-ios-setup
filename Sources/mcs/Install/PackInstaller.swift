@@ -1,9 +1,9 @@
 import Foundation
 
 /// Installs pack components with dependency resolution.
-/// Used by `ConfigureCommand` (mcs configure) to auto-install missing pack dependencies.
+/// Used by `SyncCommand` (mcs sync) to auto-install missing pack dependencies.
 /// Delegates to `ComponentExecutor` for shared install logic, ensuring consistent
-/// behavior with `Installer` (mcs install).
+/// behavior across install paths.
 struct PackInstaller {
     let environment: Environment
     let output: CLIOutput

@@ -1,11 +1,10 @@
 import ArgumentParser
 import Foundation
 
-struct ConfigureCommand: LockedCommand {
+struct SyncCommand: LockedCommand {
     static let configuration = CommandConfiguration(
-        commandName: "configure",
-        abstract: "Configure a project with tech packs",
-        shouldDisplay: false
+        commandName: "sync",
+        abstract: "Sync Claude Code configuration for a project"
     )
 
     @Argument(help: "Path to the project directory (defaults to current directory)")
@@ -14,10 +13,13 @@ struct ConfigureCommand: LockedCommand {
     @Option(name: .long, help: "Tech pack to apply (e.g. ios). Can be specified multiple times.")
     var pack: [String] = []
 
+    @Flag(name: .long, help: "Apply all registered packs without prompts")
+    var all: Bool = false
+
     @Flag(name: .long, help: "Show what would change without making any modifications")
     var dryRun = false
 
-    @Flag(name: .long, help: "Checkout locked pack versions from mcs.lock.yaml before configuring")
+    @Flag(name: .long, help: "Checkout locked pack versions from mcs.lock.yaml before syncing")
     var lock = false
 
     @Flag(name: .long, help: "Fetch latest pack versions and update mcs.lock.yaml")
@@ -29,8 +31,6 @@ struct ConfigureCommand: LockedCommand {
         let env = Environment()
         let output = CLIOutput()
         let shell = ShellRunner(environment: env)
-
-        output.warn("'mcs configure' is deprecated. Use 'mcs sync' instead.")
 
         guard ensureClaudeCLI(shell: shell, environment: env, output: output) else {
             throw ExitCode.failure
@@ -74,10 +74,27 @@ struct ConfigureCommand: LockedCommand {
             registry: registry
         )
 
-        if pack.isEmpty {
-            // Interactive flow — multi-select of all registered packs
-            try configurator.interactiveConfigure(at: projectPath, dryRun: dryRun)
-        } else {
+        if all {
+            // Apply all registered packs (CI-friendly)
+            let allPacks = registry.availablePacks
+            guard !allPacks.isEmpty else {
+                output.error("No packs registered. Run 'mcs pack add <url>' first.")
+                throw ExitCode.failure
+            }
+
+            output.header("Sync Project")
+            output.plain("")
+            output.info("Project: \(projectPath.path)")
+            output.info("Packs: \(allPacks.map(\.displayName).joined(separator: ", "))")
+
+            if dryRun {
+                configurator.dryRun(at: projectPath, packs: allPacks)
+            } else {
+                try configurator.configure(at: projectPath, packs: allPacks, confirmRemovals: false)
+                output.header("Done")
+                output.info("Run 'mcs doctor' to verify configuration")
+            }
+        } else if !pack.isEmpty {
             // Non-interactive --pack flag (CI-friendly)
             let resolvedPacks: [any TechPack] = pack.compactMap { registry.pack(for: $0) }
 
@@ -92,7 +109,7 @@ struct ConfigureCommand: LockedCommand {
                 throw ExitCode.failure
             }
 
-            output.header("Configure Project")
+            output.header("Sync Project")
             output.plain("")
             output.info("Project: \(projectPath.path)")
             output.info("Packs: \(resolvedPacks.map(\.displayName).joined(separator: ", "))")
@@ -100,14 +117,16 @@ struct ConfigureCommand: LockedCommand {
             if dryRun {
                 configurator.dryRun(at: projectPath, packs: resolvedPacks)
             } else {
-                try configurator.configure(at: projectPath, packs: resolvedPacks)
-
+                try configurator.configure(at: projectPath, packs: resolvedPacks, confirmRemovals: false)
                 output.header("Done")
                 output.info("Run 'mcs doctor' to verify configuration")
             }
+        } else {
+            // Interactive flow — multi-select of all registered packs
+            try configurator.interactiveConfigure(at: projectPath, dryRun: dryRun)
         }
 
-        // Write lockfile after successful configure (unless dry-run)
+        // Write lockfile after successful sync (unless dry-run)
         if !dryRun {
             try lockOps.writeLockfile(at: projectPath)
         }

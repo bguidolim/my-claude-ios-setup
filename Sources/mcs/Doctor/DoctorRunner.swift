@@ -3,7 +3,7 @@ import Foundation
 /// Orchestrates all doctor checks grouped by section, with optional fix mode.
 ///
 /// **Scope of `--fix`**: Cleanup, migration, and trivial repairs only.
-/// Additive operations (install/register/copy) are deferred to `mcs install`.
+/// Additive operations (install/register/copy) are deferred to `mcs sync`.
 /// See CoreDoctorChecks.swift header for the full responsibility boundary.
 struct DoctorRunner {
     let fixMode: Bool

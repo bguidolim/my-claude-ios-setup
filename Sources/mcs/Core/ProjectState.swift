@@ -1,7 +1,7 @@
 import Foundation
 
 /// Tracks per-pack artifacts installed into a project, enabling clean removal
-/// when a pack is deselected during `mcs configure`.
+/// when a pack is deselected during `mcs sync`.
 struct PackArtifactRecord: Codable, Equatable, Sendable {
     /// MCP servers registered for this pack (name + scope for `claude mcp remove`).
     var mcpServers: [MCPServerRef] = []

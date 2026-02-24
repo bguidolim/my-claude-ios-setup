@@ -112,7 +112,7 @@ struct ExternalPackAdapter: TechPack {
             )
         } catch {
             context.output.error("Failed to resolve template values for pack '\(manifest.identifier)': \(error.localizedDescription)")
-            context.output.plain("  Template placeholders will not be substituted. Re-run 'mcs configure' after fixing the issue.")
+            context.output.plain("  Template placeholders will not be substituted. Re-run 'mcs sync' after fixing the issue.")
             return [:]
         }
     }

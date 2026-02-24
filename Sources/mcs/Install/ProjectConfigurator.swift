@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Handles multi-pack selection, convergence (add/remove/update packs),
 /// template composition, settings.local.json writing, and artifact tracking.
-/// Used by `mcs configure`.
+/// Used by `mcs sync`.
 struct ProjectConfigurator {
     let environment: Environment
     let output: CLIOutput
@@ -235,9 +235,13 @@ struct ProjectConfigurator {
 
     /// Configure a project with the given set of packs.
     /// Handles convergence: adds new packs, updates existing, removes deselected.
+    ///
+    /// - Parameter confirmRemovals: When `true`, prompt the user before removing packs.
+    ///   Pass `false` for non-interactive paths (`--pack`, `--all`).
     func configure(
         at projectPath: URL,
-        packs: [any TechPack]
+        packs: [any TechPack],
+        confirmRemovals: Bool = true
     ) throws {
         let selectedIDs = Set(packs.map(\.identifier))
 
@@ -264,11 +268,27 @@ struct ProjectConfigurator {
                 }
             }
             throw MCSError.configurationFailed(
-                reason: "Unresolved peer dependencies. Fix the issues above and re-run mcs configure."
+                reason: "Unresolved peer dependencies. Fix the issues above and re-run mcs sync."
             )
         }
 
-        // 1. Unconfigure removed packs
+        // 1. Confirm and unconfigure removed packs
+        if confirmRemovals && !removals.isEmpty {
+            output.plain("")
+            output.warn("The following packs will be removed:")
+            for packID in removals.sorted() {
+                output.plain("  - \(packID)")
+                if let artifacts = projectState.artifacts(for: packID) {
+                    printRemovalSummary(artifacts)
+                }
+            }
+            output.plain("")
+            guard output.askYesNo("Proceed with removal?", default: true) else {
+                output.info("Sync cancelled.")
+                return
+            }
+        }
+
         for packID in removals.sorted() {
             unconfigurePack(packID, at: projectPath, state: &projectState)
         }
@@ -666,7 +686,7 @@ struct ProjectConfigurator {
             if !unpaired.isEmpty {
                 output.warn("Unpaired section markers in CLAUDE.local.md: \(unpaired.joined(separator: ", "))")
                 output.warn("Sections with missing end markers will not be updated to prevent data loss.")
-                output.warn("Add the missing end markers manually, then re-run mcs configure.")
+                output.warn("Add the missing end markers manually, then re-run mcs sync.")
             }
 
             let userContent = TemplateComposer.extractUserContent(from: existingContent)
