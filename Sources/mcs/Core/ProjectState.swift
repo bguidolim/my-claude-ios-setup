@@ -37,6 +37,9 @@ struct ProjectState {
         /// Component IDs excluded per pack (packID -> [componentID]).
         /// Exclusion-based: new components added by pack updates are included by default.
         var excludedComponents: [String: [String]] = [:]
+        /// Template placeholder values resolved during the last sync.
+        /// Used by doctor to re-render expected sections for content-hash comparison.
+        var resolvedValues: [String: String]?
     }
 
     init(projectRoot: URL) {
@@ -115,6 +118,18 @@ struct ProjectState {
     /// All excluded components across all packs: packID -> Set<componentID>.
     var allExcludedComponents: [String: Set<String>] {
         storage.excludedComponents.mapValues { Set($0) }
+    }
+
+    // MARK: - Resolved Values
+
+    /// Template placeholder values from the last sync, or nil for legacy state files.
+    var resolvedValues: [String: String]? {
+        storage.resolvedValues
+    }
+
+    /// Store resolved template values for later doctor freshness checks.
+    mutating func setResolvedValues(_ values: [String: String]) {
+        storage.resolvedValues = values
     }
 
     // MARK: - Persistence

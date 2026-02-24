@@ -113,7 +113,8 @@ struct DoctorRunner {
 
         // Layer 5: Project-scoped checks (only when inside a project)
         if let root = projectRoot {
-            allChecks.append(contentsOf: ProjectDoctorChecks.checks(projectRoot: root))
+            let context = ProjectDoctorContext(projectRoot: root, registry: registry)
+            allChecks.append(contentsOf: ProjectDoctorChecks.checks(context: context))
         }
 
         // Group by section
