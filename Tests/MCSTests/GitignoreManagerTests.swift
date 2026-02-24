@@ -15,7 +15,7 @@ struct GitignoreManagerTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let gitignorePath = tmpDir.appendingPathComponent("ignore")
-        let content = ".claude\n*.local.*\n.serena\n"
+        let content = ".claude\n*.local.*\n.mcs-project\n"
         try content.write(to: gitignorePath, atomically: true, encoding: .utf8)
 
         let manager = GitignoreManagerWithFixedPath(path: gitignorePath)
@@ -25,7 +25,7 @@ struct GitignoreManagerTests {
         let updated = try String(contentsOf: gitignorePath, encoding: .utf8)
         #expect(!updated.contains("*.local.*"))
         #expect(updated.contains(".claude"))
-        #expect(updated.contains(".serena"))
+        #expect(updated.contains(".mcs-project"))
     }
 
     @Test("Remove entry that does not exist returns false")

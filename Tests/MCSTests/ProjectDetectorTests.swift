@@ -221,24 +221,6 @@ struct ProjectStateTests {
         #expect(loadedArtifacts?.files == [".claude/skills/my-skill/SKILL.md"])
     }
 
-    @Test("Legacy key=value format is migrated to JSON")
-    func legacyMigration() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        // Write legacy format
-        let claudeDir = tmpDir.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
-        let stateFile = claudeDir.appendingPathComponent(".mcs-project")
-        let legacy = "CONFIGURED_AT=2025-06-01T00:00:00Z\nCONFIGURED_PACKS=ios,web\nMCS_VERSION=2.0.0\n"
-        try legacy.write(to: stateFile, atomically: true, encoding: .utf8)
-
-        let state = try ProjectState(projectRoot: tmpDir)
-        #expect(state.exists)
-        #expect(state.configuredPacks == Set(["ios", "web"]))
-        #expect(state.mcsVersion == "2.0.0")
-    }
-
     @Test("stateFile init loads from direct path")
     func stateFileInit() throws {
         let tmpDir = try makeTmpDir()
@@ -348,8 +330,8 @@ struct ProjectDoctorCheckTests {
         }
     }
 
-    @Test("CLAUDELocalFreshnessCheck passes with current version (legacy fallback)")
-    func freshnessCheckPassesCurrent() throws {
+    @Test("CLAUDELocalFreshnessCheck warns when no stored values")
+    func freshnessCheckWarnsNoStoredValues() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -366,122 +348,10 @@ struct ProjectDoctorCheckTests {
 
         let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
         let check = CLAUDELocalFreshnessCheck(context: context)
-        if case .pass = check.check() {
-            // expected
+        if case .warn = check.check() {
+            // expected — no .mcs-project means no stored values
         } else {
-            #expect(Bool(false), "Expected .pass result")
-        }
-    }
-
-    // MARK: - ProjectSerenaMemoryCheck
-
-    @Test("ProjectSerenaMemoryCheck passes when no .serena/memories")
-    func serenaCheckPassesMissing() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let check = ProjectSerenaMemoryCheck(projectRoot: tmpDir)
-        if case .pass = check.check() {
-            // expected
-        } else {
-            #expect(Bool(false), "Expected .pass result")
-        }
-    }
-
-    @Test("ProjectSerenaMemoryCheck passes when .serena/memories is a symlink")
-    func serenaCheckPassesWhenSymlink() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let claudeMemories = tmpDir
-            .appendingPathComponent(".claude")
-            .appendingPathComponent("memories")
-        try FileManager.default.createDirectory(at: claudeMemories, withIntermediateDirectories: true)
-
-        let serenaDir = tmpDir.appendingPathComponent(".serena")
-        try FileManager.default.createDirectory(at: serenaDir, withIntermediateDirectories: true)
-        let serenaMemories = serenaDir.appendingPathComponent("memories")
-        try FileManager.default.createSymbolicLink(at: serenaMemories, withDestinationURL: claudeMemories)
-
-        let check = ProjectSerenaMemoryCheck(projectRoot: tmpDir)
-        if case .pass(let msg) = check.check() {
-            #expect(msg.contains("symlink"))
-        } else {
-            #expect(Bool(false), "Expected .pass result")
-        }
-    }
-
-    @Test("ProjectSerenaMemoryCheck fails when memories exist")
-    func serenaCheckFailsWithFiles() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let memoriesDir = tmpDir
-            .appendingPathComponent(".serena")
-            .appendingPathComponent("memories")
-        try FileManager.default.createDirectory(at: memoriesDir, withIntermediateDirectories: true)
-        try "memory content".write(
-            to: memoriesDir.appendingPathComponent("test.md"),
-            atomically: true, encoding: .utf8
-        )
-
-        let check = ProjectSerenaMemoryCheck(projectRoot: tmpDir)
-        if case .fail = check.check() {
-            // expected
-        } else {
-            #expect(Bool(false), "Expected .fail result")
-        }
-    }
-
-    @Test("ProjectSerenaMemoryCheck fails when empty directory exists (should be symlink)")
-    func serenaCheckFailsEmptyDir() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let memoriesDir = tmpDir
-            .appendingPathComponent(".serena")
-            .appendingPathComponent("memories")
-        try FileManager.default.createDirectory(at: memoriesDir, withIntermediateDirectories: true)
-
-        let check = ProjectSerenaMemoryCheck(projectRoot: tmpDir)
-        if case .fail(let msg) = check.check() {
-            #expect(msg.contains("should be a symlink"))
-        } else {
-            #expect(Bool(false), "Expected .fail result")
-        }
-    }
-
-    @Test("ProjectSerenaMemoryCheck fix creates symlink")
-    func serenaFixCreatesSymlink() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let memoriesDir = tmpDir
-            .appendingPathComponent(".serena")
-            .appendingPathComponent("memories")
-        try FileManager.default.createDirectory(at: memoriesDir, withIntermediateDirectories: true)
-        try "memory content".write(
-            to: memoriesDir.appendingPathComponent("test.md"),
-            atomically: true, encoding: .utf8
-        )
-
-        let check = ProjectSerenaMemoryCheck(projectRoot: tmpDir)
-        let result = check.fix()
-
-        if case .fixed = result {
-            // Verify .serena/memories is now a symlink
-            let attrs = try FileManager.default.attributesOfItem(atPath: memoriesDir.path)
-            #expect(attrs[.type] as? FileAttributeType == .typeSymbolicLink)
-
-            // Verify file was migrated to .claude/memories/
-            let claudeMemories = tmpDir
-                .appendingPathComponent(".claude")
-                .appendingPathComponent("memories")
-            #expect(FileManager.default.fileExists(
-                atPath: claudeMemories.appendingPathComponent("test.md").path
-            ))
-        } else {
-            #expect(Bool(false), "Expected .fixed result, got \(result)")
+            #expect(Bool(false), "Expected .warn result")
         }
     }
 

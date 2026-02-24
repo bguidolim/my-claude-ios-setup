@@ -42,21 +42,6 @@ mcs sync
 
 If you manage Node.js through nvm or similar, make sure it's available in your PATH during installation.
 
-### Ollama not running
-
-**Symptom**: `mcs doctor` shows "Ollama: not running" or semantic search fails.
-
-**Fix**: Start Ollama:
-```bash
-ollama serve                      # Foreground (for debugging)
-brew services start ollama        # Background service
-```
-
-If the embedding model is missing:
-```bash
-ollama pull nomic-embed-text
-```
-
 ### Claude Code CLI not found
 
 **Symptom**: MCP servers and plugins can't be registered.
@@ -102,34 +87,6 @@ MCP servers have three scopes:
 claude mcp remove <server-name>
 cd /path/to/project
 mcs sync
-```
-
-### docs-mcp-server semantic search not working
-
-**Symptom**: `search_docs` returns no results or errors.
-
-**Causes**:
-1. Ollama is not running
-2. The `nomic-embed-text` model is not pulled
-3. The project library has not been indexed
-
-**Fix**:
-```bash
-# 1. Start Ollama
-ollama serve
-
-# 2. Pull the embedding model
-ollama pull nomic-embed-text
-
-# 3. Verify the library exists
-OPENAI_API_KEY=ollama OPENAI_API_BASE=http://localhost:11434/v1 \
-  npx -y @arabold/docs-mcp-server list
-
-# 4. If missing, manually scrape
-OPENAI_API_KEY=ollama OPENAI_API_BASE=http://localhost:11434/v1 \
-  npx -y @arabold/docs-mcp-server scrape "your-repo-name" \
-  "file://$(pwd)/.claude/memories" \
-  --embedding-model "openai:nomic-embed-text"
 ```
 
 ### Sosumi not responding
@@ -234,22 +191,6 @@ This means a `<!-- mcs:begin X -->` marker exists without a matching `<!-- mcs:e
 mcs sync
 ```
 
-## Serena Memory Migration
-
-### .serena/memories exists as directory
-
-**Symptom**: `mcs doctor` shows ".serena/memories/ has N file(s) -- migrate to .claude/memories/."
-
-If you previously used Serena with a separate memories directory, it should be migrated to `.claude/memories/` and replaced with a symlink.
-
-**Fix**: `mcs doctor --fix` handles this automatically:
-```bash
-cd /path/to/your/project
-mcs doctor --fix
-```
-
-This copies files from `.serena/memories/` to `.claude/memories/`, removes the original directory, and creates a symlink.
-
 ## External Packs
 
 ### Pack add fails
@@ -303,7 +244,7 @@ mcs cleanup --force  # Deletes without confirmation
 
 If `mcs doctor` doesn't identify the problem:
 
-1. Check that your PATH includes the necessary binaries (`brew`, `node`, `claude`, `ollama`)
+1. Check that your PATH includes the necessary binaries (`brew`, `node`, `claude`)
 2. Verify `~/.claude.json` is valid JSON: `python3 -m json.tool ~/.claude.json`
 3. Verify `~/.claude/settings.json` is valid JSON: `python3 -m json.tool ~/.claude/settings.json`
 4. Check `.claude/.mcs-project` in your project for state corruption

@@ -5,8 +5,8 @@ import Foundation
 // ## fix() Responsibility Boundaries
 //
 // `doctor --fix` handles only:
-// - **Cleanup**: Removing deprecated components (MCP servers, plugins, legacy files)
-// - **Migration**: One-time data moves (memories, state files, shell RC entries)
+// - **Cleanup**: Removing deprecated components (MCP servers, plugins)
+// - **Migration**: One-time data moves (state files)
 // - **Trivial repairs**: Permission fixes (chmod), gitignore additions (idempotent)
 //
 // `doctor --fix` does NOT handle:
@@ -206,7 +206,7 @@ struct CommandFileCheck: DoctorCheck, Sendable {
     let section = "Commands"
     let path: URL
 
-    /// The marker that v2 managed command files contain.
+    /// The marker that managed command files contain.
     static let managedMarker = "<!-- mcs:managed -->"
 
     func check() -> CheckResult {
@@ -220,9 +220,8 @@ struct CommandFileCheck: DoctorCheck, Sendable {
         if content.contains("__BRANCH_PREFIX__") {
             return .warn("present but contains unreplaced __BRANCH_PREFIX__ placeholder")
         }
-        // Verify file has the managed marker (v2+ format)
         if !content.contains(Self.managedMarker) {
-            return .warn("legacy format — run 'mcs sync' to update")
+            return .warn("missing managed marker — run 'mcs sync' to reinstall")
         }
         return .pass("present")
     }

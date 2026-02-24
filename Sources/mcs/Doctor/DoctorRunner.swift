@@ -29,7 +29,7 @@ struct DoctorRunner {
         let env = Environment()
         let registry = self.registry
 
-        // Resolve registered pack IDs from the YAML registry (replaces legacy .mcs-manifest)
+        // Resolve registered pack IDs from the YAML registry
         let packRegistry = PackRegistryFile(path: env.packsRegistry)
         let registeredPackIDs = Set((try? packRegistry.load())?.packs.map(\.identifier) ?? [])
 

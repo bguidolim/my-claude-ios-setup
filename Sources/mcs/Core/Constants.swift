@@ -17,12 +17,6 @@ enum Constants {
         /// The Claude Code configuration directory name.
         static let claudeDirectory = ".claude"
 
-        /// The session start hook script.
-        static let sessionStartHook = "session_start.sh"
-
-        /// The continuous learning activator hook script.
-        static let continuousLearningHook = "continuous-learning-activator.sh"
-
         /// The process lock file preventing concurrent mcs execution.
         static let mcsLock = "lock"
     }
@@ -35,36 +29,6 @@ enum Constants {
 
         /// The Claude Code CLI binary name.
         static let claudeCommand = "claude"
-    }
-
-    // MARK: - Hooks
-
-    enum Hooks {
-        /// The marker where hook fragments are injected.
-        /// Callers add their own indentation as needed.
-        static let extensionMarker = "# --- mcs:hook-extensions ---"
-
-        /// The fragment identifier for the continuous learning hook injection.
-        static let continuousLearningFragmentID = "learning"
-
-        /// Claude Code hook event name for session start.
-        static let eventSessionStart = "SessionStart"
-
-        /// Claude Code hook event name for user prompt submission.
-        static let eventUserPromptSubmit = "UserPromptSubmit"
-    }
-
-    // MARK: - Serena
-
-    enum Serena {
-        /// The Serena configuration directory name.
-        static let directory = ".serena"
-
-        /// The memories subdirectory name.
-        static let memoriesDirectory = "memories"
-
-        /// The MCP server identifier in claude.json.
-        static let mcpServerName = "serena"
     }
 
     // MARK: - JSON Keys

@@ -9,8 +9,6 @@ struct Environment: Sendable {
     let hooksDirectory: URL
     let skillsDirectory: URL
     let commandsDirectory: URL
-    let memoriesDirectory: URL
-    let binDirectory: URL
 
     /// mcs-internal state directory (`~/.mcs/`).
     /// Stores pack checkouts, registry, global state, and lock file.
@@ -19,7 +17,6 @@ struct Environment: Sendable {
     let architecture: Architecture
     let brewPrefix: String
     let brewPath: String
-    let shellRCFile: URL?
 
     enum Architecture: String, Sendable {
         case arm64
@@ -37,8 +34,6 @@ struct Environment: Sendable {
         self.hooksDirectory = claudeDir.appendingPathComponent("hooks")
         self.skillsDirectory = claudeDir.appendingPathComponent("skills")
         self.commandsDirectory = claudeDir.appendingPathComponent("commands")
-        self.memoriesDirectory = claudeDir.appendingPathComponent("memories")
-        self.binDirectory = claudeDir.appendingPathComponent("bin")
 
         self.mcsDirectory = home.appendingPathComponent(".mcs")
 
@@ -50,21 +45,6 @@ struct Environment: Sendable {
         self.brewPrefix = "/usr/local"
         #endif
         self.brewPath = "\(self.brewPrefix)/bin/brew"
-
-        self.shellRCFile = Environment.resolveShellRC(home: home)
-    }
-
-    private static func resolveShellRC(home: URL) -> URL? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let shellName = URL(fileURLWithPath: shell).lastPathComponent
-        switch shellName {
-        case "zsh":
-            return home.appendingPathComponent(".zshrc")
-        case "bash":
-            return home.appendingPathComponent(".bash_profile")
-        default:
-            return nil
-        }
     }
 
     /// Directory where external tech pack checkouts live (`~/.mcs/packs/`).
