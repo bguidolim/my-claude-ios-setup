@@ -19,7 +19,7 @@ struct FileLockTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let lockFile = tmpDir.appendingPathComponent(".mcs-lock")
+        let lockFile = tmpDir.appendingPathComponent("lock")
         let result = try withFileLock(at: lockFile) {
             42
         }
@@ -31,7 +31,7 @@ struct FileLockTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let lockFile = tmpDir.appendingPathComponent(".mcs-lock")
+        let lockFile = tmpDir.appendingPathComponent("lock")
         #expect(!FileManager.default.fileExists(atPath: lockFile.path))
 
         try withFileLock(at: lockFile) { }
@@ -47,7 +47,7 @@ struct FileLockTests {
         let lockFile = tmpDir
             .appendingPathComponent("nested")
             .appendingPathComponent("dir")
-            .appendingPathComponent(".mcs-lock")
+            .appendingPathComponent("lock")
 
         try withFileLock(at: lockFile) { }
 
@@ -59,7 +59,7 @@ struct FileLockTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let lockFile = tmpDir.appendingPathComponent(".mcs-lock")
+        let lockFile = tmpDir.appendingPathComponent("lock")
 
         #expect(throws: MCSError.self) {
             try withFileLock(at: lockFile) {
@@ -73,7 +73,7 @@ struct FileLockTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let lockFile = tmpDir.appendingPathComponent(".mcs-lock")
+        let lockFile = tmpDir.appendingPathComponent("lock")
 
         try withFileLock(at: lockFile) { }
 
@@ -86,7 +86,7 @@ struct FileLockTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let lockFile = tmpDir.appendingPathComponent(".mcs-lock")
+        let lockFile = tmpDir.appendingPathComponent("lock")
 
         do {
             try withFileLock(at: lockFile) {
@@ -107,7 +107,7 @@ struct FileLockTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let lockFile = tmpDir.appendingPathComponent(".mcs-lock")
+        let lockFile = tmpDir.appendingPathComponent("lock")
 
         // Hold a lock via raw flock on a separate file descriptor
         let fd = open(lockFile.path, O_CREAT | O_RDWR, 0o644)
@@ -124,10 +124,10 @@ struct FileLockTests {
 
     @Test("FileLockError.acquireFailed has descriptive message")
     func errorMessage() {
-        let error = FileLockError.acquireFailed(path: "/tmp/.mcs-lock")
+        let error = FileLockError.acquireFailed(path: "/tmp/lock")
         let description = error.localizedDescription
         #expect(description.contains("Another mcs process"))
-        #expect(description.contains("/tmp/.mcs-lock"))
+        #expect(description.contains("/tmp/lock"))
     }
 
     // MARK: - Environment integration
@@ -139,8 +139,8 @@ struct FileLockTests {
 
         let env = Environment(home: tmpDir)
         let expected = tmpDir
-            .appendingPathComponent(".claude")
-            .appendingPathComponent(".mcs-lock")
+            .appendingPathComponent(".mcs")
+            .appendingPathComponent("lock")
             .path
 
         #expect(env.lockFile.path == expected)

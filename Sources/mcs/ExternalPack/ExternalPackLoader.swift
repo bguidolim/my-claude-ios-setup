@@ -1,6 +1,6 @@
 import Foundation
 
-/// Discovers and loads external tech packs from `~/.claude/packs/`.
+/// Discovers and loads external tech packs from `~/.mcs/packs/`.
 /// Reads the pack registry to find registered packs, then loads each one
 /// by parsing its `techpack.yaml` manifest and wrapping it in an `ExternalPackAdapter`.
 struct ExternalPackLoader: Sendable {

@@ -4,7 +4,7 @@ import Foundation
 struct PackFetcher: Sendable {
     let shell: ShellRunner
     let output: CLIOutput
-    let packsDirectory: URL // ~/.claude/packs/
+    let packsDirectory: URL // ~/.mcs/packs/
 
     struct FetchResult: Sendable {
         let localPath: URL     // Where the pack was cloned to
@@ -14,7 +14,7 @@ struct PackFetcher: Sendable {
 
     // MARK: - Fetch (Clone)
 
-    /// Clone a pack repo to `~/.claude/packs/<identifier>/`.
+    /// Clone a pack repo to `~/.mcs/packs/<identifier>/`.
     /// If `ref` is specified, check out that ref (tag, branch, or commit).
     /// If the pack directory already exists, it is removed first for a clean state.
     func fetch(url: String, identifier: String, ref: String?) throws -> FetchResult {

@@ -1,9 +1,9 @@
 import Foundation
 import Yams
 
-/// Manages the `~/.claude/.mcs-packs.yaml` file that tracks installed external packs.
+/// Manages the `~/.mcs/registry.yaml` file that tracks installed external packs.
 struct PackRegistryFile: Sendable {
-    let path: URL // ~/.claude/.mcs-packs.yaml
+    let path: URL // ~/.mcs/registry.yaml
 
     struct PackEntry: Codable, Sendable, Equatable {
         let identifier: String
@@ -12,7 +12,7 @@ struct PackRegistryFile: Sendable {
         let sourceURL: String           // Git clone URL
         let ref: String?                // Git tag/branch/commit
         let commitSHA: String           // Exact commit for reproducibility
-        let localPath: String           // Relative to ~/.claude/packs/
+        let localPath: String           // Relative to ~/.mcs/packs/
         let addedAt: String             // ISO 8601 date
         let trustedScriptHashes: [String: String]  // relativePath -> SHA-256
     }

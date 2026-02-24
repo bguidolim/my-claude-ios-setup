@@ -47,7 +47,7 @@ struct ProjectState {
         load()
     }
 
-    /// Initialize with a specific state file path (used for global state at `~/.claude/.mcs-global`).
+    /// Initialize with a specific state file path (used for global state at `~/.mcs/global-state.json`).
     init(stateFile: URL) {
         self.path = stateFile
         self.storage = StateStorage()

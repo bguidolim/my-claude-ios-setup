@@ -30,10 +30,10 @@ struct LockfileOperations {
             if result.succeeded {
                 output.success("  \(locked.identifier): checked out \(String(locked.commitSHA.prefix(7)))")
             } else {
-                // Try fetching first, then checkout
+                // Shallow-fetch latest, then retry checkout
                 _ = shell.run(
                     "/usr/bin/git",
-                    arguments: ["-C", packPath.path, "fetch", "--all"]
+                    arguments: ["-C", packPath.path, "fetch", "--depth", "1", "origin"]
                 )
                 let retry = shell.run(
                     "/usr/bin/git",

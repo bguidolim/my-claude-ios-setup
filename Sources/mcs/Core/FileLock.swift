@@ -22,7 +22,7 @@ enum FileLockError: Error, LocalizedError {
 ///
 /// Conform to `LockedCommand` instead of `ParsableCommand` for any command
 /// that writes to shared state (config files, pack registry, project state).
-/// The default `run()` acquires `~/.claude/.mcs-lock` via POSIX `flock()`
+/// The default `run()` acquires `~/.mcs/lock` via POSIX `flock()`
 /// before calling `perform()`, and releases it when `perform()` returns or throws.
 ///
 /// Override `skipLock` to bypass the lock for read-only modes (e.g. `--dry-run`).

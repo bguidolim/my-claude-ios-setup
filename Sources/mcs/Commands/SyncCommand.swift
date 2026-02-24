@@ -28,7 +28,7 @@ struct SyncCommand: LockedCommand {
     @Flag(name: .long, help: "Customize which components to include per pack")
     var customize = false
 
-    @Flag(name: .long, help: "Install to global ~/.claude/ scope instead of a project")
+    @Flag(name: .long, help: "Install to global scope (MCP servers with user scope, files to ~/.claude/)")
     var global = false
 
     var skipLock: Bool { dryRun || global }

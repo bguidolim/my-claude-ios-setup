@@ -321,7 +321,7 @@ struct RemovePack: LockedCommand {
         // 3. Show removal plan
         output.info("Pack: \(entry.displayName) v\(entry.version)")
         output.plain("  Source: \(entry.sourceURL)")
-        output.plain("  Local:  ~/.claude/packs/\(entry.localPath)")
+        output.plain("  Local:  ~/.mcs/packs/\(entry.localPath)")
         if let manifest {
             let componentCount = manifest.components?.count ?? 0
             let hookCount = manifest.hookContributions?.count ?? 0

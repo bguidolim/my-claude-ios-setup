@@ -12,6 +12,10 @@ struct Environment: Sendable {
     let memoriesDirectory: URL
     let binDirectory: URL
 
+    /// mcs-internal state directory (`~/.mcs/`).
+    /// Stores pack checkouts, registry, global state, and lock file.
+    let mcsDirectory: URL
+
     let architecture: Architecture
     let brewPrefix: String
     let brewPath: String
@@ -35,6 +39,8 @@ struct Environment: Sendable {
         self.commandsDirectory = claudeDir.appendingPathComponent("commands")
         self.memoriesDirectory = claudeDir.appendingPathComponent("memories")
         self.binDirectory = claudeDir.appendingPathComponent("bin")
+
+        self.mcsDirectory = home.appendingPathComponent(".mcs")
 
         #if arch(arm64)
         self.architecture = .arm64
@@ -61,24 +67,24 @@ struct Environment: Sendable {
         }
     }
 
-    /// Directory where external tech pack checkouts live.
+    /// Directory where external tech pack checkouts live (`~/.mcs/packs/`).
     var packsDirectory: URL {
-        claudeDirectory.appendingPathComponent(Constants.ExternalPacks.packsDirectory)
+        mcsDirectory.appendingPathComponent(Constants.ExternalPacks.packsDirectory)
     }
 
-    /// YAML registry of installed external packs.
+    /// YAML registry of installed external packs (`~/.mcs/registry.yaml`).
     var packsRegistry: URL {
-        claudeDirectory.appendingPathComponent(Constants.ExternalPacks.registryFilename)
+        mcsDirectory.appendingPathComponent(Constants.ExternalPacks.registryFilename)
     }
 
-    /// Global state file tracking globally-installed packs and artifacts.
+    /// Global state file tracking globally-installed packs and artifacts (`~/.mcs/global-state.json`).
     var globalStateFile: URL {
-        claudeDirectory.appendingPathComponent(".mcs-global")
+        mcsDirectory.appendingPathComponent("global-state.json")
     }
 
-    /// POSIX lock file for preventing concurrent mcs execution.
+    /// POSIX lock file for preventing concurrent mcs execution (`~/.mcs/lock`).
     var lockFile: URL {
-        claudeDirectory.appendingPathComponent(Constants.FileNames.mcsLock)
+        mcsDirectory.appendingPathComponent(Constants.FileNames.mcsLock)
     }
 
     /// PATH string that includes the Homebrew bin directory.

@@ -5,7 +5,7 @@ import Foundation
 /// Installs brew packages, MCP servers (scope "user"), plugins, and files
 /// into `~/.claude/` directories. Does not compose CLAUDE.local.md or
 /// settings.local.json — those are project-scoped.
-/// State is tracked at `~/.claude/.mcs-global`.
+/// State is tracked at `~/.mcs/global-state.json`.
 struct GlobalConfigurator {
     let environment: Environment
     let output: CLIOutput

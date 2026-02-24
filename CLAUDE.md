@@ -64,9 +64,9 @@ mcs cleanup --force              # Delete backups without confirmation
 ### External Pack System (`Sources/mcs/ExternalPack/`)
 - `ExternalPackManifest.swift` — YAML `techpack.yaml` schema (Codable models for components, templates, hooks, doctor checks, prompts, configure scripts)
 - `ExternalPackAdapter.swift` — bridges `ExternalPackManifest` to the `TechPack` protocol
-- `ExternalPackLoader.swift` — discovers and loads packs from `~/.claude/packs/`
+- `ExternalPackLoader.swift` — discovers and loads packs from `~/.mcs/packs/`
 - `PackFetcher.swift` — Git clone/pull for pack repositories
-- `PackRegistryFile.swift` — YAML registry of installed external packs (`~/.claude/packs.yaml`)
+- `PackRegistryFile.swift` — YAML registry of installed external packs (`~/.mcs/registry.yaml`)
 - `PackTrustManager.swift` — pack trust verification
 - `PromptExecutor.swift` — executes pack prompts (interactive value resolution during configure)
 - `ScriptRunner.swift` — sandboxed script execution for pack scripts

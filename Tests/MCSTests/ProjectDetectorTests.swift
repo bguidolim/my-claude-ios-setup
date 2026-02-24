@@ -254,7 +254,7 @@ struct ProjectStateTests {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let customFile = tmpDir.appendingPathComponent(".mcs-global")
+        let customFile = tmpDir.appendingPathComponent("global-state.json")
 
         var state = ProjectState(stateFile: customFile)
         #expect(!state.exists)

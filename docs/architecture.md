@@ -35,9 +35,10 @@ Central path resolution for all file locations. Detects architecture (arm64/x86_
 - `~/.claude/` — Claude Code configuration directory
 - `~/.claude/settings.json` — user settings (global)
 - `~/.claude.json` — MCP server registrations (global + per-project via `local` scope)
-- `~/.claude/packs/` — external tech pack checkouts
-- `~/.claude/packs.yaml` — registry of installed external packs
-- `~/.claude/.mcs-manifest` — manifest tracking globally installed files
+- `~/.mcs/packs/` — external tech pack checkouts
+- `~/.mcs/registry.yaml` — registry of installed external packs
+- `~/.mcs/global-state.json` — global sync state
+- `~/.mcs/lock` — concurrency lock file
 
 Per-project paths (created by `mcs configure`):
 - `<project>/.claude/settings.local.json` — per-project settings with hook entries
@@ -92,7 +93,7 @@ Written by `mcs configure` after convergence. Supports legacy key=value format m
 
 ### Global vs. Project State
 
-| | `~/.claude/.mcs-manifest` | `<project>/.claude/.mcs-project` |
+| | `~/.mcs/global-state.json` | `<project>/.claude/.mcs-project` |
 |---|---|---|
 | **Scope** | Machine-wide | Single project |
 | **Written by** | `mcs install` | `mcs configure` |
@@ -115,10 +116,10 @@ Wraps `claude mcp add/remove` and `claude plugin install/remove` CLI commands. M
 
 External packs are Git repositories containing a `techpack.yaml` manifest. The system has these layers:
 
-1. **PackFetcher** — clones/pulls pack repos into `~/.claude/packs/<name>/`
+1. **PackFetcher** — clones/pulls pack repos into `~/.mcs/packs/<name>/`
 2. **ExternalPackManifest** — Codable model for `techpack.yaml` (components, templates, hooks, doctor checks, prompts, configure scripts)
 3. **ExternalPackAdapter** — bridges `ExternalPackManifest` to the `TechPack` protocol so external packs participate in all install/doctor/configure flows
-4. **PackRegistryFile** — YAML registry (`~/.claude/packs.yaml`) tracking which packs are installed
+4. **PackRegistryFile** — YAML registry (`~/.mcs/registry.yaml`) tracking which packs are installed
 5. **TechPackRegistry** — unified registry that loads external packs and exposes them alongside the (now empty) compiled-in pack list
 
 ### Pack Manifest (`techpack.yaml`)

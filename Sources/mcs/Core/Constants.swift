@@ -24,7 +24,7 @@ enum Constants {
         static let continuousLearningHook = "continuous-learning-activator.sh"
 
         /// The process lock file preventing concurrent mcs execution.
-        static let mcsLock = ".mcs-lock"
+        static let mcsLock = "lock"
     }
 
     // MARK: - CLI
@@ -81,7 +81,7 @@ enum Constants {
         static let manifestFilename = "techpack.yaml"
 
         /// The registry filename tracking installed packs.
-        static let registryFilename = ".mcs-packs.yaml"
+        static let registryFilename = "registry.yaml"
 
         /// The directory name for pack checkouts.
         static let packsDirectory = "packs"
