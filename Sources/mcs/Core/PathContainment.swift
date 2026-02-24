@@ -19,6 +19,17 @@ enum PathContainment {
         return isContained(path: resolvedPath, within: resolvedBase)
     }
 
+    /// Construct a URL from a relative path within a base directory, returning `nil`
+    /// if the result escapes the base via traversal (`../`) or symlinks.
+    ///
+    /// This fuses path construction and validation into a single step so callers
+    /// never hold an unchecked URL.
+    static func safePath(relativePath: String, within base: URL) -> URL? {
+        let url = base.appendingPathComponent(relativePath)
+        guard isContained(url: url, within: base) else { return nil }
+        return url
+    }
+
     /// Compute the relative path of `full` within `base`.
     /// Returns the original path unchanged if it is not within `base`.
     static func relativePath(of full: String, within base: String) -> String {

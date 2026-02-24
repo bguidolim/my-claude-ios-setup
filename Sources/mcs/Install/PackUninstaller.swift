@@ -129,32 +129,21 @@ struct PackUninstaller {
     }
 
     /// Resolve a destination path, expanding `~/.claude/` to the actual claude directory.
-    /// Returns `nil` if the resolved path escapes the expected directory (path traversal).
+    /// Returns `nil` if the resolved path escapes the expected directory (via traversal or symlinks).
     private func resolveDestination(_ destination: String) -> URL? {
-        let destURL: URL
-        let expectedParent: URL
-
         if destination.hasPrefix("~/.claude/") {
             let relative = String(destination.dropFirst("~/.claude/".count))
-            destURL = environment.claudeDirectory.appendingPathComponent(relative)
-            expectedParent = environment.claudeDirectory
+            return PathContainment.safePath(relativePath: relative, within: environment.claudeDirectory)
         } else if destination.hasPrefix("~/") {
             let relative = String(destination.dropFirst("~/".count))
-            destURL = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(relative)
-            expectedParent = FileManager.default.homeDirectoryForCurrentUser
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            return PathContainment.safePath(relativePath: relative, within: home)
         } else {
-            destURL = URL(fileURLWithPath: destination)
-            expectedParent = environment.claudeDirectory
+            let destURL = URL(fileURLWithPath: destination)
+            guard PathContainment.isContained(url: destURL, within: environment.claudeDirectory) else {
+                return nil
+            }
+            return destURL
         }
-
-        // Validate destination doesn't escape expected directory via path traversal
-        let resolvedDest = destURL.resolvingSymlinksInPath()
-        let parentPath = expectedParent.resolvingSymlinksInPath().path
-        let parentPrefix = parentPath.hasSuffix("/") ? parentPath : parentPath + "/"
-        guard resolvedDest.path.hasPrefix(parentPrefix) || resolvedDest.path == parentPath else {
-            return nil
-        }
-        return destURL
     }
 }

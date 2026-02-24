@@ -144,7 +144,15 @@ struct ExternalPackLoader: Sendable {
 
     /// Load a pack from a registry entry.
     private func loadEntry(_ entry: PackRegistryFile.PackEntry) throws -> ExternalPackAdapter {
-        let packPath = environment.packsDirectory.appendingPathComponent(entry.localPath)
+        guard let packPath = PathContainment.safePath(
+            relativePath: entry.localPath,
+            within: environment.packsDirectory
+        ) else {
+            throw LoadError.localCheckoutMissing(
+                identifier: entry.identifier,
+                path: entry.localPath
+            )
+        }
         let fm = FileManager.default
 
         guard fm.fileExists(atPath: packPath.path) else {

@@ -110,7 +110,19 @@ struct AddPack: LockedCommand {
 
         // Build collision input from loaded manifests for better detection
         let existingManifestInputs: [PackRegistryFile.CollisionInput] = registryData.packs.map { entry in
-            let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+            guard let packPath = PathContainment.safePath(
+                relativePath: entry.localPath,
+                within: env.packsDirectory
+            ) else {
+                output.warn("Pack '\(entry.identifier)' has an unsafe localPath — skipping collision check")
+                return PackRegistryFile.CollisionInput(
+                    identifier: entry.identifier,
+                    mcpServerNames: [],
+                    skillDirectories: [],
+                    templateSectionIDs: [],
+                    componentIDs: []
+                )
+            }
             let manifestURL = packPath.appendingPathComponent(Constants.ExternalPacks.manifestFilename)
             guard let existingManifest = try? ExternalPackManifest.load(from: manifestURL) else {
                 output.warn("Could not load manifest for '\(entry.identifier)', collision detection may be incomplete")
@@ -183,7 +195,14 @@ struct AddPack: LockedCommand {
         }
 
         // 6. Move from temp location to final location
-        let finalPath = env.packsDirectory.appendingPathComponent(manifest.identifier)
+        guard let finalPath = PathContainment.safePath(
+            relativePath: manifest.identifier,
+            within: env.packsDirectory
+        ) else {
+            try? fetcher.remove(packPath: fetchResult.localPath)
+            output.error("Pack identifier escapes packs directory — refusing to install")
+            throw ExitCode.failure
+        }
         let fm = FileManager.default
         do {
             if fm.fileExists(atPath: finalPath.path) {
@@ -296,7 +315,13 @@ struct RemovePack: LockedCommand {
             throw ExitCode.failure
         }
 
-        let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+        guard let packPath = PathContainment.safePath(
+            relativePath: entry.localPath,
+            within: env.packsDirectory
+        ) else {
+            output.error("Pack localPath escapes packs directory — refusing to proceed")
+            throw ExitCode.failure
+        }
 
         // 2. Load manifest from checkout (if available) to know what to reverse
         let manifest: ExternalPackManifest?
@@ -443,7 +468,13 @@ struct UpdatePack: LockedCommand {
         for entry in packsToUpdate {
             output.info("Checking \(entry.displayName)...")
 
-            let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+            guard let packPath = PathContainment.safePath(
+                relativePath: entry.localPath,
+                within: env.packsDirectory
+            ) else {
+                output.error("Pack '\(entry.identifier)' has a localPath that escapes packs directory — skipping")
+                continue
+            }
 
             // Fetch updates
             let updateResult: PackFetcher.FetchResult?
@@ -580,7 +611,12 @@ struct ListPacks: ParsableCommand {
     }
 
     private func packStatus(entry: PackRegistryFile.PackEntry, env: Environment) -> String {
-        let packPath = env.packsDirectory.appendingPathComponent(entry.localPath)
+        guard let packPath = PathContainment.safePath(
+            relativePath: entry.localPath,
+            within: env.packsDirectory
+        ) else {
+            return "(invalid path — escapes packs directory)"
+        }
         let fm = FileManager.default
 
         guard fm.fileExists(atPath: packPath.path) else {

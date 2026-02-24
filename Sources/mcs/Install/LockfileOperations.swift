@@ -26,7 +26,15 @@ struct LockfileOperations {
                 continue
             }
 
-            let packPath = environment.packsDirectory.appendingPathComponent(locked.identifier)
+            guard let packPath = PathContainment.safePath(
+                relativePath: locked.identifier,
+                within: environment.packsDirectory
+            ) else {
+                output.warn("  \(locked.identifier): identifier escapes packs directory — skipping")
+                failedPacks.append(locked.identifier)
+                continue
+            }
+
             guard FileManager.default.fileExists(atPath: packPath.path) else {
                 output.warn("  Pack '\(locked.identifier)' not found locally. Run 'mcs pack add \(locked.sourceURL)' first.")
                 failedPacks.append(locked.identifier)
@@ -86,7 +94,14 @@ struct LockfileOperations {
 
         var updatedData = registryData
         for entry in registryData.packs {
-            let packPath = environment.packsDirectory.appendingPathComponent(entry.localPath)
+            guard let packPath = PathContainment.safePath(
+                relativePath: entry.localPath,
+                within: environment.packsDirectory
+            ) else {
+                output.warn("  \(entry.identifier): localPath escapes packs directory — skipping")
+                continue
+            }
+
             do {
                 if let result = try fetcher.update(packPath: packPath, ref: entry.ref) {
                     let loader = ExternalPackLoader(environment: environment, registry: registryFile)
