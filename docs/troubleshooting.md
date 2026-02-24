@@ -11,25 +11,25 @@ mcs doctor --fix     # Diagnose and auto-fix what's possible
 
 ### Homebrew not installed
 
-**Symptom**: `mcs install` fails at the welcome phase with "Homebrew is required but not installed."
+**Symptom**: `mcs sync` fails with "Homebrew is required but not installed."
 
 **Fix**: Install Homebrew first:
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Then re-run `mcs install`.
+Then re-run `mcs sync`.
 
 ### Xcode Command Line Tools missing
 
-**Symptom**: `mcs install` fails with "Xcode Command Line Tools not found."
+**Symptom**: `mcs sync` fails with "Xcode Command Line Tools not found."
 
 **Fix**:
 ```bash
 xcode-select --install
 ```
 
-Follow the system dialog to complete installation, then re-run `mcs install`.
+Follow the system dialog to complete installation, then re-run `mcs sync`.
 
 ### Node.js not found
 
@@ -37,7 +37,7 @@ Follow the system dialog to complete installation, then re-run `mcs install`.
 
 **Fix**: Node.js is auto-resolved as a dependency if your pack declares it. Re-run:
 ```bash
-mcs install
+mcs sync
 ```
 
 If you manage Node.js through nvm or similar, make sure it's available in your PATH during installation.
@@ -77,15 +77,15 @@ claude --version
 
 **Symptom**: `mcs doctor` shows a server as "not registered" or `claude mcp list` doesn't show it.
 
-**Fix**: Re-run configure for your project:
+**Fix**: Re-run sync for your project:
 ```bash
 cd /path/to/project
-mcs configure
+mcs sync
 ```
 
-Or re-run install for global registration:
+Or for global-scope servers:
 ```bash
-mcs install
+mcs sync --global
 ```
 
 ### MCP server registered with wrong scope
@@ -101,7 +101,7 @@ MCP servers have three scopes:
 ```bash
 claude mcp remove <server-name>
 cd /path/to/project
-mcs configure
+mcs sync
 ```
 
 ### docs-mcp-server semantic search not working
@@ -141,10 +141,10 @@ Sosumi uses HTTP transport (external service at `https://sosumi.ai/mcp`). Check 
 claude mcp list
 ```
 
-If not registered, re-run configure:
+If not registered, re-run sync:
 ```bash
 cd /path/to/project
-mcs configure
+mcs sync
 ```
 
 ## Plugins
@@ -153,9 +153,9 @@ mcs configure
 
 **Symptom**: `mcs doctor` shows a plugin as "not enabled."
 
-**Fix**: Re-run installation:
+**Fix**: Re-run sync:
 ```bash
-mcs install
+mcs sync
 ```
 
 You can also manually install a plugin:
@@ -167,32 +167,32 @@ claude plugin install <plugin-name>@<org>
 
 ### No packs registered
 
-**Symptom**: `mcs configure` shows "No packs registered."
+**Symptom**: `mcs sync` shows "No packs registered."
 
 **Fix**: Add a pack first:
 ```bash
 mcs pack add https://github.com/user/my-pack
-mcs configure
+mcs sync
 ```
 
 ### CLAUDE.local.md not found
 
 **Symptom**: `mcs doctor` skips project checks or shows "CLAUDE.local.md not found."
 
-**Fix**: Configure the project:
+**Fix**: Sync the project:
 ```bash
 cd /path/to/your/project
-mcs configure
+mcs sync
 ```
 
 ### CLAUDE.local.md sections outdated
 
 **Symptom**: `mcs doctor` shows "outdated sections" with version mismatches.
 
-**Fix**: Re-run configure to update sections:
+**Fix**: Re-run sync to update sections:
 ```bash
 cd /path/to/your/project
-mcs configure
+mcs sync
 ```
 
 Managed sections (inside `<!-- mcs:begin/end -->` markers) are updated. Content you added outside markers is preserved.
@@ -201,14 +201,14 @@ Managed sections (inside `<!-- mcs:begin/end -->` markers) are updated. Content 
 
 **Symptom**: `mcs doctor` warns "CLAUDE.local.md exists but .mcs-project missing."
 
-**Fix**: `mcs doctor --fix` can create the state file by inferring packs from CLAUDE.local.md section markers. Or re-run configure:
+**Fix**: `mcs doctor --fix` can create the state file by inferring packs from CLAUDE.local.md section markers. Or re-run sync:
 ```bash
-mcs configure
+mcs sync
 ```
 
 ### Per-project artifacts not appearing
 
-**Symptom**: After `mcs configure`, expected files are missing from `<project>/.claude/`.
+**Symptom**: After `mcs sync`, expected files are missing from `<project>/.claude/`.
 
 **Causes**:
 1. The pack wasn't selected during multi-select
@@ -219,19 +219,19 @@ mcs configure
 # Check what's configured
 cat .claude/.mcs-project
 
-# Re-run configure and ensure the pack is selected
-mcs configure
+# Re-run sync and ensure the pack is selected
+mcs sync
 ```
 
 ### Unpaired section markers
 
-**Symptom**: `mcs configure` warns about "unpaired section markers."
+**Symptom**: `mcs sync` warns about "unpaired section markers."
 
 This means a `<!-- mcs:begin X -->` marker exists without a matching `<!-- mcs:end X -->` (or vice versa) in CLAUDE.local.md.
 
-**Fix**: Manually add the missing marker, then re-run configure:
+**Fix**: Manually add the missing marker, then re-run sync:
 ```bash
-mcs configure
+mcs sync
 ```
 
 ## Serena Memory Migration
@@ -291,7 +291,7 @@ mcs doctor --fix
 
 ### Too many backup files
 
-Over time, `mcs install` and `mcs configure` create timestamped backups of files they modify.
+Over time, `mcs sync` creates timestamped backups of files it modifies.
 
 **Fix**: Clean them up:
 ```bash

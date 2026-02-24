@@ -8,12 +8,12 @@
 > [!WARNING]
 > **This project is under active development.** Expect breaking changes, bugs, and incomplete features. Migrations between versions are not guaranteed. Use at your own risk.
 
-A configuration engine for Claude Code. Package your MCP servers, plugins, hooks, skills, commands, and settings into shareable **tech packs** — then install, configure, and maintain them across projects and machines.
+A configuration engine for Claude Code. Package your MCP servers, plugins, hooks, skills, commands, and settings into shareable **tech packs** — then sync and maintain them across projects and machines.
 
 ```bash
 brew install bguidolim/tap/my-claude-setup
 mcs pack add https://github.com/you/your-pack
-mcs configure
+mcs sync
 ```
 
 ---
@@ -24,8 +24,7 @@ mcs configure
 
 You add packs. The engine handles the rest:
 
-- **Install** dependencies, MCP servers, and plugins
-- **Configure** per-project artifacts (hooks, skills, commands, templates, settings)
+- **Sync** dependencies, MCP servers, plugins, hooks, skills, commands, templates, and settings
 - **Verify** everything with `mcs doctor`
 - **Converge** to the desired state on re-run (add, update, or remove packs cleanly)
 
@@ -48,7 +47,7 @@ Think of it as **Terraform for your Claude Code environment**.
 
 | Manual Claude Code Setup | With `mcs` |
 |--------------------------|------------|
-| Install MCP servers one by one | `mcs pack add` + `mcs configure` |
+| Install MCP servers one by one | `mcs pack add` + `mcs sync` |
 | Hand-edit `settings.json` | Managed, non-destructive settings composition |
 | Copy hooks between projects | Auto-installed per-project from packs |
 | Configuration drifts over time | `mcs doctor --fix` repairs drift |
@@ -66,12 +65,9 @@ brew install bguidolim/tap/my-claude-setup
 # Add a tech pack
 mcs pack add https://github.com/you/your-pack
 
-# Install global components (brew packages, plugins)
-mcs install
-
-# Configure a project
+# Sync a project (installs dependencies + configures artifacts)
 cd ~/Developer/my-project
-mcs configure
+mcs sync
 
 # Verify everything
 mcs doctor
@@ -96,15 +92,15 @@ mcs doctor
 ```
 mcs pack add <url>      → Register a tech pack from a Git repo
 mcs pack list           → See registered packs
-mcs install             → Install global components (brew, plugins)
-mcs configure [path]    → Per-project setup: select packs, install artifacts
+mcs sync [path]         → Sync configuration: select packs, install artifacts
+mcs sync --global       → Sync global-scope components (brew, plugins, MCP)
 mcs doctor [--fix]      → Diagnose and repair configuration
 mcs cleanup             → Remove stale backup files
 ```
 
 ### Per-Project Artifacts
 
-When you run `mcs configure` in a project, the engine:
+When you run `mcs sync` in a project, the engine:
 
 1. Lets you select which packs to apply
 2. Resolves prompts (detects project files, asks for config values)
@@ -121,7 +117,7 @@ When you run `mcs configure` in a project, the engine:
 
 4. Tracks everything in `<project>/.claude/.mcs-project` for clean convergence
 
-Re-running `mcs configure` converges to the desired state — new packs are added, deselected packs are fully cleaned up, unchanged packs are updated idempotently.
+Re-running `mcs sync` converges to the desired state — new packs are added, deselected packs are fully cleaned up, unchanged packs are updated idempotently.
 
 ---
 
@@ -205,32 +201,37 @@ Schema reference: [Tech Pack Schema](docs/techpack-schema.md)
 | Guarantee | Meaning |
 |-----------|---------|
 | Backups | Timestamped backup before modifying files with user content |
-| Dry Run | `--dry-run` previews changes without applying them |
-| Selective Install | Choose components with `--customize` or install all |
+| Dry Run | `mcs sync --dry-run` previews changes without applying them |
+| Selective Install | Choose components with `mcs sync --customize` or apply all |
 | Idempotent | Safe to re-run at any time |
 | Non-Destructive | User content in CLAUDE.local.md preserved via section markers |
 | Convergent | Deselected packs are fully cleaned up |
 | Trust Verification | Pack scripts are hashed at add-time, verified at load-time |
+| Lockfile | `mcs.lock.yaml` pins pack versions for reproducible builds |
 
 ---
 
 ## Commands Reference
 
 ```bash
+# Sync (primary command)
+mcs sync [path]                  # Interactive project sync (default command)
+mcs sync --pack <name>           # Non-interactive: apply specific pack(s) (repeatable)
+mcs sync --all                   # Apply all registered packs without prompts
+mcs sync --dry-run               # Preview what would change
+mcs sync --customize             # Per-pack component selection
+mcs sync --global                # Sync global scope (MCP servers, brew, plugins)
+mcs sync --lock                  # Checkout locked versions from mcs.lock.yaml
+mcs sync --update                # Fetch latest versions and update mcs.lock.yaml
+
 # Pack management
 mcs pack add <url>               # Add a tech pack from a Git URL
+mcs pack add <url> --ref <tag>   # Add at a specific tag, branch, or commit
+mcs pack add <url> --preview     # Preview pack contents without installing
 mcs pack remove <name>           # Remove a registered pack
+mcs pack remove <name> --force   # Remove without confirmation
 mcs pack list                    # List registered packs
 mcs pack update [name]           # Update pack(s) to latest
-
-# Installation
-mcs install                      # Interactive global component install
-mcs install --all                # Install everything from all packs
-mcs install --dry-run            # Preview what would be installed
-
-# Project configuration
-mcs configure [path]             # Per-project setup with pack selection
-mcs configure --pack <name>      # Non-interactive: apply specific pack(s)
 
 # Health checks
 mcs doctor                       # Diagnose installation health

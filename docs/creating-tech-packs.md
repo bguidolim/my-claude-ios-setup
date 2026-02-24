@@ -1,6 +1,6 @@
 # Creating Tech Packs
 
-A tech pack is your Claude Code setup — packaged as a Git repo and shareable with anyone. It bundles MCP servers, plugins, hooks, skills, commands, templates, and settings into a single `techpack.yaml` file that `mcs` knows how to install, configure, and maintain.
+A tech pack is your Claude Code setup — packaged as a Git repo and shareable with anyone. It bundles MCP servers, plugins, hooks, skills, commands, templates, and settings into a single `techpack.yaml` file that `mcs` knows how to sync and maintain.
 
 Think of it like a dotfiles repo, but specifically for Claude Code.
 
@@ -51,12 +51,12 @@ git push -u origin main
 mcs pack add https://github.com/you/my-first-pack
 ```
 
-### 4. Configure a project
+### 4. Sync a project
 
 ```bash
 cd ~/Developer/some-project
-mcs configure    # Select your pack from the list
-mcs doctor       # Verify everything installed correctly
+mcs sync          # Select your pack from the list
+mcs doctor        # Verify everything installed correctly
 ```
 
 You now have a working tech pack. Let's make it more useful.
@@ -82,7 +82,7 @@ components:
     brew: gh
 ```
 
-When a user runs `mcs install`, these get installed via `brew install`. The engine auto-verifies them with `mcs doctor` (checks if the command is on PATH).
+When a user runs `mcs sync`, these get installed via `brew install`. The engine auto-verifies them with `mcs doctor` (checks if the command is on PATH).
 
 Need to depend on Homebrew itself? That's a special case — Homebrew can't install itself, so use `shell:` with an explicit doctor check:
 
@@ -306,7 +306,7 @@ Never run `xcodebuild` directly — use XcodeBuildMCP tools instead.
 
 ### How it works
 
-When a user runs `mcs configure`, the template content is inserted into `CLAUDE.local.md` between section markers:
+When a user runs `mcs sync`, the template content is inserted into `CLAUDE.local.md` between section markers:
 
 ```markdown
 <!-- mcs:begin my-pack.instructions v1.0.0 -->
@@ -328,7 +328,7 @@ Users can add their own content outside these markers — `mcs` only manages the
 
 ## Prompts
 
-Prompts gather values from the user during `mcs configure`. These values are available as `__KEY__` placeholders in templates and as `MCS_RESOLVED_KEY` environment variables in scripts.
+Prompts gather values from the user during `mcs sync`. These values are available as `__KEY__` placeholders in templates and as `MCS_RESOLVED_KEY` environment variables in scripts.
 
 ```yaml
 prompts:
@@ -459,7 +459,7 @@ echo "Created .xcodebuildmcp/config.yaml for $project_file"
 
 ## How Convergence Works
 
-`mcs configure` is **idempotent** — safe to run repeatedly. The engine tracks what each pack installed and converges to the desired state:
+`mcs sync` is **idempotent** — safe to run repeatedly. The engine tracks what each pack installed and converges to the desired state:
 
 - **Add a pack** → installs all its components (MCP servers, files, templates, settings)
 - **Remove a pack** → cleans up everything it installed (removes MCP servers, deletes files, removes template sections)
@@ -488,9 +488,9 @@ This tracking lives in `<project>/.claude/.mcs-project`. You don't need to manag
 # Add your pack (local path or GitHub URL)
 mcs pack add /path/to/my-pack
 
-# Configure a test project
+# Sync a test project
 cd ~/Developer/test-project
-mcs configure             # Select your pack
+mcs sync                  # Select your pack
 
 # Verify
 mcs doctor                # All checks should pass
@@ -498,13 +498,13 @@ ls -la .claude/           # Inspect installed artifacts
 cat CLAUDE.local.md       # Check template sections
 
 # Test removal — deselect your pack
-mcs configure             # Deselect it
+mcs sync                  # Deselect it
 ls -la .claude/           # Artifacts should be gone
 cat CLAUDE.local.md       # Template sections removed
 
 # Test updates — make a change to your pack, then
 mcs pack update my-pack
-mcs configure             # Re-select — should pick up changes
+mcs sync                  # Re-select — should pick up changes
 ```
 
 ---
@@ -519,7 +519,7 @@ mcs configure             # Re-select — should pick up changes
 
 **Make hooks resilient.** Always start with `set -euo pipefail` and `trap 'exit 0' ERR`. Check for required tools before using them (`command -v jq >/dev/null 2>&1 || exit 0`). A crashing hook blocks Claude Code.
 
-**Use `isRequired: true`** for components that should always be installed (settings, gitignore). Required components can't be deselected during `mcs install --customize`.
+**Use `isRequired: true`** for components that should always be installed (settings, gitignore). Required components can't be deselected during `mcs sync --customize`.
 
 **Add `fixCommand`** to doctor checks when auto-repair is possible. Users love `mcs doctor --fix`.
 

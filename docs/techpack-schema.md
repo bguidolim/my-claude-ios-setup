@@ -15,7 +15,7 @@ Complete field-by-field reference for `techpack.yaml`. For a tutorial-style intr
 | `peerDependencies` | `[PeerDependency]` | No | Other packs this pack requires |
 | `components` | `[Component]` | No | Installable components (see below) |
 | `templates` | `[Template]` | No | CLAUDE.local.md section contributions |
-| `prompts` | `[Prompt]` | No | Interactive prompts for `mcs configure` |
+| `prompts` | `[Prompt]` | No | Interactive prompts for `mcs sync` |
 | `configureProject` | `ConfigureProject` | No | Script to run after project configuration |
 | `supplementaryDoctorChecks` | `[DoctorCheck]` | No | Pack-level health checks |
 | `hookContributions` | `[HookContribution]` | No | Legacy hook fragments (prefer `hook:` components) |
@@ -275,7 +275,7 @@ The explicit form with `type` + `installAction` is always supported:
 
 ## Templates
 
-Templates contribute sections to `CLAUDE.local.md` during `mcs configure`.
+Templates contribute sections to `CLAUDE.local.md` during `mcs sync`.
 
 ```yaml
 templates:
@@ -306,13 +306,13 @@ Templates are wrapped in HTML comment markers in `CLAUDE.local.md`:
 <!-- mcs:end my-pack.instructions -->
 ```
 
-Content outside markers is preserved. Re-running `mcs configure` updates only the managed sections.
+Content outside markers is preserved. Re-running `mcs sync` updates only the managed sections.
 
 ---
 
 ## Prompts
 
-Prompts gather values from the user during `mcs configure`.
+Prompts gather values from the user during `mcs sync`.
 
 ```yaml
 prompts:

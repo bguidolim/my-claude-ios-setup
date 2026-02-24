@@ -15,17 +15,24 @@ swift test                       # Run tests
 swift build -c release --arch arm64 --arch x86_64  # Universal binary
 
 # CLI usage (after install)
-mcs install                      # Interactive global component install (brew, MCP, plugins)
-mcs install --all                # Install everything from all registered packs
-mcs install --dry-run            # Preview what would be installed
-mcs configure [path]             # Per-project setup: multi-select packs, compose artifacts
-mcs configure --pack ios         # Non-interactive: apply specific packs (repeatable)
+mcs sync [path]                  # Sync project: multi-select packs, compose artifacts (default command)
+mcs sync --pack ios              # Non-interactive: apply specific packs (repeatable)
+mcs sync --all                   # Apply all registered packs without prompts
+mcs sync --dry-run               # Preview what would change
+mcs sync --customize             # Per-pack component selection
+mcs sync --global                # Sync global scope (MCP servers, brew, plugins to ~/.claude/)
+mcs sync --lock                  # Checkout locked versions from mcs.lock.yaml
+mcs sync --update                # Fetch latest versions and update mcs.lock.yaml
 mcs doctor                       # Diagnose installation health
 mcs doctor --fix                 # Diagnose and auto-fix issues
 mcs doctor --pack ios            # Only check a specific pack
 mcs pack add <url>               # Add an external tech pack from a Git URL
+mcs pack add <url> --ref <tag>   # Add at a specific tag, branch, or commit
+mcs pack add <url> --preview     # Preview pack contents without installing
 mcs pack remove <name>           # Remove an external tech pack
+mcs pack remove <name> --force   # Remove without confirmation
 mcs pack list                    # List registered external packs
+mcs pack update [name]           # Update pack(s) to latest version
 mcs cleanup                      # Find and delete backup files
 mcs cleanup --force              # Delete backups without confirmation
 ```
@@ -38,10 +45,10 @@ mcs cleanup --force              # Delete backups without confirmation
 - **Tests/MCSTests/** — test target
 
 ### Entry Point
-- `CLI.swift` — `@main` struct, `MCSVersion.current`, subcommand registration
+- `CLI.swift` — `@main` struct, `MCSVersion.current`, subcommand registration (`SyncCommand` is the default subcommand)
 
 ### Core (`Sources/mcs/Core/`)
-- `Constants.swift` — centralized string constants (file names, CLI paths, Ollama config, hooks, Serena, JSON keys, plugins)
+- `Constants.swift` — centralized string constants (file names, CLI paths, hooks, Serena, JSON keys, external packs, plugins)
 - `Environment.swift` — paths, arch detection, brew path, shell RC
 - `CLIOutput.swift` — ANSI colors, logging, prompts, multi-select, doctor summary
 - `ShellRunner.swift` — Process execution wrapper
@@ -50,7 +57,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `GitignoreManager.swift` — global gitignore management, core entry list
 - `ClaudeIntegration.swift` — `claude mcp add/remove` (with scope support), `claude plugin install/remove`
 - `Homebrew.swift` — brew detection, package install
-- `OllamaService.swift` — Ollama daemon management, model pull, health check
+- `Lockfile.swift` — `mcs.lock.yaml` model for pinning pack versions
 - `ProjectDetector.swift` — walk-up project root detection (`.git/` or `CLAUDE.local.md`)
 - `ProjectState.swift` — per-project `.claude/.mcs-project` JSON state (configured packs, per-pack `PackArtifactRecord`, version)
 - `MCSError.swift` — error types for the CLI
@@ -68,7 +75,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `PackFetcher.swift` — Git clone/pull for pack repositories
 - `PackRegistryFile.swift` — YAML registry of installed external packs (`~/.mcs/registry.yaml`)
 - `PackTrustManager.swift` — pack trust verification
-- `PromptExecutor.swift` — executes pack prompts (interactive value resolution during configure)
+- `PromptExecutor.swift` — executes pack prompts (interactive value resolution during sync)
 - `ScriptRunner.swift` — sandboxed script execution for pack scripts
 - `ExternalDoctorCheck.swift` — factory for converting YAML doctor check definitions to `DoctorCheck` instances
 
@@ -80,19 +87,21 @@ mcs cleanup --force              # Delete backups without confirmation
 - `SectionValidator.swift` — validation of CLAUDE.local.md section markers
 
 ### Commands (`Sources/mcs/Commands/`)
-- `InstallCommand.swift` — global component install flow with interactive selection
+- `SyncCommand.swift` — primary command (`mcs sync`), handles both project-scoped and global-scoped sync with `--pack`, `--all`, `--dry-run`, `--customize`, `--global`, `--lock`, `--update` flags
 - `DoctorCommand.swift` — health checks with optional --fix and --pack filter
-- `ConfigureCommand.swift` — per-project configuration: multi-select packs or `--pack` flag for CI
 - `CleanupCommand.swift` — backup file management with --force flag
 - `PackCommand.swift` — `mcs pack add/remove/list/update` subcommands
+- `InstallCommand.swift` — deprecated shim, warns to use `mcs sync`
+- `ConfigureCommand.swift` — deprecated shim, warns to use `mcs sync`
 
 ### Install (`Sources/mcs/Install/`)
-- `Installer.swift` — 5-phase global install orchestrator (welcome, selection, summary, install, post-summary)
+- `ProjectConfigurator.swift` — per-project multi-pack convergence engine (artifact tracking, settings composition, CLAUDE.local.md writing, gitignore)
+- `GlobalConfigurator.swift` — global-scope sync engine (brew packages, plugins, MCP servers to ~/.claude/)
 - `ComponentExecutor.swift` — dispatches install actions (brew, MCP servers, plugins, gitignore, project-scoped file copy/removal)
 - `SelectionState.swift` — tracks selected component IDs during install
 - `PackInstaller.swift` — auto-installs missing pack components
 - `PackUninstaller.swift` — removes pack components (MCP servers, plugins, settings keys)
-- `ProjectConfigurator.swift` — per-project multi-pack convergence engine (artifact tracking, settings composition, CLAUDE.local.md writing, gitignore)
+- `LockfileOperations.swift` — reads/writes `mcs.lock.yaml`, checks out locked versions, updates lockfile
 
 ### Templates (`Sources/mcs/Templates/`)
 - `TemplateEngine.swift` — `__PLACEHOLDER__` substitution
@@ -107,14 +116,15 @@ mcs cleanup --force              # Delete backups without confirmation
 ## Key Design Decisions
 
 - **Pure engine, zero bundled content**: `mcs` ships no templates, hooks, settings, or skills — all features come from external packs users add via `mcs pack add`
-- **`mcs configure` is the primary command**: per-project multi-select of registered packs, fully idempotent convergence (add/remove/update), per-project artifact placement
+- **`mcs sync` is the primary command**: per-project multi-select of registered packs, fully idempotent convergence (add/remove/update), per-project artifact placement. `--global` flag handles global-scope install
 - **Per-project artifacts**: skills, hooks, commands, and `settings.local.json` go to `<project>/.claude/`; only brew packages and plugins are global
 - **MCP scope defaults to `local`**: per-user, per-project isolation via `claude mcp add -s local` (stored in `~/.claude.json` keyed by project path)
-- **Convergent configure**: `ProjectState` records per-pack `PackArtifactRecord` (MCP servers, files, template sections); re-running converges to desired state by diffing previous vs. selected packs
-- **External pack protocol**: `TechPack` protocol with `ExternalPackAdapter` bridging YAML manifests (`techpack.yaml`) to the same install/doctor/configure flows
+- **Convergent sync**: `ProjectState` records per-pack `PackArtifactRecord` (MCP servers, files, template sections); re-running converges to desired state by diffing previous vs. selected packs
+- **External pack protocol**: `TechPack` protocol with `ExternalPackAdapter` bridging YAML manifests (`techpack.yaml`) to the same install/doctor/sync flows
 - **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
 - **File-based memory**: memories stored in `<project>/.claude/memories/*.md`, indexed by docs-mcp-server for semantic search
 - **Settings composition**: each pack's hook entries compose into `<project>/.claude/settings.local.json` as individual `HookGroup` entries
 - **Backup for mixed-ownership files**: timestamped backup before modifying files with user content (CLAUDE.local.md); tool-managed files are not backed up since they can be regenerated
 - **Component-derived doctor checks**: `ComponentDefinition` is the single source of truth — `deriveDoctorCheck()` auto-generates verification from `installAction`, supplementary checks handle extras
 - **Project awareness**: doctor detects project root (walk-up for `.git/`), resolves packs from `.claude/.mcs-project` before falling back to section marker inference, then to global manifest
+- **Lockfile support**: `mcs.lock.yaml` pins pack versions for reproducible builds; `--lock` checks out pinned versions, `--update` fetches latest

@@ -9,7 +9,7 @@ Package.swift                    # swift-tools-version: 6.0, macOS 13+
 Sources/mcs/
     CLI.swift                    # @main entry, version, subcommand registration
     Core/                        # Shared infrastructure
-    Commands/                    # CLI subcommands (install, doctor, configure, cleanup, pack)
+    Commands/                    # CLI subcommands (sync, doctor, cleanup, pack)
     Install/                     # Installation logic, project configuration, convergence engine
     TechPack/                    # Tech pack protocol, component model, dependency resolver
     Templates/                   # Template engine and section-based file composition
@@ -22,9 +22,9 @@ Tests/MCSTests/                  # Test target
 
 `mcs` is a **pure pack management engine** with zero bundled content. It ships no templates, hooks, settings, skills, or slash commands. Everything comes from external tech packs that users add via `mcs pack add <url>`.
 
-The two primary commands:
-- **`mcs install`** — global component installation (brew packages, MCP servers, plugins)
-- **`mcs configure`** — per-project setup with multi-pack selection and convergent artifact management
+The primary command is **`mcs sync`**, which handles both global and per-project configuration:
+- **`mcs sync [path]`** — per-project setup with multi-pack selection and convergent artifact management
+- **`mcs sync --global`** — global-scope component installation (brew packages, MCP servers, plugins)
 
 ## Core Infrastructure
 
@@ -40,13 +40,14 @@ Central path resolution for all file locations. Detects architecture (arm64/x86_
 - `~/.mcs/global-state.json` — global sync state
 - `~/.mcs/lock` — concurrency lock file
 
-Per-project paths (created by `mcs configure`):
+Per-project paths (created by `mcs sync`):
 - `<project>/.claude/settings.local.json` — per-project settings with hook entries
 - `<project>/.claude/skills/` — per-project skills
 - `<project>/.claude/hooks/` — per-project hook scripts
 - `<project>/.claude/commands/` — per-project slash commands
 - `<project>/.claude/.mcs-project` — per-project state (JSON)
 - `<project>/CLAUDE.local.md` — per-project instructions with section markers
+- `<project>/mcs.lock.yaml` — lockfile pinning pack versions
 
 ### Settings (`Core/Settings.swift`)
 
@@ -89,20 +90,24 @@ Per-project state stored as JSON at `<project>/.claude/.mcs-project`. Tracks:
 - **mcs version**: the version that last wrote the file
 - **Timestamp**: when the file was last updated
 
-Written by `mcs configure` after convergence. Supports legacy key=value format migration.
+Written by `mcs sync` after convergence. Supports legacy key=value format migration.
 
 ### Global vs. Project State
 
 | | `~/.mcs/global-state.json` | `<project>/.claude/.mcs-project` |
 |---|---|---|
 | **Scope** | Machine-wide | Single project |
-| **Written by** | `mcs install` | `mcs configure` |
+| **Written by** | `mcs sync --global` | `mcs sync` |
 | **Format** | Key=value | JSON |
 | **Tracks** | Globally installed components, pack IDs, file hashes | Per-pack artifact records, configured pack IDs |
 
 ### Backup (`Core/Backup.swift`)
 
 Every file write goes through the backup system. Before overwriting a file, a timestamped copy is created (e.g., `settings.json.backup.20260222_143000`). The `mcs cleanup` command discovers and deletes these backups.
+
+### Lockfile (`Core/Lockfile.swift`)
+
+`mcs.lock.yaml` pins pack versions for reproducible builds. Created/updated by `mcs sync` after successful project sync. Used with `--lock` to checkout pinned versions or `--update` to fetch latest and refresh the lockfile.
 
 ### ClaudeIntegration (`Core/ClaudeIntegration.swift`)
 
@@ -117,65 +122,40 @@ Wraps `claude mcp add/remove` and `claude plugin install/remove` CLI commands. M
 External packs are Git repositories containing a `techpack.yaml` manifest. The system has these layers:
 
 1. **PackFetcher** — clones/pulls pack repos into `~/.mcs/packs/<name>/`
-2. **ExternalPackManifest** — Codable model for `techpack.yaml` (components, templates, hooks, doctor checks, prompts, configure scripts)
-3. **ExternalPackAdapter** — bridges `ExternalPackManifest` to the `TechPack` protocol so external packs participate in all install/doctor/configure flows
+2. **ExternalPackManifest** — Codable model for `techpack.yaml` (components, templates, hooks, doctor checks, prompts, configure scripts). Supports shorthand syntax for concise component definitions
+3. **ExternalPackAdapter** — bridges `ExternalPackManifest` to the `TechPack` protocol so external packs participate in all sync/doctor flows
 4. **PackRegistryFile** — YAML registry (`~/.mcs/registry.yaml`) tracking which packs are installed
 5. **TechPackRegistry** — unified registry that loads external packs and exposes them alongside the (now empty) compiled-in pack list
 
 ### Pack Manifest (`techpack.yaml`)
 
+Shorthand syntax (preferred):
+
 ```yaml
 identifier: my-pack
 displayName: My Pack
 description: What this pack provides
+version: "1.0.0"
+
 components:
-  - id: my-pack.server
-    displayName: My Server
-    type: mcpServer
-    installAction:
-      mcpServer:
-        name: my-server
-        command: npx
-        args: ["-y", "my-server@latest"]
-        scope: local  # local (default), project, or user
+  - id: my-server
+    description: My MCP server
+    mcp:
+      command: npx
+      args: ["-y", "my-server@latest"]
+
 templates:
-  - sectionIdentifier: my-pack
+  - sectionIdentifier: my-pack.instructions
     contentFile: templates/claude-local.md
-hookContributions:
-  - hookName: session_start
-    fragmentFile: hooks/session-start-fragment.sh
 ```
 
-## Install Flow
+Verbose form is also supported — see [Tech Pack Schema](../docs/techpack-schema.md).
 
-The installer (`Install/Installer.swift`) handles global-scope component installation:
+## Sync Flow
 
-### Phase 1: Welcome
-System checks (macOS, not root, Xcode CLT, Homebrew).
+### Project Sync (`mcs sync [path]`)
 
-### Phase 2: Selection
-Three modes:
-- `--all`: selects every component from all registered packs
-- `--pack <name>`: selects all components from the named pack
-- Interactive: presents grouped multi-select menu
-
-### Phase 3: Summary
-Shows the dependency-resolved installation plan grouped by type. Auto-resolved dependencies are annotated. In `--dry-run` mode, stops here.
-
-### Phase 4: Install
-Iterates through the resolved plan in topological order. For each component:
-1. Checks if already installed using the same doctor check logic (shared detection)
-2. Executes the component's install action
-3. Records the component in the manifest
-
-After all components: adds gitignore entries, records pack IDs in manifest.
-
-### Phase 5: Post-Summary
-Shows installed/skipped items. Offers inline project configuration.
-
-## Project Configuration (Convergence Engine)
-
-`ProjectConfigurator` is the per-project convergence engine, invoked by `mcs configure`:
+`ProjectConfigurator` is the per-project convergence engine:
 
 1. **Multi-select**: shows all registered packs, pre-selects previously configured packs
 2. **Compute diff**: `removals = previous - selected`, `additions = selected - previous`
@@ -187,8 +167,17 @@ Shows installed/skipped items. Offers inline project configuration.
 8. **Run pack configure hooks**: pack-specific setup (e.g., generate config files)
 9. **Ensure gitignore entries**: add `.claude/` entries to global gitignore
 10. **Save project state**: write `.mcs-project` with artifact records for each pack
+11. **Write lockfile**: save `mcs.lock.yaml` with current pack versions
 
-The `--pack` flag bypasses multi-select for CI use: `mcs configure --pack ios --pack web`.
+The `--pack` flag bypasses multi-select for CI use: `mcs sync --pack ios --pack web`.
+
+### Global Sync (`mcs sync --global`)
+
+`GlobalConfigurator` handles global-scope installation:
+
+1. **Selection**: interactive multi-select, `--pack <name>`, or `--all`
+2. **Component install**: brew packages, MCP servers (user scope), plugins
+3. **Record state**: update `~/.mcs/global-state.json`
 
 ## Dependency Resolution
 
@@ -250,7 +239,7 @@ Packs provide:
 - **Hook contributions**: script files to install in `<project>/.claude/hooks/` with entries in `settings.local.json`
 - **Gitignore entries**: patterns to add to the global gitignore
 - **Supplementary doctor checks**: pack-level diagnostics not derivable from components
-- **Template values**: resolved via prompts or scripts during configure
+- **Template values**: resolved via prompts or scripts during sync
 - **Project configuration**: pack-specific setup (e.g., generate config files)
 
 ## Doctor System
@@ -270,7 +259,7 @@ Packs provide:
 - **Trivial repairs**: permission fixes, gitignore additions, symlink creation
 - **Project state**: creating missing `.mcs-project` by inferring from section markers
 
-`doctor --fix` does NOT handle additive operations (installing packages, registering servers, copying files). These are handled by `mcs install` and `mcs configure`.
+`doctor --fix` does NOT handle additive operations (installing packages, registering servers, copying files). These are handled by `mcs sync`.
 
 ### Pack Resolution
 
@@ -284,7 +273,7 @@ When determining which packs to check, doctor uses a priority chain:
 
 ### TemplateEngine
 
-Simple `__PLACEHOLDER__` substitution. Values are passed as `[String: String]` dictionaries. Packs can resolve values via prompts (interactive) or scripts (automated) during configure.
+Simple `__PLACEHOLDER__` substitution. Values are passed as `[String: String]` dictionaries. Packs can resolve values via prompts (interactive) or scripts (automated) during sync.
 
 ### TemplateComposer
 
