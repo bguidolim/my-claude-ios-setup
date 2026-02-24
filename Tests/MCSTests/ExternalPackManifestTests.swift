@@ -1582,4 +1582,652 @@ struct ExternalPackManifestTests {
         let manifest = try ExternalPackManifest.load(from: file)
         #expect(manifest.hookContributions?[0].position == nil)
     }
+
+    // MARK: - Shorthand: brew
+
+    @Test("Shorthand brew: infers brewPackage type and brewInstall action")
+    func shorthandBrew() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.node
+                description: JavaScript runtime
+                brew: node
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .brewPackage)
+        #expect(comp.displayName == "my-pack.node")
+        guard case .brewInstall(let package) = comp.installAction else {
+            Issue.record("Expected brewInstall"); return
+        }
+        #expect(package == "node")
+    }
+
+    // MARK: - Shorthand: mcp (stdio)
+
+    @Test("Shorthand mcp: with command infers mcpServer type and stdio config")
+    func shorthandMCPStdio() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.serena
+                description: Semantic navigation
+                mcp:
+                  command: uvx
+                  args:
+                    - "--from"
+                    - "git+https://github.com/oraios/serena"
+                  env:
+                    KEY: value
+                  scope: local
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .mcpServer)
+        guard case .mcpServer(let config) = comp.installAction else {
+            Issue.record("Expected mcpServer"); return
+        }
+        #expect(config.name == "serena")
+        #expect(config.command == "uvx")
+        #expect(config.args == ["--from", "git+https://github.com/oraios/serena"])
+        #expect(config.env == ["KEY": "value"])
+        #expect(config.scope == .local)
+    }
+
+    // MARK: - Shorthand: mcp (http)
+
+    @Test("Shorthand mcp: with url infers HTTP transport")
+    func shorthandMCPHTTP() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.sosumi
+                description: Apple docs
+                mcp:
+                  url: https://sosumi.ai/mcp
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .mcpServer)
+        guard case .mcpServer(let config) = comp.installAction else {
+            Issue.record("Expected mcpServer"); return
+        }
+        #expect(config.name == "sosumi")
+        #expect(config.transport == .http)
+        #expect(config.url == "https://sosumi.ai/mcp")
+
+        let resolved = config.toMCPServerConfig()
+        #expect(resolved.command == "http")
+        #expect(resolved.args == ["https://sosumi.ai/mcp"])
+    }
+
+    // MARK: - Shorthand: mcp name derived from prefixed id
+
+    @Test("Shorthand mcp: strips pack prefix from component id for server name")
+    func shorthandMCPNameFromPrefixedID() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.docs-mcp-server
+                description: Docs search
+                mcp:
+                  command: npx
+                  args: ["-y", "docs-mcp-server@latest"]
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        guard case .mcpServer(let config) = manifest.components?.first?.installAction else {
+            Issue.record("Expected mcpServer"); return
+        }
+        #expect(config.name == "docs-mcp-server")
+    }
+
+    // MARK: - Shorthand: plugin
+
+    @Test("Shorthand plugin: infers plugin type and name")
+    func shorthandPlugin() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.pr-review
+                description: PR review toolkit
+                plugin: "pr-review-toolkit@claude-plugins-official"
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .plugin)
+        guard case .plugin(let name) = comp.installAction else {
+            Issue.record("Expected plugin"); return
+        }
+        #expect(name == "pr-review-toolkit@claude-plugins-official")
+    }
+
+    // MARK: - Shorthand: shell (requires explicit type)
+
+    @Test("Shorthand shell: requires explicit type field")
+    func shorthandShell() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.xcode-skill
+                description: Install via shell
+                type: skill
+                shell: "npx -y skills add xcodebuildmcp -g"
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .skill)
+        guard case .shellCommand(let command) = comp.installAction else {
+            Issue.record("Expected shellCommand"); return
+        }
+        #expect(command == "npx -y skills add xcodebuildmcp -g")
+    }
+
+    // MARK: - Shorthand: hook
+
+    @Test("Shorthand hook: infers hookFile type and copyPackFile action")
+    func shorthandHook() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.session-start
+                description: Session start hook
+                hookEvent: SessionStart
+                hook:
+                  source: hooks/session_start.sh
+                  destination: session_start.sh
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .hookFile)
+        #expect(comp.hookEvent == "SessionStart")
+        guard case .copyPackFile(let config) = comp.installAction else {
+            Issue.record("Expected copyPackFile"); return
+        }
+        #expect(config.source == "hooks/session_start.sh")
+        #expect(config.destination == "session_start.sh")
+        #expect(config.fileType == .hook)
+    }
+
+    // MARK: - Shorthand: command
+
+    @Test("Shorthand command: infers command type and copyPackFile action")
+    func shorthandCommand() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.pr
+                description: PR command
+                command:
+                  source: commands/pr.md
+                  destination: pr.md
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .command)
+        guard case .copyPackFile(let config) = comp.installAction else {
+            Issue.record("Expected copyPackFile"); return
+        }
+        #expect(config.source == "commands/pr.md")
+        #expect(config.fileType == .command)
+    }
+
+    // MARK: - Shorthand: skill
+
+    @Test("Shorthand skill: infers skill type and copyPackFile action")
+    func shorthandSkill() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.learning
+                description: Continuous learning
+                skill:
+                  source: skills/continuous-learning
+                  destination: continuous-learning
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .skill)
+        guard case .copyPackFile(let config) = comp.installAction else {
+            Issue.record("Expected copyPackFile"); return
+        }
+        #expect(config.source == "skills/continuous-learning")
+        #expect(config.fileType == .skill)
+    }
+
+    // MARK: - Shorthand: settingsFile
+
+    @Test("Shorthand settingsFile: infers configuration type and settingsFile action")
+    func shorthandSettingsFile() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.settings
+                description: Settings
+                settingsFile: config/settings.json
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .configuration)
+        guard case .settingsFile(let source) = comp.installAction else {
+            Issue.record("Expected settingsFile"); return
+        }
+        #expect(source == "config/settings.json")
+    }
+
+    // MARK: - Shorthand: gitignore
+
+    @Test("Shorthand gitignore: infers configuration type and gitignoreEntries action")
+    func shorthandGitignore() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.gitignore
+                description: Gitignore entries
+                gitignore:
+                  - .claude/memories
+                  - .xcodebuildmcp
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .configuration)
+        guard case .gitignoreEntries(let entries) = comp.installAction else {
+            Issue.record("Expected gitignoreEntries"); return
+        }
+        #expect(entries == [".claude/memories", ".xcodebuildmcp"])
+    }
+
+    // MARK: - Shorthand: displayName defaults to id
+
+    @Test("displayName defaults to id when omitted")
+    func shorthandDisplayNameDefault() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.gh
+                description: GitHub CLI
+                brew: gh
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.displayName == "my-pack.gh")
+    }
+
+    @Test("displayName can be overridden in shorthand form")
+    func shorthandDisplayNameOverride() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.gh
+                displayName: GitHub CLI
+                description: GitHub CLI for PR operations
+                brew: gh
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.displayName == "GitHub CLI")
+    }
+
+    // MARK: - Shorthand: displayName defaults to id in verbose form too
+
+    @Test("displayName defaults to id when omitted in verbose form")
+    func verboseDisplayNameDefault() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.node
+                description: Node.js runtime
+                type: brewPackage
+                installAction:
+                  type: brewInstall
+                  package: node
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.displayName == "my-pack.node")
+    }
+
+    // MARK: - Shorthand: mixed verbose and shorthand in same manifest
+
+    @Test("Mixed verbose and shorthand components in same manifest")
+    func mixedVerboseAndShorthand() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.homebrew
+                displayName: Homebrew
+                description: macOS package manager
+                type: brewPackage
+                installAction:
+                  type: shellCommand
+                  command: '/bin/bash -c "$(curl -fsSL https://brew.sh)"'
+              - id: my-pack.node
+                description: Node.js
+                dependencies: [my-pack.homebrew]
+                brew: node
+              - id: my-pack.my-server
+                description: MCP server
+                mcp:
+                  command: npx
+                  args: ["-y", "my-server@latest"]
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comps = try #require(manifest.components)
+        #expect(comps.count == 3)
+
+        // Verbose: homebrew
+        #expect(comps[0].type == .brewPackage)
+        guard case .shellCommand = comps[0].installAction else {
+            Issue.record("Expected shellCommand"); return
+        }
+
+        // Shorthand: node
+        #expect(comps[1].type == .brewPackage)
+        guard case .brewInstall(let package) = comps[1].installAction else {
+            Issue.record("Expected brewInstall"); return
+        }
+        #expect(package == "node")
+
+        // Shorthand: my-server
+        #expect(comps[2].type == .mcpServer)
+        guard case .mcpServer(let config) = comps[2].installAction else {
+            Issue.record("Expected mcpServer"); return
+        }
+        #expect(config.name == "my-server")
+    }
+
+    // MARK: - Shorthand: normalization works with shorthand IDs
+
+    @Test("Shorthand components with short IDs normalize correctly")
+    func shorthandNormalization() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: node
+                description: Node.js
+                dependencies: [homebrew]
+                brew: node
+              - id: homebrew
+                description: Homebrew
+                type: brewPackage
+                shell: "brew --version"
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let normalized = manifest.normalized()
+
+        let comps = try #require(normalized.components)
+        #expect(comps[0].id == "my-pack.node")
+        #expect(comps[0].dependencies == ["my-pack.homebrew"])
+        #expect(comps[1].id == "my-pack.homebrew")
+    }
+
+    // MARK: - Shorthand: mcp name from short id
+
+    @Test("Shorthand mcp: derives name from short id before normalization")
+    func shorthandMCPNameFromShortID() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: serena
+                description: Code nav
+                mcp:
+                  command: uvx
+                  args: ["serena", "start-mcp-server"]
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        guard case .mcpServer(let config) = manifest.components?.first?.installAction else {
+            Issue.record("Expected mcpServer"); return
+        }
+        // Short id "serena" → name "serena"
+        #expect(config.name == "serena")
+
+        // After normalization, id becomes "my-pack.serena" but name stays "serena"
+        let normalized = manifest.normalized()
+        #expect(normalized.components?.first?.id == "my-pack.serena")
+        guard case .mcpServer(let normalizedConfig) = normalized.components?.first?.installAction else {
+            Issue.record("Expected mcpServer"); return
+        }
+        #expect(normalizedConfig.name == "serena")
+    }
+
+    // MARK: - Shorthand: shorthand with all optional component fields
+
+    @Test("Shorthand component with dependencies, isRequired, and doctorChecks")
+    func shorthandWithOptionalFields() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: Test
+            version: "1.0.0"
+            components:
+              - id: my-pack.session-hook
+                description: Session start hook
+                dependencies: [my-pack.jq]
+                isRequired: true
+                hookEvent: SessionStart
+                hook:
+                  source: hooks/session_start.sh
+                  destination: session_start.sh
+                doctorChecks:
+                  - type: hookEventExists
+                    name: SessionStart hook
+                    event: SessionStart
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        let comp = try #require(manifest.components?.first)
+
+        #expect(comp.type == .hookFile)
+        #expect(comp.dependencies == ["my-pack.jq"])
+        #expect(comp.isRequired == true)
+        #expect(comp.hookEvent == "SessionStart")
+        #expect(comp.doctorChecks?.count == 1)
+    }
 }
