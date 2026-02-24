@@ -242,13 +242,18 @@ struct ComponentExecutor {
         to destination: URL,
         values: [String: String]
     ) throws {
-        if !values.isEmpty,
-           let text = try? String(contentsOf: source, encoding: .utf8) {
-            let substituted = TemplateEngine.substitute(template: text, values: values)
-            try substituted.write(to: destination, atomically: true, encoding: .utf8)
-        } else {
-            try FileManager.default.copyItem(at: source, to: destination)
+        if !values.isEmpty {
+            // Read as Data first to surface I/O errors (permission, disk),
+            // then attempt UTF-8 decode to detect binary vs text files.
+            let data = try Data(contentsOf: source)
+            if let text = String(data: data, encoding: .utf8) {
+                let substituted = TemplateEngine.substitute(template: text, values: values)
+                try substituted.write(to: destination, atomically: true, encoding: .utf8)
+                return
+            }
         }
+        // Binary file or no values to substitute
+        try FileManager.default.copyItem(at: source, to: destination)
     }
 
     /// Remove a file from the project by its project-relative path.

@@ -455,7 +455,8 @@ struct ProjectConfigurator {
             let settingsPath = projectPath
                 .appendingPathComponent(Constants.FileNames.claudeDirectory)
                 .appendingPathComponent("settings.local.json")
-            if var settings = try? Settings.load(from: settingsPath) {
+            do {
+                var settings = try Settings.load(from: settingsPath)
                 let commandsToRemove = Set(artifacts.hookCommands)
                 if var hooks = settings.hooks {
                     for (event, groups) in hooks {
@@ -467,14 +468,12 @@ struct ProjectConfigurator {
                     hooks = hooks.filter { !$0.value.isEmpty }
                     settings.hooks = hooks.isEmpty ? nil : hooks
                 }
-                do {
-                    try settings.save(to: settingsPath)
-                    for cmd in artifacts.hookCommands {
-                        output.dimmed("  Removed hook: \(cmd)")
-                    }
-                } catch {
-                    output.warn("Could not save settings.local.json: \(error.localizedDescription)")
+                try settings.save(to: settingsPath)
+                for cmd in artifacts.hookCommands {
+                    output.dimmed("  Removed hook: \(cmd)")
                 }
+            } catch {
+                output.warn("Could not clean up hooks from settings.local.json: \(error.localizedDescription)")
             }
         }
 

@@ -73,8 +73,11 @@ struct LockfileOperations {
             do {
                 if let result = try fetcher.update(packPath: packPath, ref: entry.ref) {
                     let loader = ExternalPackLoader(environment: environment, registry: registryFile)
-                    guard let manifest = try? loader.validate(at: packPath) else {
-                        output.warn("  \(entry.identifier): updated but manifest is invalid")
+                    let manifest: ExternalPackManifest
+                    do {
+                        manifest = try loader.validate(at: packPath)
+                    } catch {
+                        output.warn("  \(entry.identifier): updated but manifest is invalid — \(error.localizedDescription)")
                         continue
                     }
 
