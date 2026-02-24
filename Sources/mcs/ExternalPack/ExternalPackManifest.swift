@@ -238,6 +238,29 @@ struct PeerDependency: Codable, Sendable, Equatable {
 // MARK: - Components
 
 /// Declarative definition of an installable component within an external pack.
+///
+/// Supports two authoring styles:
+///
+/// **Verbose** (all fields explicit):
+/// ```yaml
+/// - id: node
+///   displayName: Node.js
+///   description: JavaScript runtime
+///   type: brewPackage
+///   installAction:
+///     type: brewInstall
+///     package: node
+/// ```
+///
+/// **Shorthand** (type + installAction inferred from a single key):
+/// ```yaml
+/// - id: node
+///   description: JavaScript runtime
+///   brew: node
+/// ```
+///
+/// Shorthand keys: `brew`, `mcp`, `plugin`, `shell`, `hook`, `command`,
+/// `skill`, `settingsFile`, `gitignore`. See `ShorthandKeys` for details.
 struct ExternalComponentDefinition: Codable, Sendable {
     var id: String
     let displayName: String
@@ -250,6 +273,179 @@ struct ExternalComponentDefinition: Codable, Sendable {
     let hookEvent: String?
     let installAction: ExternalInstallAction
     let doctorChecks: [ExternalDoctorCheckDefinition]?
+
+    // MARK: CodingKeys
+
+    /// Standard keys matching stored properties (used by encode).
+    enum CodingKeys: String, CodingKey {
+        case id, displayName, description, type, dependencies, isRequired, hookEvent, installAction, doctorChecks
+    }
+
+    /// Shorthand install-action keys that replace `type` + `installAction`.
+    enum ShorthandKeys: String, CodingKey {
+        case brew          // String — brew package name
+        case mcp           // Map — MCPShorthand (name inferred from id)
+        case plugin        // String — plugin full name
+        case shell         // String — shell command (requires explicit `type`)
+        case hook          // Map — CopyFileShorthand (fileType: .hook)
+        case command       // Map — CopyFileShorthand (fileType: .command)
+        case skill         // Map — CopyFileShorthand (fileType: .skill)
+        case settingsFile  // String — source path
+        case gitignore     // [String] — gitignore entries
+    }
+
+    // MARK: Memberwise init
+
+    init(
+        id: String,
+        displayName: String,
+        description: String,
+        type: ExternalComponentType,
+        dependencies: [String]? = nil,
+        isRequired: Bool? = nil,
+        hookEvent: String? = nil,
+        installAction: ExternalInstallAction,
+        doctorChecks: [ExternalDoctorCheckDefinition]? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.description = description
+        self.type = type
+        self.dependencies = dependencies
+        self.isRequired = isRequired
+        self.hookEvent = hookEvent
+        self.installAction = installAction
+        self.doctorChecks = doctorChecks
+    }
+
+    // MARK: Decode (shorthand + verbose)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let shorthand = try decoder.container(keyedBy: ShorthandKeys.self)
+
+        id = try container.decode(String.self, forKey: .id)
+        description = try container.decode(String.self, forKey: .description)
+        dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies)
+        isRequired = try container.decodeIfPresent(Bool.self, forKey: .isRequired)
+        hookEvent = try container.decodeIfPresent(String.self, forKey: .hookEvent)
+        doctorChecks = try container.decodeIfPresent([ExternalDoctorCheckDefinition].self, forKey: .doctorChecks)
+
+        if let resolved = try Self.resolveShorthand(shorthand, componentId: id) {
+            type = try resolved.type ?? container.decode(ExternalComponentType.self, forKey: .type)
+            installAction = resolved.action
+        } else {
+            type = try container.decode(ExternalComponentType.self, forKey: .type)
+            installAction = try container.decode(ExternalInstallAction.self, forKey: .installAction)
+        }
+
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? id
+    }
+
+    // MARK: Encode (always verbose)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(description, forKey: .description)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(dependencies, forKey: .dependencies)
+        try container.encodeIfPresent(isRequired, forKey: .isRequired)
+        try container.encodeIfPresent(hookEvent, forKey: .hookEvent)
+        try container.encode(installAction, forKey: .installAction)
+        try container.encodeIfPresent(doctorChecks, forKey: .doctorChecks)
+    }
+
+    // MARK: - Shorthand Resolution
+
+    private struct ResolvedShorthand {
+        let type: ExternalComponentType?
+        let action: ExternalInstallAction
+    }
+
+    private static func resolveShorthand(
+        _ shorthand: KeyedDecodingContainer<ShorthandKeys>,
+        componentId: String
+    ) throws -> ResolvedShorthand? {
+        if shorthand.contains(.brew) {
+            let package = try shorthand.decode(String.self, forKey: .brew)
+            return ResolvedShorthand(type: .brewPackage, action: .brewInstall(package: package))
+        }
+        if shorthand.contains(.mcp) {
+            let config = try shorthand.decode(MCPShorthand.self, forKey: .mcp)
+            let defaultName = componentId.split(separator: ".").last.map(String.init) ?? componentId
+            return ResolvedShorthand(type: .mcpServer, action: .mcpServer(config.toExternalConfig(defaultName: defaultName)))
+        }
+        if shorthand.contains(.plugin) {
+            let name = try shorthand.decode(String.self, forKey: .plugin)
+            return ResolvedShorthand(type: .plugin, action: .plugin(name: name))
+        }
+        if shorthand.contains(.shell) {
+            let command = try shorthand.decode(String.self, forKey: .shell)
+            return ResolvedShorthand(type: nil, action: .shellCommand(command: command))
+        }
+        if shorthand.contains(.hook) {
+            let config = try shorthand.decode(CopyFileShorthand.self, forKey: .hook)
+            return ResolvedShorthand(type: .hookFile, action: .copyPackFile(config.toExternalConfig(fileType: .hook)))
+        }
+        if shorthand.contains(.command) {
+            let config = try shorthand.decode(CopyFileShorthand.self, forKey: .command)
+            return ResolvedShorthand(type: .command, action: .copyPackFile(config.toExternalConfig(fileType: .command)))
+        }
+        if shorthand.contains(.skill) {
+            let config = try shorthand.decode(CopyFileShorthand.self, forKey: .skill)
+            return ResolvedShorthand(type: .skill, action: .copyPackFile(config.toExternalConfig(fileType: .skill)))
+        }
+        if shorthand.contains(.settingsFile) {
+            let source = try shorthand.decode(String.self, forKey: .settingsFile)
+            return ResolvedShorthand(type: .configuration, action: .settingsFile(source: source))
+        }
+        if shorthand.contains(.gitignore) {
+            let entries = try shorthand.decode([String].self, forKey: .gitignore)
+            return ResolvedShorthand(type: .configuration, action: .gitignoreEntries(entries: entries))
+        }
+        return nil
+    }
+}
+
+// MARK: - Shorthand Helper Structs
+
+/// Shorthand MCP server configuration — `name` defaults to the component id
+/// but can be overridden (e.g. when the server name uses mixed case).
+struct MCPShorthand: Codable, Sendable {
+    let name: String?
+    let command: String?
+    let args: [String]?
+    let env: [String: String]?
+    let url: String?
+    let scope: ExternalScope?
+
+    func toExternalConfig(defaultName: String) -> ExternalMCPServerConfig {
+        ExternalMCPServerConfig(
+            name: name ?? defaultName,
+            command: command,
+            args: args,
+            env: env,
+            transport: url != nil ? .http : nil,
+            url: url,
+            scope: scope
+        )
+    }
+}
+
+/// Shorthand copy-file configuration — `fileType` is inferred from the shorthand key.
+struct CopyFileShorthand: Codable, Sendable {
+    let source: String
+    let destination: String
+
+    func toExternalConfig(fileType: ExternalCopyFileType) -> ExternalCopyPackFileConfig {
+        ExternalCopyPackFileConfig(
+            source: source,
+            destination: destination,
+            fileType: fileType
+        )
+    }
 }
 
 /// String-backed component type that maps to the internal `ComponentType`.

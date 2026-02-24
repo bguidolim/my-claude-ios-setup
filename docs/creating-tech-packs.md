@@ -14,9 +14,11 @@ mkdir my-pack && cd my-pack && git init
 
 # Create the manifest
 cat > techpack.yaml << 'EOF'
+schemaVersion: 1
 identifier: my-pack
 displayName: My Pack
 description: What this pack provides
+version: "1.0.0"
 EOF
 
 # Push to GitHub, then install
@@ -36,6 +38,8 @@ my-pack/
         my-skill/SKILL.md        # Skill files
     commands/
         my-command.md            # Slash commands
+    config/
+        settings.json            # Settings template
     scripts/
         configure.sh             # Optional: configure hook script
 ```
@@ -45,74 +49,111 @@ my-pack/
 ### Minimal Manifest
 
 ```yaml
+schemaVersion: 1
 identifier: my-pack
 displayName: My Pack
 description: Adds tools for my workflow
+version: "1.0.0"
 ```
 
-### Full Manifest
+### Full Example (Shorthand)
+
+Components support a **shorthand syntax** where a single key replaces both `type` and `installAction`. This is the recommended style — it's more concise and less error-prone.
 
 ```yaml
+schemaVersion: 1
 identifier: my-pack
 displayName: My Pack
 description: Adds tools for my workflow
+version: "1.0.0"
 
 components:
-  - id: my-pack.server
-    displayName: My MCP Server
-    description: Provides code search
-    type: mcpServer
-    isRequired: true
-    installAction:
-      mcpServer:
-        name: my-server
-        command: npx
-        args: ["-y", "my-server@latest"]
-        scope: local          # local (default), project, or user
+  # Brew package — `brew:` infers type: brewPackage
+  - id: node
+    description: JavaScript runtime
+    dependencies: [homebrew]
+    brew: node
 
-  - id: my-pack.tool
-    displayName: My CLI Tool
-    description: Required dependency
-    type: brewPackage
-    isRequired: true
-    installAction:
-      brewInstall: my-tool
+  # MCP server (stdio) — `mcp:` infers type: mcpServer, name from id
+  - id: my-server
+    description: Code search server
+    dependencies: [node]
+    mcp:
+      command: npx
+      args: ["-y", "my-server@latest"]
+      env:
+        API_KEY: "value"
+      scope: local          # local (default), project, or user
 
-  - id: my-pack.gitignore
-    displayName: Gitignore entries
-    description: Add .my-pack to global gitignore
-    type: configuration
-    isRequired: true
-    installAction:
-      gitignoreEntries: [".my-pack"]
+  # MCP server (HTTP) — url presence infers HTTP transport
+  - id: my-http-server
+    description: Remote MCP server
+    mcp:
+      url: https://example.com/mcp
 
-  - id: my-pack.skill
-    displayName: My skill
+  # Plugin — `plugin:` infers type: plugin
+  - id: my-plugin
+    description: A useful plugin
+    plugin: "my-plugin@my-org"
+
+  # Hook — `hook:` infers type: hookFile, fileType: hook
+  - id: session-hook
+    description: Session start hook
+    hookEvent: SessionStart
+    hook:
+      source: hooks/session_start.sh
+      destination: session_start.sh
+
+  # Command — `command:` infers type: command, fileType: command
+  - id: pr-command
+    description: PR creation command
+    command:
+      source: commands/pr.md
+      destination: pr.md
+
+  # Skill — `skill:` infers type: skill, fileType: skill
+  - id: my-skill
     description: A pack-provided skill
-    type: skill
-    installAction:
-      copyPackFile:
-        source: skills/my-skill
-        destination: my-skill
-        fileType: skill       # skill, hook, command, or generic
+    skill:
+      source: skills/my-skill
+      destination: my-skill
+
+  # Settings — `settingsFile:` infers type: configuration
+  - id: settings
+    description: Claude Code settings
+    isRequired: true
+    settingsFile: config/settings.json
+
+  # Gitignore — `gitignore:` infers type: configuration
+  - id: gitignore
+    description: Global gitignore entries
+    isRequired: true
+    gitignore:
+      - .my-pack
+      - .my-pack-cache
+
+  # Shell command — `shell:` requires explicit `type:`
+  - id: homebrew
+    displayName: Homebrew
+    description: macOS package manager
+    type: brewPackage
+    shell: '/bin/bash -c "$(curl -fsSL https://brew.sh)"'
+    doctorChecks:
+      - type: commandExists
+        name: Homebrew
+        section: Dependencies
+        command: brew
 
 templates:
   - sectionIdentifier: my-pack
     contentFile: templates/claude-local.md
     placeholders: ["__PROJECT__"]
 
-hookContributions:
-  - hookName: session_start
-    fragmentFile: hooks/session-start.sh
-
-gitignoreEntries:
-  - ".my-pack"
-
 prompts:
-  - key: PROJECT_TYPE
-    message: "What type of project is this?"
-    type: select
-    options: ["web", "mobile", "cli"]
+  - key: PROJECT
+    type: fileDetect
+    label: "Project file"
+    detectPattern: "*.xcodeproj"
 
 configureProject:
   script: scripts/configure.sh
@@ -123,6 +164,40 @@ supplementaryDoctorChecks:
     type: fileExists
     path: ".my-pack/config.yaml"
 ```
+
+### Verbose Form (Still Supported)
+
+The shorthand is syntactic sugar — the **verbose form** with explicit `type` + `installAction` is always supported and required for edge cases like `shell:` commands.
+
+```yaml
+# Verbose equivalent of `brew: node`
+- id: node
+  displayName: Node.js
+  description: JavaScript runtime
+  type: brewPackage
+  installAction:
+    type: brewInstall
+    package: node
+```
+
+## Shorthand Reference
+
+| Shorthand Key | Value Type | Infers `type` | Infers `installAction` |
+|--------------|-----------|---------------|----------------------|
+| `brew:` | `String` | `brewPackage` | `brewInstall(package:)` |
+| `mcp:` | Map | `mcpServer` | `mcpServer(config)` — name defaults to component id |
+| `plugin:` | `String` | `plugin` | `plugin(name:)` |
+| `shell:` | `String` | *none — requires explicit `type:`* | `shellCommand(command:)` |
+| `hook:` | `{source, destination}` | `hookFile` | `copyPackFile(fileType: hook)` |
+| `command:` | `{source, destination}` | `command` | `copyPackFile(fileType: command)` |
+| `skill:` | `{source, destination}` | `skill` | `copyPackFile(fileType: skill)` |
+| `settingsFile:` | `String` | `configuration` | `settingsFile(source:)` |
+| `gitignore:` | `[String]` | `configuration` | `gitignoreEntries(entries:)` |
+
+**Additional notes:**
+- `displayName` is optional — defaults to the component `id` if omitted
+- `mcp:` derives the server name from the component id. Use `name:` inside the map to override (e.g. when the server name uses mixed case)
+- `shell:` is the only shorthand that doesn't infer `type` — you must provide `type:` explicitly since shell commands can install anything (brew packages, skills, etc.)
 
 ## Component Types
 
@@ -136,18 +211,38 @@ supplementaryDoctorChecks:
 | `command` | Slash command copied to `<project>/.claude/commands/` |
 | `configuration` | Gitignore entries, settings merge, etc. |
 
-## Install Actions
+## Component Features
 
-| Action | YAML Key | Use Case |
-|--------|----------|----------|
-| MCP server | `mcpServer: {name, command, args, env, scope}` | Register via `claude mcp add` |
-| HTTP MCP | `mcpServer: {name, url, scope}` | Register HTTP transport server |
-| Plugin | `plugin: <name>` | Install via `claude plugin install` |
-| Brew | `brewInstall: <package>` | Install via Homebrew |
-| Shell | `shellCommand: <command>` | Run arbitrary shell command |
-| Gitignore | `gitignoreEntries: [patterns]` | Add to global gitignore |
-| Copy file | `copyPackFile: {source, destination, fileType}` | Copy from pack to project `.claude/` |
-| Settings | `settingsMerge` | Merge settings (handled at project level) |
+### Dependencies
+
+Components can depend on other components. Use short IDs (auto-prefixed with the pack identifier):
+
+```yaml
+- id: my-server
+  dependencies: [node, homebrew]   # → my-pack.node, my-pack.homebrew
+  mcp:
+    command: npx
+    args: ["-y", "my-server@latest"]
+```
+
+Cross-pack dependencies use the full `pack.component` form:
+
+```yaml
+- id: my-tool
+  dependencies: [other-pack.node]
+  brew: my-tool
+```
+
+### Short IDs
+
+Component IDs can use short form — the engine auto-prefixes with `<pack-identifier>.`:
+
+```yaml
+identifier: my-pack
+components:
+  - id: node          # → my-pack.node
+  - id: my-server     # → my-pack.my-server
+```
 
 ### MCP Server Scopes
 
@@ -177,6 +272,45 @@ Placeholders use the `__NAME__` format and are substituted during `mcs configure
 
 Custom placeholders are resolved via `prompts` in the manifest.
 
+## Prompts
+
+Prompts gather values during `mcs configure`. Four types are available:
+
+```yaml
+prompts:
+  # Detect files matching a glob pattern
+  - key: PROJECT
+    type: fileDetect
+    label: "Xcode project"
+    detectPattern:
+      - "*.xcodeproj"
+      - "*.xcworkspace"
+
+  # Free-text input
+  - key: BRANCH_PREFIX
+    type: input
+    label: "Branch prefix"
+    default: "feature"
+
+  # Select from predefined options
+  - key: PLATFORM
+    type: select
+    label: "Target platform"
+    options:
+      - value: ios
+        label: iOS
+      - value: macos
+        label: macOS
+
+  # Run a script to get the value
+  - key: SDK_VERSION
+    type: script
+    label: "SDK version"
+    scriptCommand: "xcrun --show-sdk-version"
+```
+
+Resolved values are available as `__KEY__` placeholders in templates and as `MCS_RESOLVED_KEY` env vars in scripts.
+
 ## Hook Contributions
 
 Hook contributions are installed as individual script files in `<project>/.claude/hooks/` and registered as separate `HookGroup` entries in `settings.local.json`.
@@ -198,14 +332,35 @@ Hook names map to Claude Code events:
 - `notification` → `Notification`
 - `stop` → `Stop`
 
-## Supplementary Doctor Checks
+## Doctor Checks
 
-Doctor checks verify the pack's health. Auto-derived checks handle common cases:
+### Auto-Derived Checks
+
+Most components automatically generate doctor checks from their install action:
 - `mcpServer` → checks registration in `~/.claude.json`
 - `plugin` → checks enablement in settings
 - `brewInstall` → checks command availability
+- `copyPackFile` → checks file existence at destination
 
-For custom checks, define them in the manifest:
+### Per-Component Checks
+
+For components with special verification needs, define `doctorChecks` inline:
+
+```yaml
+- id: homebrew
+  description: macOS package manager
+  type: brewPackage
+  shell: '/bin/bash -c "$(curl -fsSL https://brew.sh)"'
+  doctorChecks:
+    - type: commandExists
+      name: Homebrew
+      section: Dependencies
+      command: brew
+```
+
+### Supplementary Checks (Pack-Level)
+
+For checks that don't belong to a specific component:
 
 ```yaml
 supplementaryDoctorChecks:
@@ -214,17 +369,32 @@ supplementaryDoctorChecks:
     type: fileExists
     path: ".my-pack/config.yaml"
 
-  - name: My Service
+  - name: My Service Running
     section: My Pack
     type: shellScript
-    script: scripts/check-service.sh
+    command: "curl -s localhost:8080/health"
+    fixCommand: "my-service start"
 ```
 
-Shell script checks use exit codes:
-- `0` = pass
-- `1` = fail
-- `2` = warn
-- `3` = skip
+### Available Check Types
+
+| Type | Required Fields | Description |
+|------|----------------|-------------|
+| `commandExists` | `command` | Check if a CLI command is available |
+| `fileExists` | `path` | Check if a file exists |
+| `directoryExists` | `path` | Check if a directory exists |
+| `fileContains` | `path`, `pattern` | Check if a file matches a regex |
+| `fileNotContains` | `path`, `pattern` | Check a file does NOT match a regex |
+| `shellScript` | `command` | Run a shell command (exit 0=pass, 1=fail, 2=warn, 3=skip) |
+| `hookEventExists` | `event` | Check if a hook event is registered in settings |
+| `settingsKeyEquals` | `keyPath`, `expectedValue` | Check a settings value at a JSON key path |
+
+**Optional fields** (available on all check types):
+- `section` — grouping label in doctor output
+- `fixCommand` — shell command to auto-fix the issue (`mcs doctor --fix`)
+- `fixScript` — path to a script file for complex fixes
+- `scope` — `global` or `project` (project checks only run when a project is detected)
+- `isOptional` — if `true`, failure shows as a warning instead of an error
 
 ## Configure Hook
 
@@ -289,12 +459,13 @@ ls .claude/                         # Artifacts should be removed
 ## Design Guidelines
 
 ### Component IDs
-Use the format `<pack>.<name>` or `<pack>.<type>.<name>`:
+Use short IDs — the engine auto-prefixes with the pack identifier:
+- `server` → `my-pack.server`
+- `session-hook` → `my-pack.session-hook`
+
+Or use the fully-qualified form:
 - `my-pack.server`
 - `my-pack.skill.my-skill`
-
-### Sendable Conformance
-The `TechPack` protocol requires `Sendable` conformance (Swift 6 strict concurrency). External packs don't need to worry about this — the adapter handles it.
 
 ### Idempotency
 Install actions should be safe to re-run. The system checks if components are already installed before executing install actions.
