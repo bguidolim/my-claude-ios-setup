@@ -266,26 +266,39 @@ struct GlobalConfigurator {
             unconfigurePack(packID, state: &state)
         }
 
-        // 2. Install global artifacts for each pack
+        // 2. Resolve all template/placeholder values upfront (single pass)
+        var allValues = try resolveGlobalTemplateValues(packs: packs)
+
+        // 2b. Auto-prompt for undeclared placeholders in pack files
+        let undeclared = scanForUndeclaredPlaceholders(packs: packs, resolvedValues: allValues)
+        for key in undeclared {
+            let value = output.promptInline("Set value for \(key)", default: nil)
+            allValues[key] = value
+        }
+
+        // 3. Install global artifacts for each pack
         for pack in packs {
             let excluded = excludedComponents[pack.identifier] ?? []
             let isNew = additions.contains(pack.identifier)
             let label = isNew ? "Configuring" : "Updating"
             output.info("\(label) \(pack.displayName) (global)...")
-            let artifacts = installGlobalArtifacts(pack, excludedIDs: excluded)
+            let artifacts = installGlobalArtifacts(pack, excludedIDs: excluded, resolvedValues: allValues)
             state.setArtifacts(artifacts, for: pack.identifier)
             state.setExcludedComponents(excluded, for: pack.identifier)
             state.recordPack(pack.identifier)
         }
 
-        // 3. Ensure gitignore entries
+        // 4. Compose global settings.json from ALL selected packs
+        try composeGlobalSettings(packs: packs, excludedComponents: excludedComponents)
+
+        // 5. Ensure gitignore entries
         try ensureGitignoreEntries()
         for pack in packs {
             let exec = makeExecutor()
             exec.addPackGitignoreEntries(from: pack)
         }
 
-        // 4. Save global state — failure here means artifacts become untracked
+        // 6. Save global state — failure here means artifacts become untracked
         do {
             try state.save()
             output.success("Updated \(environment.globalStateFile.lastPathComponent)")
@@ -297,6 +310,9 @@ struct GlobalConfigurator {
                 reason: error.localizedDescription
             )
         }
+
+        // 7. Inform user about project-scoped features that were skipped
+        printProjectScopedSkips(packs: packs)
     }
 
     // MARK: - Pack Unconfiguration
@@ -346,7 +362,8 @@ struct GlobalConfigurator {
     /// Returns a `PackArtifactRecord` tracking what was installed.
     private func installGlobalArtifacts(
         _ pack: any TechPack,
-        excludedIDs: Set<String> = []
+        excludedIDs: Set<String> = [],
+        resolvedValues: [String: String] = [:]
     ) -> PackArtifactRecord {
         var artifacts = PackArtifactRecord()
         let exec = makeExecutor()
@@ -357,12 +374,18 @@ struct GlobalConfigurator {
                 continue
             }
 
+            // Check doctor checks before running install — skip if already installed.
+            // Convergent actions (copyPackFile, settingsMerge, mcpServer, gitignore)
+            // always report not-installed so they re-run to pick up changes.
+            if ComponentExecutor.isAlreadyInstalled(component) {
+                output.dimmed("  \(component.displayName) already installed, skipping")
+                continue
+            }
+
             switch component.installAction {
             case .brewInstall(let package):
-                if !ComponentExecutor.isAlreadyInstalled(component) {
-                    output.dimmed("  Installing \(component.displayName)...")
-                    _ = exec.installBrewPackage(package)
-                }
+                output.dimmed("  Installing \(component.displayName)...")
+                _ = exec.installBrewPackage(package)
 
             case .mcpServer(let config):
                 // Override scope to "user" for global installation
@@ -382,16 +405,15 @@ struct GlobalConfigurator {
                 }
 
             case .plugin(let name):
-                if !ComponentExecutor.isAlreadyInstalled(component) {
-                    output.dimmed("  Installing plugin \(component.displayName)...")
-                    _ = exec.installPlugin(name)
-                }
+                output.dimmed("  Installing plugin \(component.displayName)...")
+                _ = exec.installPlugin(name)
 
             case .copyPackFile(let source, let destination, let fileType):
                 if exec.installCopyPackFile(
                     source: source,
                     destination: destination,
-                    fileType: fileType
+                    fileType: fileType,
+                    resolvedValues: resolvedValues
                 ) {
                     // Track path relative to ~/.claude/
                     let baseDir = fileType.baseDirectory(in: environment)
@@ -405,13 +427,14 @@ struct GlobalConfigurator {
                 _ = exec.addGitignoreEntries(entries)
 
             case .shellCommand(let command):
-                let result = shell.shell(command)
-                if !result.succeeded {
-                    output.warn("  \(component.displayName) failed: \(String(result.stderr.prefix(200)))")
-                }
+                // Interactive shell commands cannot run through mcs (stdin is /dev/null).
+                // Warn the user with manual install instructions.
+                output.warn("  \(component.displayName) requires manual installation:")
+                output.plain("    \(command)")
+                output.dimmed("  Run the command above in your terminal, then re-run 'mcs sync --global'.")
 
             case .settingsMerge:
-                // Settings merge is project-scoped; not applicable to global.
+                // Handled by composeGlobalSettings at the configure level.
                 break
             }
         }
@@ -419,15 +442,174 @@ struct GlobalConfigurator {
         return artifacts
     }
 
+    // MARK: - Global Settings Composition
+
+    /// Build `settings.json` from all selected packs' hook entries, plugins, and settings files.
+    ///
+    /// Unlike the project-scoped `settings.local.json` which is entirely mcs-managed,
+    /// the global `settings.json` may contain user-written content. We load the existing
+    /// file first and merge pack contributions into it — `Settings.merge(with:)` preserves
+    /// existing user values, and `Settings.save(to:)` preserves unknown top-level keys.
+    private func composeGlobalSettings(
+        packs: [any TechPack],
+        excludedComponents: [String: Set<String>] = [:]
+    ) throws {
+        let settingsPath = environment.claudeSettings
+
+        var settings = try Settings.load(from: settingsPath)
+        var hasContent = false
+
+        // 1. Auto-derive hook entries from hookFile components with hookEvent
+        for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
+            for component in pack.components {
+                guard !excluded.contains(component.id) else { continue }
+                if component.type == .hookFile,
+                   let hookEvent = component.hookEvent,
+                   case .copyPackFile(_, let destination, .hook) = component.installAction {
+                    // Global hooks use absolute path to ~/.claude/hooks/
+                    let command = "bash ~/.claude/hooks/\(destination)"
+                    let entry = Settings.HookEntry(type: "command", command: command)
+                    let group = Settings.HookGroup(matcher: nil, hooks: [entry])
+                    var existing = settings.hooks ?? [:]
+                    var groups = existing[hookEvent] ?? []
+                    if !groups.contains(where: { $0.hooks?.first?.command == command }) {
+                        groups.append(group)
+                    }
+                    existing[hookEvent] = groups
+                    settings.hooks = existing
+                    hasContent = true
+                }
+            }
+        }
+
+        // 2. Auto-derive enabledPlugins from plugin components
+        for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
+            for component in pack.components {
+                guard !excluded.contains(component.id) else { continue }
+                if case .plugin(let name) = component.installAction {
+                    let ref = PluginRef(name)
+                    var plugins = settings.enabledPlugins ?? [:]
+                    if plugins[ref.bareName] == nil {
+                        plugins[ref.bareName] = true
+                    }
+                    settings.enabledPlugins = plugins
+                    hasContent = true
+                }
+            }
+        }
+
+        // 3. Merge settings files from packs
+        for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
+            for component in pack.components {
+                guard !excluded.contains(component.id) else { continue }
+                if case .settingsMerge(let source) = component.installAction, let source {
+                    do {
+                        let packSettings = try Settings.load(from: source)
+                        settings.merge(with: packSettings)
+                        hasContent = true
+                    } catch {
+                        output.warn("Could not load settings from \(source.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+
+        // 4. Write composed settings (do NOT remove the file when empty — user may own it)
+        if hasContent {
+            do {
+                try settings.save(to: settingsPath)
+                output.success("Composed settings.json (global)")
+            } catch {
+                output.error("Could not write settings.json: \(error.localizedDescription)")
+                throw MCSError.fileOperationFailed(
+                    path: settingsPath.path,
+                    reason: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    // MARK: - Value Resolution
+
+    /// Resolve template/placeholder values from pack prompts for global scope.
+    ///
+    /// Project-scoped prompts (`fileDetect`) are skipped via `isGlobalScope: true`.
+    private func resolveGlobalTemplateValues(
+        packs: [any TechPack]
+    ) throws -> [String: String] {
+        var allValues: [String: String] = [:]
+        let context = ProjectConfigContext(
+            projectPath: environment.homeDirectory,
+            repoName: "",
+            output: output,
+            isGlobalScope: true
+        )
+        for pack in packs {
+            let packValues = try pack.templateValues(context: context)
+            allValues.merge(packValues) { _, new in new }
+        }
+        return allValues
+    }
+
+    /// Scan all `copyPackFile` sources for `__PLACEHOLDER__` tokens not covered by
+    /// resolved values. Returns undeclared keys sorted alphabetically.
+    private func scanForUndeclaredPlaceholders(
+        packs: [any TechPack],
+        resolvedValues: [String: String]
+    ) -> [String] {
+        var undeclared = Set<String>()
+        let resolvedKeys = Set(resolvedValues.keys)
+
+        for pack in packs {
+            for component in pack.components {
+                if case .copyPackFile(let source, _, _) = component.installAction {
+                    for placeholder in Self.findPlaceholdersInSource(source) {
+                        let key = Self.stripPlaceholderDelimiters(placeholder)
+                        if !resolvedKeys.contains(key) {
+                            undeclared.insert(key)
+                        }
+                    }
+                }
+            }
+        }
+
+        return undeclared.sorted()
+    }
+
+    /// Find all `__PLACEHOLDER__` tokens in a file or directory of files.
+    private static func findPlaceholdersInSource(_ source: URL) -> [String] {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: source.path, isDirectory: &isDir) else { return [] }
+
+        let files: [URL]
+        if isDir.boolValue {
+            files = (try? fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)) ?? []
+        } else {
+            files = [source]
+        }
+
+        var results: [String] = []
+        for file in files {
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            results.append(contentsOf: TemplateEngine.findUnreplacedPlaceholders(in: text))
+        }
+        return results
+    }
+
+    /// Strip `__` delimiters from a placeholder token (e.g. `__FOO__` → `FOO`).
+    private static func stripPlaceholderDelimiters(_ token: String) -> String {
+        String(token.dropFirst(2).dropLast(2))
+    }
+
     // MARK: - Helpers
 
     /// Filter a pack's components to those relevant for global installation.
-    /// Excludes settings merge (project-scoped only).
     private func globalComponents(from pack: any TechPack) -> [ComponentDefinition] {
-        pack.components.filter { component in
-            if case .settingsMerge = component.installAction { return false }
-            return true
-        }
+        pack.components
     }
 
     /// Return a path relative to `~/.claude/` for artifact tracking.
@@ -445,5 +627,21 @@ struct GlobalConfigurator {
 
     private func ensureGitignoreEntries() throws {
         try ConfiguratorSupport.ensureGitignoreEntries(shell: shell)
+    }
+
+    /// Print a summary of project-scoped features that were skipped during global sync.
+    private func printProjectScopedSkips(packs: [any TechPack]) {
+        var skipped: [String] = []
+
+        let templateCount = packs.reduce(0) { $0 + ((try? $1.templates) ?? []).count }
+        if templateCount > 0 {
+            skipped.append("CLAUDE.local.md templates (\(templateCount))")
+        }
+
+        if !skipped.isEmpty {
+            output.plain("")
+            output.dimmed("Skipped (project-scoped): \(skipped.joined(separator: ", "))")
+            output.dimmed("Run 'mcs sync' inside a project to apply these.")
+        }
     }
 }

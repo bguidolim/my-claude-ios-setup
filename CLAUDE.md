@@ -112,6 +112,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - Test files mirror source: `FooTests.swift` tests `Foo.swift`
 - Run a single test class: `swift test --filter MCSTests.FooTests`
 - Tests construct all state inline; no external fixtures or shared setup
+- **Important**: `swift test` output does not display in Claude Code's terminal. Redirect to a file and read it: `swift test > .test-output/results.txt 2>&1` then read `.test-output/results.txt`
 
 ## Key Design Decisions
 

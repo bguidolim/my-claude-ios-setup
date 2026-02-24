@@ -195,7 +195,7 @@ struct ProjectConfigurator {
         }
 
         // Hook entries (settings.local.json)
-        let hookEntries = ((try? pack.hookContributions) ?? []).map { "+\(hookEventName(for: $0.hookName)) hook entry" }
+        let hookEntries = ((try? pack.hookContributions) ?? []).map { "+\(ConfiguratorSupport.hookEventName(for: $0.hookName)) hook entry" }
         if !hookEntries.isEmpty {
             output.dimmed("  Hooks:        \(hookEntries.joined(separator: ", "))")
         }
@@ -595,7 +595,7 @@ struct ProjectConfigurator {
                 let entry = Settings.HookEntry(type: "command", command: command)
                 let group = Settings.HookGroup(matcher: nil, hooks: [entry])
 
-                let event = hookEventName(for: contribution.hookName)
+                let event = ConfiguratorSupport.hookEventName(for: contribution.hookName)
                 var existing = settings.hooks ?? [:]
                 var groups = existing[event] ?? []
                 // Deduplicate by command
@@ -686,18 +686,6 @@ struct ProjectConfigurator {
             } catch {
                 output.warn("Could not remove stale settings.local.json: \(error.localizedDescription)")
             }
-        }
-    }
-
-    /// Map hook contribution names to Claude Code hook event names.
-    private func hookEventName(for hookName: String) -> String {
-        switch hookName {
-        case "session_start": return "SessionStart"
-        case "pre_tool_use": return "PreToolUse"
-        case "post_tool_use": return "PostToolUse"
-        case "notification": return "Notification"
-        case "stop": return "Stop"
-        default: return hookName
         }
     }
 

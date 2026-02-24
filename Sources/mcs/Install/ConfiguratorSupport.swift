@@ -105,4 +105,16 @@ enum ConfiguratorSupport {
 
         return exclusions
     }
+
+    /// Map hook file names to Claude Code hook event names.
+    static func hookEventName(for hookName: String) -> String {
+        switch hookName {
+        case "session_start": return "SessionStart"
+        case "pre_tool_use": return "PreToolUse"
+        case "post_tool_use": return "PostToolUse"
+        case "notification": return "Notification"
+        case "stop": return "Stop"
+        default: return hookName
+        }
+    }
 }

@@ -15,6 +15,9 @@ DerivedData/
 # Serena (legacy, being removed)
 .serena/
 
+# Test output
+.test-output/
+
 # Editor artifacts
 *.swp
 *~

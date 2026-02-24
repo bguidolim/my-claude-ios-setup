@@ -93,9 +93,15 @@ struct ExternalPackAdapter: TechPack {
 
     func templateValues(context: ProjectConfigContext) throws -> [String: String] {
         guard let prompts = manifest.prompts, !prompts.isEmpty else { return [:] }
+        // In global scope, skip project-scoped prompt types (fileDetect scans
+        // project directories for files like *.xcodeproj which makes no sense globally).
+        let filtered = context.isGlobalScope
+            ? prompts.filter { $0.type != .fileDetect }
+            : prompts
+        guard !filtered.isEmpty else { return [:] }
         let executor = PromptExecutor(output: context.output, scriptRunner: scriptRunner)
         return try executor.executeAll(
-            prompts: prompts,
+            prompts: filtered,
             packPath: packPath,
             projectPath: context.projectPath
         )

@@ -7,12 +7,21 @@ struct ProjectConfigContext: Sendable {
     let output: CLIOutput
     /// Template values resolved by `templateValues(context:)`, available in `configureProject`.
     let resolvedValues: [String: String]
+    /// When `true`, project-scoped prompts (e.g. `fileDetect`) should be skipped.
+    let isGlobalScope: Bool
 
-    init(projectPath: URL, repoName: String, output: CLIOutput, resolvedValues: [String: String] = [:]) {
+    init(
+        projectPath: URL,
+        repoName: String,
+        output: CLIOutput,
+        resolvedValues: [String: String] = [:],
+        isGlobalScope: Bool = false
+    ) {
         self.projectPath = projectPath
         self.repoName = repoName
         self.output = output
         self.resolvedValues = resolvedValues
+        self.isGlobalScope = isGlobalScope
     }
 }
 
