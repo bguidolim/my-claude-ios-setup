@@ -412,12 +412,17 @@ struct ProjectConfigurator {
             exec.addPackGitignoreEntries(from: pack)
         }
 
-        // 10. Save project state
+        // 10. Save project state — failure here means artifacts become untracked
         do {
             try projectState.save()
             output.success("Updated .claude/.mcs-project")
         } catch {
-            output.warn("Could not write .mcs-project: \(error.localizedDescription)")
+            output.error("Could not write .mcs-project: \(error.localizedDescription)")
+            output.error("Project state may be inconsistent. Re-run 'mcs sync' to recover.")
+            throw MCSError.fileOperationFailed(
+                path: ".claude/.mcs-project",
+                reason: error.localizedDescription
+            )
         }
     }
 
@@ -440,8 +445,9 @@ struct ProjectConfigurator {
 
         // Remove MCP servers
         for server in artifacts.mcpServers {
-            exec.removeMCPServer(name: server.name, scope: server.scope)
-            output.dimmed("  Removed MCP server: \(server.name)")
+            if exec.removeMCPServer(name: server.name, scope: server.scope) {
+                output.dimmed("  Removed MCP server: \(server.name)")
+            }
         }
 
         // Remove project files

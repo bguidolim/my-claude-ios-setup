@@ -270,9 +270,15 @@ struct ComponentExecutor {
     }
 
     /// Remove an MCP server by name and scope.
-    func removeMCPServer(name: String, scope: String) {
+    /// Returns `true` if removal succeeded.
+    @discardableResult
+    func removeMCPServer(name: String, scope: String) -> Bool {
         let claude = ClaudeIntegration(shell: shell)
-        claude.mcpRemove(name: name, scope: scope)
+        let result = claude.mcpRemove(name: name, scope: scope)
+        if !result.succeeded {
+            output.warn("Could not remove MCP server '\(name)' (scope: \(scope)): \(result.stderr)")
+        }
+        return result.succeeded
     }
 
     private func projectRelativePath(_ url: URL, projectPath: URL) -> String {

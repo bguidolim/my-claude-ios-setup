@@ -89,10 +89,10 @@ struct SyncCommandTests {
         #expect(cmd.global == true)
     }
 
-    @Test("skipLock is true when --global is set")
+    @Test("skipLock is false when --global is set (global sync needs lock)")
     func skipLockWhenGlobal() throws {
         let cmd = try SyncCommand.parse(["--global"])
-        #expect(cmd.skipLock == true)
+        #expect(cmd.skipLock == false)
     }
 
     @Test("Parses --global with --pack and --dry-run")

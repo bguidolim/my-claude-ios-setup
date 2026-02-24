@@ -31,7 +31,7 @@ struct SyncCommand: LockedCommand {
     @Flag(name: .long, help: "Install to global scope (MCP servers with user scope, files to ~/.claude/)")
     var global = false
 
-    var skipLock: Bool { dryRun || global }
+    var skipLock: Bool { dryRun }
 
     func perform() throws {
         let env = Environment()

@@ -327,12 +327,17 @@ struct GlobalConfigurator {
             exec.addPackGitignoreEntries(from: pack)
         }
 
-        // 4. Save global state
+        // 4. Save global state — failure here means artifacts become untracked
         do {
             try state.save()
             output.success("Updated \(environment.globalStateFile.lastPathComponent)")
         } catch {
-            output.warn("Could not write global state: \(error.localizedDescription)")
+            output.error("Could not write global state: \(error.localizedDescription)")
+            output.error("Global state may be inconsistent. Re-run 'mcs sync --global' to recover.")
+            throw MCSError.fileOperationFailed(
+                path: environment.globalStateFile.path,
+                reason: error.localizedDescription
+            )
         }
     }
 
@@ -354,8 +359,9 @@ struct GlobalConfigurator {
 
         // Remove MCP servers
         for server in artifacts.mcpServers {
-            exec.removeMCPServer(name: server.name, scope: server.scope)
-            output.dimmed("  Removed MCP server: \(server.name)")
+            if exec.removeMCPServer(name: server.name, scope: server.scope) {
+                output.dimmed("  Removed MCP server: \(server.name)")
+            }
         }
 
         // Remove files from ~/.claude/ tree

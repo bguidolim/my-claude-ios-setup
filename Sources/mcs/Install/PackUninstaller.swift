@@ -91,7 +91,10 @@ struct PackUninstaller {
             }
 
         case .copyPackFile(let config):
-            let destURL = resolveDestination(config.destination)
+            guard let destURL = resolveDestination(config.destination) else {
+                summary.errors.append("File '\(config.destination)': destination escapes expected directory")
+                return
+            }
             let fm = FileManager.default
             if fm.fileExists(atPath: destURL.path) {
                 do {
@@ -126,17 +129,32 @@ struct PackUninstaller {
     }
 
     /// Resolve a destination path, expanding `~/.claude/` to the actual claude directory.
-    private func resolveDestination(_ destination: String) -> URL {
+    /// Returns `nil` if the resolved path escapes the expected directory (path traversal).
+    private func resolveDestination(_ destination: String) -> URL? {
+        let destURL: URL
+        let expectedParent: URL
+
         if destination.hasPrefix("~/.claude/") {
             let relative = String(destination.dropFirst("~/.claude/".count))
-            return environment.claudeDirectory.appendingPathComponent(relative)
-        }
-        // Expand ~ for other home-relative paths
-        if destination.hasPrefix("~/") {
+            destURL = environment.claudeDirectory.appendingPathComponent(relative)
+            expectedParent = environment.claudeDirectory
+        } else if destination.hasPrefix("~/") {
             let relative = String(destination.dropFirst("~/".count))
-            return FileManager.default.homeDirectoryForCurrentUser
+            destURL = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(relative)
+            expectedParent = FileManager.default.homeDirectoryForCurrentUser
+        } else {
+            destURL = URL(fileURLWithPath: destination)
+            expectedParent = environment.claudeDirectory
         }
-        return URL(fileURLWithPath: destination)
+
+        // Validate destination doesn't escape expected directory via path traversal
+        let resolvedDest = destURL.resolvingSymlinksInPath()
+        let parentPath = expectedParent.resolvingSymlinksInPath().path
+        let parentPrefix = parentPath.hasSuffix("/") ? parentPath : parentPath + "/"
+        guard resolvedDest.path.hasPrefix(parentPrefix) || resolvedDest.path == parentPath else {
+            return nil
+        }
+        return destURL
     }
 }
