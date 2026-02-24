@@ -34,6 +34,9 @@ struct ProjectState {
         var configuredAt: String?
         var configuredPacks: [String] = []
         var packArtifacts: [String: PackArtifactRecord] = [:]
+        /// Component IDs excluded per pack (packID -> [componentID]).
+        /// Exclusion-based: new components added by pack updates are included by default.
+        var excludedComponents: [String: [String]] = [:]
     }
 
     init(projectRoot: URL) {
@@ -66,6 +69,7 @@ struct ProjectState {
     mutating func removePack(_ identifier: String) {
         storage.configuredPacks.removeAll { $0 == identifier }
         storage.packArtifacts.removeValue(forKey: identifier)
+        storage.excludedComponents.removeValue(forKey: identifier)
     }
 
     /// The MCS version that last wrote this file.
@@ -83,6 +87,27 @@ struct ProjectState {
     /// Set the artifact record for a pack.
     mutating func setArtifacts(_ record: PackArtifactRecord, for packID: String) {
         storage.packArtifacts[packID] = record
+    }
+
+    // MARK: - Component Exclusions
+
+    /// Get excluded component IDs for a pack.
+    func excludedComponents(for packID: String) -> Set<String> {
+        Set(storage.excludedComponents[packID] ?? [])
+    }
+
+    /// Set excluded component IDs for a pack. Pass empty set to clear exclusions.
+    mutating func setExcludedComponents(_ componentIDs: Set<String>, for packID: String) {
+        if componentIDs.isEmpty {
+            storage.excludedComponents.removeValue(forKey: packID)
+        } else {
+            storage.excludedComponents[packID] = componentIDs.sorted()
+        }
+    }
+
+    /// All excluded components across all packs: packID -> Set<componentID>.
+    var allExcludedComponents: [String: Set<String>] {
+        storage.excludedComponents.mapValues { Set($0) }
     }
 
     // MARK: - Persistence

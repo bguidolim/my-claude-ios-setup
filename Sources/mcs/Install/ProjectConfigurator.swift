@@ -14,8 +14,10 @@ struct ProjectConfigurator {
     // MARK: - Interactive Flow
 
     /// Full interactive configure flow — multi-select of registered packs.
-    func interactiveConfigure(at projectPath: URL, dryRun: Bool = false) throws {
-        output.header("Configure Project")
+    ///
+    /// - Parameter customize: When `true`, present per-pack component multi-select after pack selection.
+    func interactiveConfigure(at projectPath: URL, dryRun: Bool = false, customize: Bool = false) throws {
+        output.header("Sync Project")
         output.plain("")
         output.info("Project: \(projectPath.path)")
 
@@ -61,14 +63,79 @@ struct ProjectConfigurator {
             return
         }
 
+        // Component-level customization
+        var excludedComponents: [String: Set<String>] = [:]
+        if customize {
+            excludedComponents = selectComponentExclusions(
+                packs: selectedPacks,
+                previousState: previousState
+            )
+        }
+
         if dryRun {
             self.dryRun(at: projectPath, packs: selectedPacks)
         } else {
-            try configure(at: projectPath, packs: selectedPacks)
+            try configure(at: projectPath, packs: selectedPacks, excludedComponents: excludedComponents)
 
             output.header("Done")
             output.info("Run 'mcs doctor' to verify configuration")
         }
+    }
+
+    /// Present per-pack component multi-select and return excluded component IDs.
+    private func selectComponentExclusions(
+        packs: [any TechPack],
+        previousState: ProjectState
+    ) -> [String: Set<String>] {
+        var exclusions: [String: Set<String>] = [:]
+
+        for pack in packs {
+            let components = pack.components
+            guard components.count > 1 else { continue } // No point customizing a single component
+
+            output.plain("")
+            output.info("Components for \(pack.displayName):")
+
+            let previousExcluded = previousState.excludedComponents(for: pack.identifier)
+
+            var number = 1
+            var items: [SelectableItem] = []
+            for component in components {
+                items.append(SelectableItem(
+                    number: number,
+                    name: component.displayName,
+                    description: component.description,
+                    isSelected: !previousExcluded.contains(component.id)
+                ))
+                number += 1
+            }
+
+            let requiredItems = components
+                .filter(\.isRequired)
+                .map { RequiredItem(name: $0.displayName) }
+
+            var groups = [SelectableGroup(
+                title: pack.displayName,
+                items: items,
+                requiredItems: requiredItems
+            )]
+
+            let selectedNumbers = output.multiSelect(groups: &groups)
+
+            // Compute excluded = all component IDs NOT in selectedNumbers
+            var excluded = Set<String>()
+            for (index, component) in components.enumerated() {
+                if !selectedNumbers.contains(index + 1) && !component.isRequired {
+                    excluded.insert(component.id)
+                }
+            }
+
+            if !excluded.isEmpty {
+                exclusions[pack.identifier] = excluded
+            }
+        }
+
+        return exclusions
     }
 
     // MARK: - Dry Run
@@ -238,10 +305,13 @@ struct ProjectConfigurator {
     ///
     /// - Parameter confirmRemovals: When `true`, prompt the user before removing packs.
     ///   Pass `false` for non-interactive paths (`--pack`, `--all`).
+    /// - Parameter excludedComponents: Component IDs excluded per pack (packID -> Set<componentID>).
+    ///   Excluded components are skipped during installation, settings composition, and artifact tracking.
     func configure(
         at projectPath: URL,
         packs: [any TechPack],
-        confirmRemovals: Bool = true
+        confirmRemovals: Bool = true,
+        excludedComponents: [String: Set<String>] = [:]
     ) throws {
         let selectedIDs = Set(packs.map(\.identifier))
 
@@ -295,7 +365,8 @@ struct ProjectConfigurator {
 
         // 2. Auto-install global dependencies for all selected packs
         for pack in packs {
-            autoInstallGlobalDependencies(pack)
+            let excluded = excludedComponents[pack.identifier] ?? []
+            autoInstallGlobalDependencies(pack, excludedIDs: excluded)
         }
 
         // 3. Resolve all template/placeholder values upfront (single pass)
@@ -311,16 +382,18 @@ struct ProjectConfigurator {
 
         // 5. Install per-project files with resolved values
         for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
             let isNew = additions.contains(pack.identifier)
             let label = isNew ? "Configuring" : "Updating"
             output.info("\(label) \(pack.displayName)...")
-            let artifacts = installProjectArtifacts(pack, at: projectPath, resolvedValues: allValues)
+            let artifacts = installProjectArtifacts(pack, at: projectPath, resolvedValues: allValues, excludedIDs: excluded)
             projectState.setArtifacts(artifacts, for: pack.identifier)
+            projectState.setExcludedComponents(excluded, for: pack.identifier)
             projectState.recordPack(pack.identifier)
         }
 
         // 6. Compose settings.local.json from ALL selected packs
-        composeProjectSettings(at: projectPath, packs: packs)
+        composeProjectSettings(at: projectPath, packs: packs, excludedComponents: excludedComponents)
 
         // 7. Compose CLAUDE.local.md with pre-resolved values
         try composeClaudeLocal(at: projectPath, packs: packs, values: allValues)
@@ -426,9 +499,10 @@ struct ProjectConfigurator {
     // MARK: - Global Dependencies
 
     /// Auto-install brew packages and plugins (global-scope only).
-    private func autoInstallGlobalDependencies(_ pack: any TechPack) {
+    private func autoInstallGlobalDependencies(_ pack: any TechPack, excludedIDs: Set<String> = []) {
         let exec = makeExecutor()
         for component in pack.components {
+            guard !excludedIDs.contains(component.id) else { continue }
             guard !ComponentExecutor.isAlreadyInstalled(component) else { continue }
 
             switch component.installAction {
@@ -451,12 +525,18 @@ struct ProjectConfigurator {
     private func installProjectArtifacts(
         _ pack: any TechPack,
         at projectPath: URL,
-        resolvedValues: [String: String] = [:]
+        resolvedValues: [String: String] = [:],
+        excludedIDs: Set<String> = []
     ) -> PackArtifactRecord {
         var artifacts = PackArtifactRecord()
         var exec = makeExecutor()
 
         for component in pack.components {
+            if excludedIDs.contains(component.id) {
+                output.dimmed("  \(component.displayName) excluded, skipping")
+                continue
+            }
+
             // Check doctor checks before running install — skip if already installed.
             // Convergent actions (copyPackFile, settingsMerge, mcpServer, gitignore)
             // always report not-installed so they re-run to pick up changes.
@@ -524,7 +604,11 @@ struct ProjectConfigurator {
     // MARK: - Settings Composition
 
     /// Build `settings.local.json` from all selected packs' hook entries and settings files.
-    private func composeProjectSettings(at projectPath: URL, packs: [any TechPack]) {
+    private func composeProjectSettings(
+        at projectPath: URL,
+        packs: [any TechPack],
+        excludedComponents: [String: Set<String>] = [:]
+    ) {
         let settingsPath = projectPath
             .appendingPathComponent(Constants.FileNames.claudeDirectory)
             .appendingPathComponent("settings.local.json")
@@ -554,7 +638,9 @@ struct ProjectConfigurator {
 
         // Auto-derive hook entries from hookFile components with hookEvent
         for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
             for component in pack.components {
+                guard !excluded.contains(component.id) else { continue }
                 if component.type == .hookFile,
                    let hookEvent = component.hookEvent,
                    case .copyPackFile(_, let destination, .hook) = component.installAction {
@@ -575,7 +661,9 @@ struct ProjectConfigurator {
 
         // Auto-derive enabledPlugins from plugin components
         for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
             for component in pack.components {
+                guard !excluded.contains(component.id) else { continue }
                 if case .plugin(let name) = component.installAction {
                     let ref = PluginRef(name)
                     var plugins = settings.enabledPlugins ?? [:]
@@ -590,7 +678,9 @@ struct ProjectConfigurator {
 
         // Merge settings files from packs
         for pack in packs {
+            let excluded = excludedComponents[pack.identifier] ?? []
             for component in pack.components {
+                guard !excluded.contains(component.id) else { continue }
                 if case .settingsMerge(let source) = component.installAction, let source {
                     do {
                         let packSettings = try Settings.load(from: source)
