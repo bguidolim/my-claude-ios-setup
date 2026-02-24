@@ -24,40 +24,15 @@ struct SelectionState {
 
     // MARK: - Bulk Selection
 
-    /// Select all core components (excludes pack components).
-    /// Pack components must be selected explicitly via selectPack.
-    mutating func selectAllCore(from components: [ComponentDefinition]) {
-        for component in components {
-            // Skip dependency-only components — they get auto-resolved
-            // Skip pack components — they require explicit pack selection
-            if component.type != .brewPackage && component.packIdentifier == nil {
-                selectedIDs.insert(component.id)
-            }
-        }
-    }
-
-    /// Select components from a specific pack plus required core deps.
+    /// Select all non-brew components from a pack.
     mutating func selectPack(
         _ packIdentifier: String,
-        coreComponents: [ComponentDefinition],
         packComponents: [ComponentDefinition]
     ) {
-        // Select all pack components
         for component in packComponents {
             if component.type != .brewPackage {
                 selectedIDs.insert(component.id)
             }
-        }
-        // Select required core components
-        for component in coreComponents where component.isRequired {
-            selectedIDs.insert(component.id)
-        }
-    }
-
-    /// Select required core components.
-    mutating func selectRequiredCore(from components: [ComponentDefinition]) {
-        for component in components where component.isRequired {
-            selectedIDs.insert(component.id)
         }
     }
 }

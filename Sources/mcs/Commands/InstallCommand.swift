@@ -1,10 +1,11 @@
 import ArgumentParser
 import Foundation
 
-struct InstallCommand: ParsableCommand {
+struct InstallCommand: LockedCommand {
     static let configuration = CommandConfiguration(
         commandName: "install",
-        abstract: "Install and configure Claude Code components"
+        abstract: "Install and configure Claude Code components",
+        shouldDisplay: false
     )
 
     @Flag(name: .long, help: "Install all components without prompts")
@@ -16,16 +17,30 @@ struct InstallCommand: ParsableCommand {
     @Option(name: .long, help: "Tech pack to install (e.g. ios)")
     var pack: String?
 
-    func run() throws {
+    var skipLock: Bool { dryRun }
+
+    func perform() throws {
         let env = Environment()
         let output = CLIOutput()
+
+        output.warn("'mcs install' is deprecated. Use 'mcs sync' instead.")
         let shell = ShellRunner(environment: env)
+
+        guard ensureClaudeCLI(shell: shell, environment: env, output: output) else {
+            throw ExitCode.failure
+        }
+
+        let registry = TechPackRegistry.loadWithExternalPacks(
+            environment: env,
+            output: output
+        )
 
         var installer = Installer(
             environment: env,
             output: output,
             shell: shell,
-            dryRun: dryRun
+            dryRun: dryRun,
+            registry: registry
         )
 
         // Phase 1: Welcome
@@ -40,9 +55,7 @@ struct InstallCommand: ParsableCommand {
         }
 
         // Resolve dependencies
-        let allComponents = TechPackRegistry.shared.allComponents(
-            includingCore: CoreComponents.all
-        )
+        let allComponents = registry.allPackComponents
         let plan: DependencyResolver.ResolvedPlan
         do {
             plan = try DependencyResolver.resolve(

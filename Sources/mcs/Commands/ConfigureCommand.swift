@@ -1,10 +1,11 @@
 import ArgumentParser
 import Foundation
 
-struct ConfigureCommand: ParsableCommand {
+struct ConfigureCommand: LockedCommand {
     static let configuration = CommandConfiguration(
         commandName: "configure",
-        abstract: "Generate CLAUDE.local.md for a project"
+        abstract: "Configure a project with tech packs",
+        shouldDisplay: false
     )
 
     @Argument(help: "Path to the project directory (defaults to current directory)")
@@ -13,10 +14,27 @@ struct ConfigureCommand: ParsableCommand {
     @Option(name: .long, help: "Tech pack to apply (e.g. ios). Can be specified multiple times.")
     var pack: [String] = []
 
-    mutating func run() throws {
+    @Flag(name: .long, help: "Show what would change without making any modifications")
+    var dryRun = false
+
+    @Flag(name: .long, help: "Checkout locked pack versions from mcs.lock.yaml before configuring")
+    var lock = false
+
+    @Flag(name: .long, help: "Fetch latest pack versions and update mcs.lock.yaml")
+    var update = false
+
+    var skipLock: Bool { dryRun }
+
+    func perform() throws {
         let env = Environment()
         let output = CLIOutput()
         let shell = ShellRunner(environment: env)
+
+        output.warn("'mcs configure' is deprecated. Use 'mcs sync' instead.")
+
+        guard ensureClaudeCLI(shell: shell, environment: env, output: output) else {
+            throw ExitCode.failure
+        }
 
         let projectPath: URL
         if let p = path {
@@ -32,25 +50,42 @@ struct ConfigureCommand: ParsableCommand {
             )
         }
 
+        let lockOps = LockfileOperations(environment: env, output: output, shell: shell)
+
+        // Handle --lock: checkout locked versions before loading packs
+        if lock {
+            try lockOps.checkoutLockedVersions(at: projectPath)
+        }
+
+        // Handle --update: fetch latest for all packs before loading
+        if update {
+            try lockOps.updatePacks()
+        }
+
+        let registry = TechPackRegistry.loadWithExternalPacks(
+            environment: env,
+            output: output
+        )
+
         let configurator = ProjectConfigurator(
             environment: env,
             output: output,
-            shell: shell
+            shell: shell,
+            registry: registry
         )
 
         if pack.isEmpty {
-            // Interactive flow — same as post-install configure
-            try configurator.interactiveConfigure(at: projectPath)
+            // Interactive flow — multi-select of all registered packs
+            try configurator.interactiveConfigure(at: projectPath, dryRun: dryRun)
         } else {
-            // Explicit --pack flag
-            let registry = TechPackRegistry.shared
-            let resolvedPacks = pack.compactMap { registry.pack(for: $0) }
+            // Non-interactive --pack flag (CI-friendly)
+            let resolvedPacks: [any TechPack] = pack.compactMap { registry.pack(for: $0) }
 
             for id in pack where registry.pack(for: id) == nil {
                 output.warn("Unknown tech pack: \(id)")
             }
 
-            guard let resolvedPack = resolvedPacks.first else {
+            guard !resolvedPacks.isEmpty else {
                 output.error("No valid tech pack specified.")
                 let available = registry.availablePacks.map(\.identifier).joined(separator: ", ")
                 output.plain("  Available packs: \(available)")
@@ -59,14 +94,22 @@ struct ConfigureCommand: ParsableCommand {
 
             output.header("Configure Project")
             output.plain("")
-            output.warn("This command should be run inside your project directory.")
             output.info("Project: \(projectPath.path)")
-            output.info("Tech pack: \(resolvedPack.displayName)")
+            output.info("Packs: \(resolvedPacks.map(\.displayName).joined(separator: ", "))")
 
-            try configurator.configure(at: projectPath, pack: resolvedPack)
+            if dryRun {
+                configurator.dryRun(at: projectPath, packs: resolvedPacks)
+            } else {
+                try configurator.configure(at: projectPath, packs: resolvedPacks)
 
-            output.header("Done")
-            output.info("Run 'mcs doctor' to verify configuration")
+                output.header("Done")
+                output.info("Run 'mcs doctor' to verify configuration")
+            }
+        }
+
+        // Write lockfile after successful configure (unless dry-run)
+        if !dryRun {
+            try lockOps.writeLockfile(at: projectPath)
         }
     }
 }

@@ -3,13 +3,13 @@ import Foundation
 /// Orchestrates all doctor checks grouped by section, with optional fix mode.
 ///
 /// **Scope of `--fix`**: Cleanup, migration, and trivial repairs only.
-/// Additive operations (install/register/copy) are deferred to `mcs install`
-/// because only install manages the manifest and records file hashes.
+/// Additive operations (install/register/copy) are deferred to `mcs sync`.
 /// See CoreDoctorChecks.swift header for the full responsibility boundary.
 struct DoctorRunner {
     let fixMode: Bool
-    /// Explicit pack filter. If nil, uses packs recorded in the manifest.
+    /// Explicit pack filter. If nil, uses packs from project state or pack registry.
     let packFilter: String?
+    let registry: TechPackRegistry
 
     private let output = CLIOutput()
     private var passCount = 0
@@ -17,18 +17,21 @@ struct DoctorRunner {
     private var warnCount = 0
     private var fixedCount = 0
 
-    init(fixMode: Bool, packFilter: String? = nil) {
+    init(fixMode: Bool, packFilter: String? = nil, registry: TechPackRegistry = .shared) {
         self.fixMode = fixMode
         self.packFilter = packFilter
+        self.registry = registry
     }
 
     mutating func run() throws {
         output.header("My Claude Setup — Doctor")
 
         let env = Environment()
-        env.migrateManifestIfNeeded()
-        let manifest = Manifest(path: env.setupManifest)
-        let registry = TechPackRegistry.shared
+        let registry = self.registry
+
+        // Resolve registered pack IDs from the YAML registry (replaces legacy .mcs-manifest)
+        let packRegistry = PackRegistryFile(path: env.packsRegistry)
+        let registeredPackIDs = Set((try? packRegistry.load())?.packs.map(\.identifier) ?? [])
 
         // Detect project root
         let projectRoot = ProjectDetector.findProjectRoot()
@@ -70,17 +73,17 @@ struct DoctorRunner {
                         installedPackIDs = inferred
                         packSource = "project: \(projectName ?? "unknown") (inferred)"
                     } else {
-                        installedPackIDs = manifest.installedPacks
+                        installedPackIDs = registeredPackIDs
                         packSource = "global"
                     }
                 } else {
-                    installedPackIDs = manifest.installedPacks
+                    installedPackIDs = registeredPackIDs
                     packSource = "global"
                 }
             }
         } else {
-            // 4. Not in a project — fall back to global manifest
-            installedPackIDs = manifest.installedPacks
+            // 4. Not in a project — fall back to pack registry
+            installedPackIDs = registeredPackIDs
             packSource = "global"
         }
 
@@ -93,11 +96,9 @@ struct DoctorRunner {
         // === Layered check collection ===
 
         // Layer 1+2: Derived + supplementary checks from installed components
-        let coreComponents = CoreComponents.all
-        let packComponents = registry.availablePacks
+        let allComponents = registry.availablePacks
             .filter { installedPackIDs.contains($0.identifier) }
             .flatMap { $0.components }
-        let allComponents = coreComponents + packComponents
 
         var allChecks: [any DoctorCheck] = []
         for component in allComponents {
@@ -108,27 +109,9 @@ struct DoctorRunner {
         allChecks.append(contentsOf: registry.supplementaryDoctorChecks(installedPacks: installedPackIDs))
 
         // Layer 4: Standalone checks (not tied to any component)
-        allChecks.append(contentsOf: standaloneDoctorChecks())
+        allChecks.append(contentsOf: standaloneDoctorChecks(installedPackIDs: installedPackIDs))
 
-        // Layer 5: Migration/deprecated checks
-        allChecks.append(contentsOf: deprecationChecks())
-        allChecks.append(contentsOf: MigrationDetector.checks)
-
-        // Layer 6: Hook contribution checks
-        for (pack, contribution) in registry.hookContributions(installedPacks: installedPackIDs) {
-            allChecks.append(HookContributionCheck(
-                packIdentifier: pack.identifier,
-                packDisplayName: pack.displayName,
-                contribution: contribution
-            ))
-        }
-
-        // Layer 6 (cont.): Pack migrations as DoctorCheck adapters
-        for (pack, migration) in registry.migrations(installedPacks: installedPackIDs) {
-            allChecks.append(PackMigrationCheck(migration: migration, packName: pack.displayName))
-        }
-
-        // Layer 7: Project-scoped checks (only when inside a project)
+        // Layer 5: Project-scoped checks (only when inside a project)
         if let root = projectRoot {
             allChecks.append(contentsOf: ProjectDoctorChecks.checks(projectRoot: root))
         }
@@ -137,7 +120,7 @@ struct DoctorRunner {
         let grouped = Dictionary(grouping: allChecks, by: \.section)
         let sectionOrder = [
             "Dependencies", "MCP Servers", "Plugins", "Skills", "Commands",
-            "Hooks", "Settings", "Gitignore", "File Freshness", "Project", "Templates", "Migration",
+            "Hooks", "Settings", "Gitignore", "Project", "Templates",
         ]
 
         for section in sectionOrder {
@@ -165,39 +148,13 @@ struct DoctorRunner {
     // MARK: - Standalone checks (not tied to any component)
 
     /// Checks that cannot be derived from any ComponentDefinition.
-    private func standaloneDoctorChecks() -> [any DoctorCheck] {
+    private func standaloneDoctorChecks(installedPackIDs: Set<String>) -> [any DoctorCheck] {
         var checks: [any DoctorCheck] = []
 
-        // Hook event registration in settings.json
-        checks.append(HookEventCheck(eventName: Constants.Hooks.eventSessionStart))
-        checks.append(HookEventCheck(eventName: Constants.Hooks.eventUserPromptSubmit, isOptional: true))
-
-        // Continuous learning hook fragment
-        checks.append(ContinuousLearningHookFragmentCheck())
-
-        // Settings value validation
-        checks.append(SettingsCheck())
-        checks.append(SettingsOwnershipCheck())
-
-        // Gitignore (cross-component aggregation)
-        checks.append(GitignoreCheck())
-
-        // Manifest freshness (cross-file integrity)
-        checks.append(ManifestFreshnessCheck())
+        // Gitignore (cross-component aggregation — engine-level)
+        checks.append(GitignoreCheck(registry: registry, installedPackIDs: installedPackIDs))
 
         return checks
-    }
-
-    /// Deprecated component checks (migration-era artifacts).
-    private func deprecationChecks() -> [any DoctorCheck] {
-        [
-            DeprecatedMCPServerCheck(name: "mcp-omnisearch", identifier: "mcp-omnisearch"),
-            DeprecatedPluginCheck(name: "claude-hud plugin", pluginName: "claude-hud@claude-hud"),
-            DeprecatedPluginCheck(
-                name: "code-simplifier plugin",
-                pluginName: "code-simplifier@claude-plugins-official"
-            ),
-        ]
     }
 
     // MARK: - Check execution

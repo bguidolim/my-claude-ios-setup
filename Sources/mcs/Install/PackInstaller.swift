@@ -1,41 +1,39 @@
 import Foundation
 
 /// Installs pack components with dependency resolution.
-/// Used by `ConfigureCommand` (mcs configure) to auto-install missing pack dependencies.
+/// Used by `SyncCommand` (mcs sync) to auto-install missing pack dependencies.
 /// Delegates to `ComponentExecutor` for shared install logic, ensuring consistent
-/// behavior with `Installer` (mcs install).
+/// behavior across install paths.
 struct PackInstaller {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
-    var backup: Backup
+    let registry: TechPackRegistry
 
     init(
         environment: Environment,
         output: CLIOutput,
         shell: ShellRunner,
-        backup: Backup = Backup()
+        registry: TechPackRegistry = .shared
     ) {
         self.environment = environment
         self.output = output
         self.shell = shell
-        self.backup = backup
+        self.registry = registry
     }
 
     private var executor: ComponentExecutor {
         ComponentExecutor(
             environment: environment,
             output: output,
-            shell: shell,
-            backup: backup
+            shell: shell
         )
     }
 
     /// Install missing components for a pack. Returns true if all succeeded.
     @discardableResult
-    mutating func installPack(_ pack: any TechPack) -> Bool {
-        let coreComponents = CoreComponents.all
-        let allComponents = TechPackRegistry.shared.allComponents(includingCore: coreComponents)
+    func installPack(_ pack: any TechPack) -> Bool {
+        let allComponents = registry.allPackComponents
 
         // Select all pack components
         let selectedIDs = Set(pack.components.map(\.id))
@@ -79,38 +77,8 @@ struct PackInstaller {
             }
         }
 
-        // Post-processing: hook contributions and gitignore
-        var exec = executor
-        exec.injectHookContributions(from: pack)
-        exec.addPackGitignoreEntries(from: pack)
-        backup = exec.backup
-
-        // Record pack in manifest and re-record hashes for hook files
-        // modified by injection (must happen after injection, not before)
-        var manifest = Manifest(path: environment.setupManifest)
-        manifest.recordInstalledPack(pack.identifier)
-
-        for contribution in pack.hookContributions {
-            let hookFileName = contribution.hookName + ".sh"
-            let installedHook = environment.hooksDirectory.appendingPathComponent(hookFileName)
-            let relativePath = "hooks/\(hookFileName)"
-            guard FileManager.default.fileExists(atPath: installedHook.path) else {
-                output.warn("Expected hook file \(hookFileName) not found — hash not recorded")
-                continue
-            }
-            do {
-                let hash = try Manifest.sha256(of: installedHook)
-                manifest.recordHash(relativePath: relativePath, hash: hash)
-            } catch {
-                output.warn("Could not update manifest hash for \(hookFileName): \(error.localizedDescription)")
-            }
-        }
-
-        do {
-            try manifest.save()
-        } catch {
-            output.warn("Could not save manifest: \(error.localizedDescription)")
-        }
+        // Post-processing: gitignore entries
+        executor.addPackGitignoreEntries(from: pack)
 
         return allSucceeded
     }
@@ -122,11 +90,7 @@ struct PackInstaller {
 
         switch component.installAction {
         case .brewInstall(let package):
-            let success = exec.installBrewPackage(package)
-            if success {
-                exec.postInstall(component)
-            }
-            return success
+            return exec.installBrewPackage(package)
 
         case .shellCommand(let command):
             let result = shell.shell(command)
@@ -144,8 +108,15 @@ struct PackInstaller {
         case .gitignoreEntries(let entries):
             return exec.addGitignoreEntries(entries)
 
-        case .copySkill, .copyHook, .copyCommand, .settingsMerge:
-            // These are core-only actions, not used by pack components
+        case .copyPackFile(let source, let destination, let fileType):
+            return exec.installCopyPackFile(
+                source: source,
+                destination: destination,
+                fileType: fileType
+            )
+
+        case .settingsMerge:
+            // Settings merge is handled at the project level by ProjectConfigurator.
             return true
         }
     }

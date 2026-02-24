@@ -62,6 +62,23 @@ struct BackupTests {
         #expect(backup.createdBackups.count == 2)
     }
 
+    @Test("backupFile produces unique names for rapid successive backups")
+    func backupUniqueNames() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let original = tmpDir.appendingPathComponent("test.txt")
+        try "content".write(to: original, atomically: true, encoding: .utf8)
+
+        var backup = Backup()
+        let first = try backup.backupFile(at: original)
+        let second = try backup.backupFile(at: original)
+
+        #expect(first != nil)
+        #expect(second != nil)
+        #expect(first!.path != second!.path)
+    }
+
     // MARK: - findBackups
 
     @Test("findBackups discovers backup files including in hidden dirs")

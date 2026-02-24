@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Swift CLI tool (`mcs`) that configures Claude Code with MCP servers, plugins, skills, hooks, and settings. Technology-agnostic core with a "tech pack" extension model. Currently ships with an iOS tech pack. Distributed via Homebrew.
+Swift CLI tool (`mcs`) that configures Claude Code with MCP servers, plugins, skills, hooks, and settings. Pure pack management engine with zero bundled content — all features come from external tech packs. Distributed via Homebrew.
 
 ## Commands
 
@@ -15,15 +15,17 @@ swift test                       # Run tests
 swift build -c release --arch arm64 --arch x86_64  # Universal binary
 
 # CLI usage (after install)
-mcs install                      # Interactive setup (pick components)
-mcs install --all                # Install everything
+mcs install                      # Interactive global component install (brew, MCP, plugins)
+mcs install --all                # Install everything from all registered packs
 mcs install --dry-run            # Preview what would be installed
-mcs install --pack ios           # Install iOS pack components
-mcs doctor                       # Diagnose installation health (core + installed packs)
+mcs configure [path]             # Per-project setup: multi-select packs, compose artifacts
+mcs configure --pack ios         # Non-interactive: apply specific packs (repeatable)
+mcs doctor                       # Diagnose installation health
 mcs doctor --fix                 # Diagnose and auto-fix issues
 mcs doctor --pack ios            # Only check a specific pack
-mcs configure [path]             # Generate CLAUDE.local.md (core + installed packs)
-mcs configure --pack ios         # Explicitly apply a pack's templates
+mcs pack add <url>               # Add an external tech pack from a Git URL
+mcs pack remove <name>           # Remove an external tech pack
+mcs pack list                    # List registered external packs
 mcs cleanup                      # Find and delete backup files
 mcs cleanup --force              # Delete backups without confirmation
 ```
@@ -43,71 +45,58 @@ mcs cleanup --force              # Delete backups without confirmation
 - `Environment.swift` — paths, arch detection, brew path, shell RC
 - `CLIOutput.swift` — ANSI colors, logging, prompts, multi-select, doctor summary
 - `ShellRunner.swift` — Process execution wrapper
-- `Settings.swift` — Codable model for `settings.json`, deep-merge (replaces jq)
-- `SettingsOwnership.swift` — sidecar file tracking which settings keys mcs manages, stale key detection
-- `Manifest.swift` — SHA-256 tracking via CryptoKit, per-file directory hashing, installed component/pack tracking
-- `Backup.swift` — timestamped backups before file writes, backup discovery and deletion
+- `Settings.swift` — Codable model for `settings.json` and `settings.local.json`, deep-merge
+- `Backup.swift` — timestamped backups for mixed-ownership files (CLAUDE.local.md), backup discovery and deletion
 - `GitignoreManager.swift` — global gitignore management, core entry list
-- `ClaudeIntegration.swift` — `claude mcp add/remove`, `claude plugin install/remove`
+- `ClaudeIntegration.swift` — `claude mcp add/remove` (with scope support), `claude plugin install/remove`
 - `Homebrew.swift` — brew detection, package install
-- `HookInjector.swift` — section-marker-based fragment injection into hook files
 - `OllamaService.swift` — Ollama daemon management, model pull, health check
 - `ProjectDetector.swift` — walk-up project root detection (`.git/` or `CLAUDE.local.md`)
-- `ProjectState.swift` — per-project `.claude/.mcs-project` state (configured packs, version)
+- `ProjectState.swift` — per-project `.claude/.mcs-project` JSON state (configured packs, per-pack `PackArtifactRecord`, version)
 - `MCSError.swift` — error types for the CLI
 
 ### TechPack System (`Sources/mcs/TechPack/`)
-- `TechPack.swift` — protocol for tech packs (components, templates, hooks, doctor checks, migrations)
-- `Component.swift` — ComponentDefinition with install actions, ComponentType enum
-- `TechPackRegistry.swift` — registry of available packs, filtering by installed state
+- `TechPack.swift` — protocol for tech packs (components, templates, hooks, doctor checks, project configuration)
+- `Component.swift` — ComponentDefinition with install actions, ComponentType enum, MCPServerConfig (with scope), CopyFileType (with project-scoped directories)
+- `TechPackRegistry.swift` — registry of available packs (external only), filtering by installed state
 - `DependencyResolver.swift` — topological sort of component dependencies with cycle detection
 
+### External Pack System (`Sources/mcs/ExternalPack/`)
+- `ExternalPackManifest.swift` — YAML `techpack.yaml` schema (Codable models for components, templates, hooks, doctor checks, prompts, configure scripts)
+- `ExternalPackAdapter.swift` — bridges `ExternalPackManifest` to the `TechPack` protocol
+- `ExternalPackLoader.swift` — discovers and loads packs from `~/.mcs/packs/`
+- `PackFetcher.swift` — Git clone/pull for pack repositories
+- `PackRegistryFile.swift` — YAML registry of installed external packs (`~/.mcs/registry.yaml`)
+- `PackTrustManager.swift` — pack trust verification
+- `PromptExecutor.swift` — executes pack prompts (interactive value resolution during configure)
+- `ScriptRunner.swift` — sandboxed script execution for pack scripts
+- `ExternalDoctorCheck.swift` — factory for converting YAML doctor check definitions to `DoctorCheck` instances
+
 ### Doctor (`Sources/mcs/Doctor/`)
-- `DoctorRunner.swift` — 7-layer check orchestration with project-aware pack resolution
-- `CoreDoctorChecks.swift` — check structs (CommandCheck, MCPServerCheck, PluginCheck, HookCheck, SettingsCheck, GitignoreCheck, DeprecatedMCPServerCheck, DeprecatedPluginCheck, HookContributionCheck, PackMigrationCheck, etc.)
-- `DerivedDoctorChecks.swift` — `deriveDoctorCheck()` extension on ComponentDefinition + SkillFreshnessCheck + ManifestFreshnessCheck
+- `DoctorRunner.swift` — 5-layer check orchestration with project-aware pack resolution
+- `CoreDoctorChecks.swift` — check structs (CommandCheck, MCPServerCheck, PluginCheck, HookCheck, SettingsCheck, GitignoreCheck, HookEventCheck, CommandFileCheck, FileExistsCheck)
+- `DerivedDoctorChecks.swift` — `deriveDoctorCheck()` extension on ComponentDefinition
 - `ProjectDoctorChecks.swift` — project-scoped checks (CLAUDE.local.md version, Serena memory migration, state file)
 - `SectionValidator.swift` — validation of CLAUDE.local.md section markers
-- `MigrationDetector.swift` — detection of legacy bash installer artifacts
 
 ### Commands (`Sources/mcs/Commands/`)
-- `InstallCommand.swift` — 5-phase install flow with interactive selection
+- `InstallCommand.swift` — global component install flow with interactive selection
 - `DoctorCommand.swift` — health checks with optional --fix and --pack filter
-- `ConfigureCommand.swift` — project configuration with --pack option and interactive flow
+- `ConfigureCommand.swift` — per-project configuration: multi-select packs or `--pack` flag for CI
 - `CleanupCommand.swift` — backup file management with --force flag
+- `PackCommand.swift` — `mcs pack add/remove/list/update` subcommands
 
 ### Install (`Sources/mcs/Install/`)
-- `Installer.swift` — 5-phase orchestrator (welcome, selection, summary, install, post-summary)
-- `CoreComponents.swift` — all core component definitions, feature bundles, hook fragments
-- `ComponentExecutor.swift` — dispatches individual install actions (brew packages, MCP servers, plugins, gitignore, hooks)
-- `SelectionState.swift` — tracks selected component IDs and branch prefix during install
-- `PackInstaller.swift` — auto-installs missing pack components during configure
-- `ProjectConfigurator.swift` — template composition, CLAUDE.local.md writing, Serena memory symlink, gitignore
+- `Installer.swift` — 5-phase global install orchestrator (welcome, selection, summary, install, post-summary)
+- `ComponentExecutor.swift` — dispatches install actions (brew, MCP servers, plugins, gitignore, project-scoped file copy/removal)
+- `SelectionState.swift` — tracks selected component IDs during install
+- `PackInstaller.swift` — auto-installs missing pack components
+- `PackUninstaller.swift` — removes pack components (MCP servers, plugins, settings keys)
+- `ProjectConfigurator.swift` — per-project multi-pack convergence engine (artifact tracking, settings composition, CLAUDE.local.md writing, gitignore)
 
 ### Templates (`Sources/mcs/Templates/`)
 - `TemplateEngine.swift` — `__PLACEHOLDER__` substitution
 - `TemplateComposer.swift` — section markers for composed files (`<!-- mcs:begin core v2.0.0 -->`), section parsing, user content preservation
-
-### Core Pack (`Sources/mcs/Packs/Core/`)
-- `CoreTechPack.swift` — universal tech pack for any project, conditional template contributions (continuous learning, Serena)
-- `CoreTemplates.swift` — CLAUDE.local.md section templates for core features
-
-### iOS Pack (`Sources/mcs/Packs/iOS/`)
-- `IOSTechPack.swift` — TechPack conformance, Xcode project auto-detection
-- `IOSComponents.swift` — XcodeBuildMCP, Sosumi, xcodebuildmcp skill, gitignore entries
-- `IOSDoctorChecks.swift` — Xcode CLT check, XcodeBuildMCP config check, CLAUDE.local.md iOS section check
-- `IOSConstants.swift` — iOS-specific string constants
-- `IOSTemplates.swift` — iOS CLAUDE.local.md section template, XcodeBuildMCP config template
-- `IOSHookFragments.swift` — simulator status check fragment for session_start hook
-
-### Resources (`Sources/mcs/Resources/`)
-Bundled with the binary via SwiftPM `.copy()`:
-- `config/settings.json` — Claude settings template
-- `hooks/` — session_start.sh, continuous-learning-activator.sh
-- `skills/continuous-learning/` — knowledge extraction skill (SKILL.md + references)
-- `commands/pr.md, commit.md` — /pr and /commit slash commands
-
-Note: CLAUDE.local.md templates are compiled-in as Swift string literals (`CoreTemplates.swift`, `IOSTemplates.swift`), not bundled resources.
 
 ## Testing
 
@@ -117,16 +106,15 @@ Note: CLAUDE.local.md templates are compiled-in as Swift string literals (`CoreT
 
 ## Key Design Decisions
 
-- **Tech pack protocol**: all platform-specific components (MCP servers, templates, doctor checks) live in tech packs; core is technology-agnostic
-- **Explicit pack selection**: packs are installed and tracked explicitly (no auto-detection); doctor and configure only run pack logic for installed packs
-- **Compiled-in packs**: packs are Swift targets in the same package, shipped as a single binary
+- **Pure engine, zero bundled content**: `mcs` ships no templates, hooks, settings, or skills — all features come from external packs users add via `mcs pack add`
+- **`mcs configure` is the primary command**: per-project multi-select of registered packs, fully idempotent convergence (add/remove/update), per-project artifact placement
+- **Per-project artifacts**: skills, hooks, commands, and `settings.local.json` go to `<project>/.claude/`; only brew packages and plugins are global
+- **MCP scope defaults to `local`**: per-user, per-project isolation via `claude mcp add -s local` (stored in `~/.claude.json` keyed by project path)
+- **Convergent configure**: `ProjectState` records per-pack `PackArtifactRecord` (MCP servers, files, template sections); re-running converges to desired state by diffing previous vs. selected packs
+- **External pack protocol**: `TechPack` protocol with `ExternalPackAdapter` bridging YAML manifests (`techpack.yaml`) to the same install/doctor/configure flows
 - **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
 - **File-based memory**: memories stored in `<project>/.claude/memories/*.md`, indexed by docs-mcp-server for semantic search
-- **Settings deep-merge**: native Swift Codable replaces jq; hooks deduplicate by command, plugins merge additively
-- **Settings ownership tracking**: sidecar file (`~/.claude/.mcs-settings-keys`) records which keys mcs manages, enabling stale key cleanup when the template changes
-- **Backup on every write**: timestamped backup created before any file modification
-- **Manifest tracking**: SHA-256 hashes + installed component IDs + installed pack IDs in `~/.claude/.mcs-manifest` for doctor scoping and freshness checks
-- **Component-derived doctor checks**: `ComponentDefinition` is the single source of truth — `deriveDoctorCheck()` auto-generates verification from `installAction`, supplementary checks handle extras; both install and doctor share the same detection logic
+- **Settings composition**: each pack's hook entries compose into `<project>/.claude/settings.local.json` as individual `HookGroup` entries
+- **Backup for mixed-ownership files**: timestamped backup before modifying files with user content (CLAUDE.local.md); tool-managed files are not backed up since they can be regenerated
+- **Component-derived doctor checks**: `ComponentDefinition` is the single source of truth — `deriveDoctorCheck()` auto-generates verification from `installAction`, supplementary checks handle extras
 - **Project awareness**: doctor detects project root (walk-up for `.git/`), resolves packs from `.claude/.mcs-project` before falling back to section marker inference, then to global manifest
-- **Hook fragment injection**: pack hook contributions and core features (continuous learning) use versioned section markers (`# --- mcs:begin <id> v<version> ---`) for idempotent updates
-- **fix() responsibility boundary**: `doctor --fix` handles cleanup, migration, and trivial repairs only; additive operations (install/register/copy) are deferred to `mcs install` to keep the manifest as single source of truth

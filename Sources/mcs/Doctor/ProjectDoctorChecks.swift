@@ -34,7 +34,7 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
 
         let sections = TemplateComposer.parseSections(from: content)
         guard !sections.isEmpty else {
-            return .warn("CLAUDE.local.md has no mcs section markers — run 'mcs configure'")
+            return .warn("CLAUDE.local.md has no mcs section markers — run 'mcs sync'")
         }
 
         let currentVersion = MCSVersion.current
@@ -48,11 +48,11 @@ struct CLAUDELocalVersionCheck: DoctorCheck, Sendable {
         if outdated.isEmpty {
             return .pass("all sections at v\(currentVersion)")
         }
-        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs configure'")
+        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync'")
     }
 
     func fix() -> FixResult {
-        .notFixable("Run 'mcs configure' to update CLAUDE.local.md")
+        .notFixable("Run 'mcs sync' to update CLAUDE.local.md")
     }
 }
 
@@ -108,13 +108,22 @@ struct ProjectSerenaMemoryCheck: DoctorCheck, Sendable {
                 try fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
             }
 
-            // Copy files if any exist
-            if let files = try? fm.contentsOfDirectory(at: serenaDir, includingPropertiesForKeys: nil) {
-                for file in files {
-                    let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
-                    if !fm.fileExists(atPath: dest.path) {
-                        try fm.copyItem(at: file, to: dest)
-                    }
+            // List source files — fail hard if listing fails
+            let sourceFiles = try fm.contentsOfDirectory(at: serenaDir, includingPropertiesForKeys: nil)
+
+            // Copy all files
+            for file in sourceFiles {
+                let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
+                if !fm.fileExists(atPath: dest.path) {
+                    try fm.copyItem(at: file, to: dest)
+                }
+            }
+
+            // Verify all source files exist at destination before deleting source
+            for file in sourceFiles {
+                let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
+                guard fm.fileExists(atPath: dest.path) else {
+                    return .failed("\(file.lastPathComponent) not found at destination after copy")
                 }
             }
 
@@ -122,7 +131,7 @@ struct ProjectSerenaMemoryCheck: DoctorCheck, Sendable {
             try fm.removeItem(at: serenaDir)
             try fm.createSymbolicLink(at: serenaDir, withDestinationURL: claudeDir)
 
-            return .fixed("migrated files and created symlink")
+            return .fixed("migrated \(sourceFiles.count) file(s) and created symlink")
         } catch {
             return .failed(error.localizedDescription)
         }
@@ -144,7 +153,7 @@ struct ProjectStateFileCheck: DoctorCheck, Sendable {
         let state = ProjectState(projectRoot: projectRoot)
 
         guard FileManager.default.fileExists(atPath: claudeLocal.path) else {
-            return .skip("no CLAUDE.local.md — run 'mcs configure'")
+            return .skip("no CLAUDE.local.md — run 'mcs sync'")
         }
 
         if state.exists {

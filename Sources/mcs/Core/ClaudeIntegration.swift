@@ -15,7 +15,7 @@ struct ClaudeIntegration: Sendable {
     @discardableResult
     func mcpAdd(
         name: String,
-        scope: String = "user",
+        scope: String = "local",
         arguments: [String] = []
     ) -> ShellResult {
         // Remove first to avoid "already exists" errors
@@ -32,7 +32,7 @@ struct ClaudeIntegration: Sendable {
 
     /// Remove an MCP server.
     @discardableResult
-    func mcpRemove(name: String, scope: String = "user") -> ShellResult {
+    func mcpRemove(name: String, scope: String = "local") -> ShellResult {
         shell.run(
             Constants.CLI.env,
             arguments: [Constants.CLI.claudeCommand, "mcp", "remove", "-s", scope, name],
@@ -54,35 +54,22 @@ struct ClaudeIntegration: Sendable {
 
     /// Install a plugin (registers marketplace first).
     @discardableResult
-    func pluginInstall(fullName: String) -> ShellResult {
-        // Extract marketplace from "name@marketplace" format
-        let parts = fullName.split(separator: "@")
-        if parts.count == 2 {
-            let marketplace = String(parts[1])
-            let repo: String? = switch marketplace {
-            case Constants.Plugins.officialMarketplace:
-                Constants.Plugins.officialMarketplaceRepo
-            default:
-                nil
-            }
-            if let repo {
-                pluginMarketplaceAdd(repo: repo)
-            }
-        }
+    func pluginInstall(ref: PluginRef) -> ShellResult {
+        pluginMarketplaceAdd(repo: ref.marketplaceRepo)
 
         return shell.run(
             Constants.CLI.env,
-            arguments: [Constants.CLI.claudeCommand, "plugin", "install", fullName],
+            arguments: [Constants.CLI.claudeCommand, "plugin", "install", ref.bareName],
             additionalEnvironment: claudeEnv
         )
     }
 
     /// Remove a plugin.
     @discardableResult
-    func pluginRemove(fullName: String) -> ShellResult {
+    func pluginRemove(ref: PluginRef) -> ShellResult {
         shell.run(
             Constants.CLI.env,
-            arguments: [Constants.CLI.claudeCommand, "plugin", "remove", fullName],
+            arguments: [Constants.CLI.claudeCommand, "plugin", "remove", ref.bareName],
             additionalEnvironment: claudeEnv
         )
     }

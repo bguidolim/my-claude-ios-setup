@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-struct CleanupCommand: ParsableCommand {
+struct CleanupCommand: LockedCommand {
     static let configuration = CommandConfiguration(
         commandName: "cleanup",
         abstract: "Find and delete backup files"
@@ -10,7 +10,7 @@ struct CleanupCommand: ParsableCommand {
     @Flag(name: .long, help: "Delete backups without confirmation")
     var force: Bool = false
 
-    mutating func run() throws {
+    func perform() throws {
         let env = Environment()
         let output = CLIOutput()
 

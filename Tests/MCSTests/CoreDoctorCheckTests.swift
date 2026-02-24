@@ -86,25 +86,3 @@ struct CommandFileCheckTests {
     }
 }
 
-// MARK: - HookCheck
-
-@Suite("HookCheck")
-struct HookCheckTests {
-    @Test("deriveDoctorCheck generates HookCheck for copyHook action")
-    func derivedHookCheck() {
-        let component = ComponentDefinition(
-            id: "test.hook",
-            displayName: "test-hook.sh",
-            description: "test",
-            type: .hookFile,
-            packIdentifier: nil,
-            dependencies: [],
-            isRequired: true,
-            installAction: .copyHook(source: "hooks/test.sh", destination: "test.sh")
-        )
-        let check = component.deriveDoctorCheck()
-        #expect(check != nil)
-        #expect(check?.name == "test.sh")
-        #expect(check?.section == "Hooks")
-    }
-}

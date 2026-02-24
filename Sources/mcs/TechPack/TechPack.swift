@@ -36,30 +36,27 @@ struct HookContribution: Sendable {
 }
 
 /// Protocol that all tech packs must conform to.
-/// Packs are explicitly installed via `mcs install --pack <id>`.
+/// Packs are applied to projects via `mcs sync`.
 /// Doctor and configure only run pack-specific logic for installed packs.
 protocol TechPack: Sendable {
     var identifier: String { get }
     var displayName: String { get }
     var description: String { get }
     var components: [ComponentDefinition] { get }
-    var templates: [TemplateContribution] { get }
-    var hookContributions: [HookContribution] { get }
+    var templates: [TemplateContribution] { get throws }
+    var hookContributions: [HookContribution] { get throws }
     var gitignoreEntries: [String] { get }
     /// Doctor checks that cannot be auto-derived from components.
     /// For pack-level or project-level concerns (e.g. Xcode CLT, config files).
     var supplementaryDoctorChecks: [any DoctorCheck] { get }
-    var migrations: [any PackMigration] { get }
-
     func configureProject(at path: URL, context: ProjectConfigContext) throws
 
     /// Resolve pack-specific placeholder values for CLAUDE.local.md templates.
     /// Called before template substitution so packs can supply values like `__PROJECT__`.
-    func templateValues(context: ProjectConfigContext) -> [String: String]
+    func templateValues(context: ProjectConfigContext) throws -> [String: String]
 }
 
 extension TechPack {
-    var migrations: [any PackMigration] { [] }
     func templateValues(context: ProjectConfigContext) -> [String: String] { [:] }
 }
 
@@ -84,17 +81,3 @@ enum FixResult: Sendable {
     case notFixable(String)
 }
 
-/// Protocol for versioned pack migrations.
-/// Migrations run in version order during `mcs doctor --fix`.
-protocol PackMigration: Sendable {
-    /// Short identifier, e.g., "config-yaml-v2".
-    var name: String { get }
-    /// Version this migration was introduced in, used for ordering.
-    var version: String { get }
-    /// Human-readable description shown in doctor output.
-    var displayName: String { get }
-    /// Returns true if this migration still needs to run.
-    func isNeeded() -> Bool
-    /// Perform the migration. Returns a description of what was done.
-    func perform() throws -> String
-}

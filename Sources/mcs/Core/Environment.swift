@@ -6,13 +6,15 @@ struct Environment: Sendable {
     let claudeDirectory: URL
     let claudeJSON: URL
     let claudeSettings: URL
-    let settingsKeys: URL
     let hooksDirectory: URL
     let skillsDirectory: URL
     let commandsDirectory: URL
     let memoriesDirectory: URL
-    let setupManifest: URL
     let binDirectory: URL
+
+    /// mcs-internal state directory (`~/.mcs/`).
+    /// Stores pack checkouts, registry, global state, and lock file.
+    let mcsDirectory: URL
 
     let architecture: Architecture
     let brewPrefix: String
@@ -32,13 +34,13 @@ struct Environment: Sendable {
         self.claudeDirectory = claudeDir
         self.claudeJSON = home.appendingPathComponent(".claude.json")
         self.claudeSettings = claudeDir.appendingPathComponent("settings.json")
-        self.settingsKeys = claudeDir.appendingPathComponent(".mcs-settings-keys")
         self.hooksDirectory = claudeDir.appendingPathComponent("hooks")
         self.skillsDirectory = claudeDir.appendingPathComponent("skills")
         self.commandsDirectory = claudeDir.appendingPathComponent("commands")
         self.memoriesDirectory = claudeDir.appendingPathComponent("memories")
-        self.setupManifest = claudeDir.appendingPathComponent(".mcs-manifest")
         self.binDirectory = claudeDir.appendingPathComponent("bin")
+
+        self.mcsDirectory = home.appendingPathComponent(".mcs")
 
         #if arch(arm64)
         self.architecture = .arm64
@@ -65,32 +67,24 @@ struct Environment: Sendable {
         }
     }
 
-    /// The path where the old bash installer stored its manifest.
-    var legacyManifest: URL {
-        claudeDirectory.appendingPathComponent(".setup-manifest")
+    /// Directory where external tech pack checkouts live (`~/.mcs/packs/`).
+    var packsDirectory: URL {
+        mcsDirectory.appendingPathComponent(Constants.ExternalPacks.packsDirectory)
     }
 
-    /// Migrate the old `.setup-manifest` to `.mcs-manifest` if needed.
-    /// Returns true if a migration was performed.
-    @discardableResult
-    func migrateManifestIfNeeded() -> Bool {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: legacyManifest.path),
-              !fm.fileExists(atPath: setupManifest.path)
-        else { return false }
+    /// YAML registry of installed external packs (`~/.mcs/registry.yaml`).
+    var packsRegistry: URL {
+        mcsDirectory.appendingPathComponent(Constants.ExternalPacks.registryFilename)
+    }
 
-        do {
-            try fm.moveItem(at: legacyManifest, to: setupManifest)
-            return true
-        } catch {
-            // Fall back to copy if move fails (e.g., cross-volume)
-            do {
-                try fm.copyItem(at: legacyManifest, to: setupManifest)
-                return true
-            } catch {
-                return false
-            }
-        }
+    /// Global state file tracking globally-installed packs and artifacts (`~/.mcs/global-state.json`).
+    var globalStateFile: URL {
+        mcsDirectory.appendingPathComponent("global-state.json")
+    }
+
+    /// POSIX lock file for preventing concurrent mcs execution (`~/.mcs/lock`).
+    var lockFile: URL {
+        mcsDirectory.appendingPathComponent(Constants.FileNames.mcsLock)
     }
 
     /// PATH string that includes the Homebrew bin directory.

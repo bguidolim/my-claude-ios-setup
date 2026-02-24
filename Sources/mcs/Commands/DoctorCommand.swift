@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-struct DoctorCommand: ParsableCommand {
+struct DoctorCommand: LockedCommand {
     static let configuration = CommandConfiguration(
         commandName: "doctor",
         abstract: "Check installation health and diagnose issues"
@@ -13,8 +13,16 @@ struct DoctorCommand: ParsableCommand {
     @Option(name: .long, help: "Only check a specific tech pack (e.g. ios)")
     var pack: String?
 
-    mutating func run() throws {
-        var runner = DoctorRunner(fixMode: fix, packFilter: pack)
+    var skipLock: Bool { !fix }
+
+    func perform() throws {
+        let env = Environment()
+        let output = CLIOutput()
+        let registry = TechPackRegistry.loadWithExternalPacks(
+            environment: env,
+            output: output
+        )
+        var runner = DoctorRunner(fixMode: fix, packFilter: pack, registry: registry)
         try runner.run()
     }
 }

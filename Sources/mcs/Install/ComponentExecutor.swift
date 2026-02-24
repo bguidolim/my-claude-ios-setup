@@ -1,13 +1,12 @@
 import Foundation
 
-/// Shared component installation logic used by both `Installer` (mcs install)
-/// and `PackInstaller` (mcs configure). Eliminates duplication and ensures
-/// consistent behavior across install paths.
+/// Shared component installation logic used by `Installer`, `PackInstaller`,
+/// and `ProjectConfigurator`. Eliminates duplication and ensures consistent
+/// behavior across install paths.
 struct ComponentExecutor {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
-    var backup: Backup
 
     // MARK: - Brew Packages
 
@@ -50,7 +49,7 @@ struct ComponentExecutor {
             args.append(contentsOf: config.args)
         }
 
-        let result = claude.mcpAdd(name: config.name, arguments: args)
+        let result = claude.mcpAdd(name: config.name, scope: config.resolvedScope, arguments: args)
         return result.succeeded
     }
 
@@ -63,7 +62,8 @@ struct ComponentExecutor {
             return false
         }
         let claude = ClaudeIntegration(shell: shell)
-        let result = claude.pluginInstall(fullName: fullName)
+        let ref = PluginRef(fullName)
+        let result = claude.pluginInstall(ref: ref)
         return result.succeeded
     }
 
@@ -83,47 +83,7 @@ struct ComponentExecutor {
         }
     }
 
-    // MARK: - Post-Install
-
-    /// Run post-install steps for specific components (e.g., start services, pull models).
-    func postInstall(_ component: ComponentDefinition) {
-        switch component.id {
-        case "core.ollama":
-            let ollama = OllamaService(shell: shell, environment: environment)
-            if ollama.isRunning() {
-                output.dimmed("Ollama already running")
-            } else {
-                output.dimmed("Starting Ollama...")
-                if !ollama.start() {
-                    output.warn("Could not start Ollama automatically.")
-                    output.warn("Start it manually with 'ollama serve' or open the Ollama app, then re-run.")
-                }
-            }
-            output.dimmed("Pulling \(Constants.Ollama.embeddingModel) model...")
-            if let result = ollama.pullEmbeddingModelIfNeeded(), !result.succeeded {
-                output.warn("Could not pull \(Constants.Ollama.embeddingModel): \(result.stderr)")
-            }
-        default:
-            break
-        }
-    }
-
     // MARK: - Pack Post-Processing
-
-    /// Inject a pack's hook contributions into installed hook files using section markers.
-    mutating func injectHookContributions(from pack: any TechPack) {
-        for contribution in pack.hookContributions {
-            let hookFile = environment.hooksDirectory
-                .appendingPathComponent(contribution.hookName + ".sh")
-            HookInjector.inject(
-                fragment: contribution.scriptFragment,
-                identifier: pack.identifier,
-                into: hookFile,
-                backup: &backup,
-                output: output
-            )
-        }
-    }
 
     /// Add a pack's gitignore entries to the global gitignore.
     func addPackGitignoreEntries(from pack: any TechPack) {
@@ -138,15 +98,198 @@ struct ComponentExecutor {
         }
     }
 
+    // MARK: - Copy Pack File
+
+    /// Copy files from an external pack checkout to the appropriate Claude directory.
+    func installCopyPackFile(
+        source: URL,
+        destination: String,
+        fileType: CopyFileType
+    ) -> Bool {
+        let fm = FileManager.default
+        let destURL = fileType.destinationURL(in: environment, destination: destination)
+
+        // Validate destination doesn't escape expected directory via symlinks
+        let resolvedDest = destURL.resolvingSymlinksInPath()
+        let expectedParent = fileType.baseDirectory(in: environment)
+        let parentPath = expectedParent.resolvingSymlinksInPath().path
+        let destPath = resolvedDest.path
+        guard PathContainment.isContained(path: destPath, within: parentPath) else {
+            output.warn("Destination '\(destination)' escapes expected directory")
+            return false
+        }
+
+        guard fm.fileExists(atPath: source.path) else {
+            output.warn("Pack source not found: \(source.path)")
+            return false
+        }
+
+        do {
+            try fm.createDirectory(
+                at: destURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: source.path, isDirectory: &isDir)
+
+            if isDir.boolValue {
+                // Source is a directory — copy all files recursively
+                try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
+                let contents = try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+                for file in contents {
+                    let destFile = destURL.appendingPathComponent(file.lastPathComponent)
+                    if fm.fileExists(atPath: destFile.path) {
+                        try fm.removeItem(at: destFile)
+                    }
+                    try fm.copyItem(at: file, to: destFile)
+                }
+            } else {
+                // Source is a single file
+                if fm.fileExists(atPath: destURL.path) {
+                    try fm.removeItem(at: destURL)
+                }
+                try fm.copyItem(at: source, to: destURL)
+
+                // Make hooks executable
+                if fileType == .hook {
+                    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destURL.path)
+                }
+            }
+            return true
+        } catch {
+            output.warn(error.localizedDescription)
+            return false
+        }
+    }
+
+    // MARK: - Project-Scoped File Installation
+
+    /// Copy a file or directory from an external pack into the project's `.claude/` tree.
+    /// Text files are run through the template engine so `__PLACEHOLDER__` tokens
+    /// are replaced with resolved prompt values.
+    /// Returns the project-relative paths of installed files (for artifact tracking).
+    mutating func installProjectFile(
+        source: URL,
+        destination: String,
+        fileType: CopyFileType,
+        projectPath: URL,
+        resolvedValues: [String: String] = [:]
+    ) -> [String] {
+        let fm = FileManager.default
+        let baseDir = fileType.projectBaseDirectory(projectPath: projectPath)
+        let destURL = baseDir.appendingPathComponent(destination)
+
+        // Validate destination doesn't escape expected directory via symlinks
+        let resolvedDest = destURL.resolvingSymlinksInPath()
+        let expectedParent = baseDir.resolvingSymlinksInPath()
+        guard PathContainment.isContained(path: resolvedDest.path, within: expectedParent.path) else {
+            output.warn("Destination '\(destination)' escapes project directory")
+            return []
+        }
+
+        guard fm.fileExists(atPath: source.path) else {
+            output.warn("Pack source not found: \(source.path)")
+            return []
+        }
+
+        do {
+            try fm.createDirectory(
+                at: destURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: source.path, isDirectory: &isDir)
+            var installedPaths: [String] = []
+
+            if isDir.boolValue {
+                try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
+                let contents = try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+                for file in contents {
+                    let destFile = destURL.appendingPathComponent(file.lastPathComponent)
+                    if fm.fileExists(atPath: destFile.path) {
+                        try fm.removeItem(at: destFile)
+                    }
+                    try Self.copyWithSubstitution(from: file, to: destFile, values: resolvedValues)
+                    installedPaths.append(projectRelativePath(destFile, projectPath: projectPath))
+                }
+            } else {
+                if fm.fileExists(atPath: destURL.path) {
+                    try fm.removeItem(at: destURL)
+                }
+                try Self.copyWithSubstitution(from: source, to: destURL, values: resolvedValues)
+                if fileType == .hook {
+                    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destURL.path)
+                }
+                installedPaths.append(projectRelativePath(destURL, projectPath: projectPath))
+            }
+            return installedPaths
+        } catch {
+            output.warn(error.localizedDescription)
+            return []
+        }
+    }
+
+    /// Copy a file, substituting `__PLACEHOLDER__` values in text files.
+    /// Falls back to binary copy for non-UTF-8 files or when no values are provided.
+    static func copyWithSubstitution(
+        from source: URL,
+        to destination: URL,
+        values: [String: String]
+    ) throws {
+        if !values.isEmpty {
+            // Read as Data first to surface I/O errors (permission, disk),
+            // then attempt UTF-8 decode to detect binary vs text files.
+            let data = try Data(contentsOf: source)
+            if let text = String(data: data, encoding: .utf8) {
+                let substituted = TemplateEngine.substitute(template: text, values: values)
+                try substituted.write(to: destination, atomically: true, encoding: .utf8)
+                return
+            }
+        }
+        // Binary file or no values to substitute
+        try FileManager.default.copyItem(at: source, to: destination)
+    }
+
+    /// Remove a file from the project by its project-relative path.
+    func removeProjectFile(relativePath: String, projectPath: URL) {
+        let fm = FileManager.default
+        let fullPath = projectPath.appendingPathComponent(relativePath)
+        if fm.fileExists(atPath: fullPath.path) {
+            do {
+                try fm.removeItem(at: fullPath)
+            } catch {
+                output.warn("Could not remove \(relativePath): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Remove an MCP server by name and scope.
+    /// Returns `true` if removal succeeded.
+    @discardableResult
+    func removeMCPServer(name: String, scope: String) -> Bool {
+        let claude = ClaudeIntegration(shell: shell)
+        let result = claude.mcpRemove(name: name, scope: scope)
+        if !result.succeeded {
+            output.warn("Could not remove MCP server '\(name)' (scope: \(scope)): \(result.stderr)")
+        }
+        return result.succeeded
+    }
+
+    private func projectRelativePath(_ url: URL, projectPath: URL) -> String {
+        PathContainment.relativePath(of: url.path, within: projectPath.path)
+    }
+
     // MARK: - Already-Installed Detection
 
     /// Check if a component is already installed using the same derived + supplementary
     /// doctor checks used by `mcs doctor`, ensuring install and doctor always use
     /// the same detection logic.
     static func isAlreadyInstalled(_ component: ComponentDefinition) -> Bool {
-        // Idempotent actions: always re-run
+        // Convergent actions: always re-run to pick up config changes
         switch component.installAction {
-        case .settingsMerge, .gitignoreEntries:
+        case .settingsMerge, .gitignoreEntries, .copyPackFile, .mcpServer:
             return false
         default:
             break

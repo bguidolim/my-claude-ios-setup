@@ -8,7 +8,7 @@ enum Constants {
     // MARK: - File Names
 
     enum FileNames {
-        /// The per-project instructions file managed by `mcs configure`.
+        /// The per-project instructions file managed by `mcs sync`.
         static let claudeLocalMD = "CLAUDE.local.md"
 
         /// The per-project state file tracking configured packs.
@@ -22,6 +22,9 @@ enum Constants {
 
         /// The continuous learning activator hook script.
         static let continuousLearningHook = "continuous-learning-activator.sh"
+
+        /// The process lock file preventing concurrent mcs execution.
+        static let mcsLock = "lock"
     }
 
     // MARK: - CLI
@@ -32,22 +35,6 @@ enum Constants {
 
         /// The Claude Code CLI binary name.
         static let claudeCommand = "claude"
-    }
-
-    // MARK: - Ollama
-
-    enum Ollama {
-        /// The embedding model name used by docs-mcp-server.
-        static let embeddingModel = "nomic-embed-text"
-
-        /// The embedding model ID in OpenAI-compatible format.
-        static var embeddingModelID: String { "openai:\(embeddingModel)" }
-
-        /// The local Ollama API base URL (OpenAI-compatible endpoint).
-        static let apiBase = "http://localhost:11434/v1"
-
-        /// The local Ollama API tags endpoint (for health checks).
-        static let apiTagsURL = "http://localhost:11434/api/tags"
     }
 
     // MARK: - Hooks
@@ -85,6 +72,19 @@ enum Constants {
     enum JSONKeys {
         /// The top-level key in `~/.claude.json` for MCP server registrations.
         static let mcpServers = "mcpServers"
+    }
+
+    // MARK: - External Packs
+
+    enum ExternalPacks {
+        /// The manifest filename for external tech packs.
+        static let manifestFilename = "techpack.yaml"
+
+        /// The registry filename tracking installed packs.
+        static let registryFilename = "registry.yaml"
+
+        /// The directory name for pack checkouts.
+        static let packsDirectory = "packs"
     }
 
     // MARK: - Plugins
