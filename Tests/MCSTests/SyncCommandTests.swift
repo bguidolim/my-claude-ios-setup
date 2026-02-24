@@ -14,6 +14,7 @@ struct SyncCommandTests {
         #expect(cmd.dryRun == false)
         #expect(cmd.lock == false)
         #expect(cmd.update == false)
+        #expect(cmd.customize == false)
     }
 
     @Test("Parses path argument")
@@ -62,6 +63,12 @@ struct SyncCommandTests {
     func skipLockDefaultFalse() throws {
         let cmd = try SyncCommand.parse([])
         #expect(cmd.skipLock == false)
+    }
+
+    @Test("Parses --customize flag")
+    func parsesCustomize() throws {
+        let cmd = try SyncCommand.parse(["--customize"])
+        #expect(cmd.customize == true)
     }
 
     @Test("Parses combined flags with path")

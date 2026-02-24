@@ -25,6 +25,9 @@ struct SyncCommand: LockedCommand {
     @Flag(name: .long, help: "Fetch latest pack versions and update mcs.lock.yaml")
     var update = false
 
+    @Flag(name: .long, help: "Customize which components to include per pack")
+    var customize = false
+
     var skipLock: Bool { dryRun }
 
     func perform() throws {
@@ -74,6 +77,9 @@ struct SyncCommand: LockedCommand {
             registry: registry
         )
 
+        // Load persisted exclusions for non-interactive paths
+        let persistedExclusions = ProjectState(projectRoot: projectPath).allExcludedComponents
+
         if all {
             // Apply all registered packs (CI-friendly)
             let allPacks = registry.availablePacks
@@ -90,7 +96,7 @@ struct SyncCommand: LockedCommand {
             if dryRun {
                 configurator.dryRun(at: projectPath, packs: allPacks)
             } else {
-                try configurator.configure(at: projectPath, packs: allPacks, confirmRemovals: false)
+                try configurator.configure(at: projectPath, packs: allPacks, confirmRemovals: false, excludedComponents: persistedExclusions)
                 output.header("Done")
                 output.info("Run 'mcs doctor' to verify configuration")
             }
@@ -117,13 +123,13 @@ struct SyncCommand: LockedCommand {
             if dryRun {
                 configurator.dryRun(at: projectPath, packs: resolvedPacks)
             } else {
-                try configurator.configure(at: projectPath, packs: resolvedPacks, confirmRemovals: false)
+                try configurator.configure(at: projectPath, packs: resolvedPacks, confirmRemovals: false, excludedComponents: persistedExclusions)
                 output.header("Done")
                 output.info("Run 'mcs doctor' to verify configuration")
             }
         } else {
             // Interactive flow — multi-select of all registered packs
-            try configurator.interactiveConfigure(at: projectPath, dryRun: dryRun)
+            try configurator.interactiveConfigure(at: projectPath, dryRun: dryRun, customize: customize)
         }
 
         // Write lockfile after successful sync (unless dry-run)

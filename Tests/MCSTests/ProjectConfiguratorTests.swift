@@ -1096,6 +1096,113 @@ struct AutoDerivedSettingsTests {
     }
 }
 
+// MARK: - Excluded Components
+
+@Suite("ProjectConfigurator — excludedComponents")
+struct ProjectConfiguratorExcludedComponentsTests {
+
+    private func makeTmpDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-exclude-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func makeConfigurator() -> ProjectConfigurator {
+        let env = Environment()
+        return ProjectConfigurator(
+            environment: env,
+            output: CLIOutput(),
+            shell: ShellRunner(environment: env)
+        )
+    }
+
+    @Test("Excluded component is not installed")
+    func excludedComponentSkipped() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        // Pack with two plugin components
+        let pack = MockTechPack(
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            components: [
+                ComponentDefinition(
+                    id: "test-pack.plugin-a",
+                    displayName: "Plugin A",
+                    description: "First plugin",
+                    type: .plugin,
+                    packIdentifier: "test-pack",
+                    dependencies: [],
+                    isRequired: false,
+                    installAction: .plugin(name: "plugin-a@test")
+                ),
+                ComponentDefinition(
+                    id: "test-pack.plugin-b",
+                    displayName: "Plugin B",
+                    description: "Second plugin",
+                    type: .plugin,
+                    packIdentifier: "test-pack",
+                    dependencies: [],
+                    isRequired: false,
+                    installAction: .plugin(name: "plugin-b@test")
+                ),
+            ]
+        )
+
+        let configurator = makeConfigurator()
+
+        // Exclude plugin-b
+        try configurator.configure(
+            at: tmpDir,
+            packs: [pack],
+            confirmRemovals: false,
+            excludedComponents: ["test-pack": ["test-pack.plugin-b"]]
+        )
+
+        // Check settings.local.json — only plugin-a should be enabled
+        let settingsPath = claudeDir.appendingPathComponent("settings.local.json")
+        let settings = try Settings.load(from: settingsPath)
+        #expect(settings.enabledPlugins?["plugin-a"] == true)
+        #expect(settings.enabledPlugins?["plugin-b"] == nil)
+    }
+
+    @Test("Excluded components are persisted in project state")
+    func excludedComponentsPersisted() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        var state = ProjectState(projectRoot: tmpDir)
+        state.recordPack("my-pack")
+        state.setExcludedComponents(["my-pack.mcp-server", "my-pack.hook"], for: "my-pack")
+        try state.save()
+
+        // Reload from disk
+        let reloaded = ProjectState(projectRoot: tmpDir)
+        let excluded = reloaded.excludedComponents(for: "my-pack")
+        #expect(excluded == ["my-pack.mcp-server", "my-pack.hook"])
+    }
+
+    @Test("Removing a pack clears its exclusions")
+    func removePackClearsExclusions() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        var state = ProjectState(projectRoot: tmpDir)
+        state.recordPack("my-pack")
+        state.setExcludedComponents(["my-pack.mcp-server"], for: "my-pack")
+        state.removePack("my-pack")
+        try state.save()
+
+        let reloaded = ProjectState(projectRoot: tmpDir)
+        #expect(reloaded.excludedComponents(for: "my-pack").isEmpty)
+        #expect(!reloaded.configuredPacks.contains("my-pack"))
+    }
+}
+
 /// Minimal TechPack implementation for dry-run tests.
 private struct MockTechPack: TechPack {
     let identifier: String
