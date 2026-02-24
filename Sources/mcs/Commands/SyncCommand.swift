@@ -75,7 +75,14 @@ struct SyncCommand: LockedCommand {
             registry: registry
         )
 
-        let persistedExclusions = try ProjectState(stateFile: env.globalStateFile).allExcludedComponents
+        let persistedExclusions: [String: Set<String>]
+        do {
+            persistedExclusions = try ProjectState(stateFile: env.globalStateFile).allExcludedComponents
+        } catch {
+            output.error("Corrupt global state: \(error.localizedDescription)")
+            output.error("Delete \(env.globalStateFile.path) and re-run 'mcs sync --global'.")
+            throw ExitCode.failure
+        }
 
         if all {
             let allPacks = registry.availablePacks
@@ -164,7 +171,14 @@ struct SyncCommand: LockedCommand {
         )
 
         // Load persisted exclusions for non-interactive paths
-        let persistedExclusions = try ProjectState(projectRoot: projectPath).allExcludedComponents
+        let persistedExclusions: [String: Set<String>]
+        do {
+            persistedExclusions = try ProjectState(projectRoot: projectPath).allExcludedComponents
+        } catch {
+            output.error("Corrupt .mcs-project: \(error.localizedDescription)")
+            output.error("Delete .claude/.mcs-project and re-run 'mcs sync'.")
+            throw ExitCode.failure
+        }
 
         if all {
             // Apply all registered packs (CI-friendly)

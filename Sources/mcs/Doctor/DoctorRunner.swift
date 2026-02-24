@@ -46,8 +46,17 @@ struct DoctorRunner {
             installedPackIDs = Set(filter.components(separatedBy: ","))
             packSource = "--pack flag"
         } else if let root = projectRoot {
-            let stateResult = try? ProjectState(projectRoot: root)
-            if let state = stateResult, state.exists, !state.configuredPacks.isEmpty {
+            var resolvedState: ProjectState?
+            do {
+                let state = try ProjectState(projectRoot: root)
+                if state.exists, !state.configuredPacks.isEmpty {
+                    resolvedState = state
+                }
+            } catch {
+                output.warn("Could not read .mcs-project: \(error.localizedDescription) — falling back to section markers")
+            }
+
+            if let state = resolvedState {
                 // 2. Project .mcs-project file
                 installedPackIDs = state.configuredPacks
                 packSource = "project: \(projectName ?? "unknown")"

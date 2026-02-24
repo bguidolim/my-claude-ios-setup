@@ -288,20 +288,19 @@ struct ProjectStateFileCheck: DoctorCheck, Sendable {
             .appendingPathComponent(Constants.FileNames.claudeDirectory)
             .appendingPathComponent(Constants.FileNames.mcsProject)
         if FileManager.default.fileExists(atPath: stateFile.path) {
-            try? FileManager.default.removeItem(at: stateFile)
+            do {
+                try FileManager.default.removeItem(at: stateFile)
+            } catch {
+                return .failed("could not delete corrupt .mcs-project: \(error.localizedDescription) — remove it manually and re-run")
+            }
         }
 
-        var state: ProjectState
+        // After deletion, init cannot throw (file no longer exists), so build and save in one block
         do {
-            state = try ProjectState(projectRoot: projectRoot)
-        } catch {
-            return .failed("could not initialize .mcs-project: \(error.localizedDescription)")
-        }
-        for pack in packIdentifiers {
-            state.recordPack(pack)
-        }
-
-        do {
+            var state = try ProjectState(projectRoot: projectRoot)
+            for pack in packIdentifiers {
+                state.recordPack(pack)
+            }
             try state.save()
             return .fixed("created .mcs-project with packs: \(packIdentifiers.joined(separator: ", "))")
         } catch {
