@@ -134,12 +134,18 @@ struct ExternalPackAdapter: TechPack {
         }
     }
 
-    // MARK: - File Reading
+    // MARK: - Pack Path Resolution
+
+    /// Resolve a relative path within the pack checkout directory. Returns `nil`
+    /// if the result escapes the pack root via `../` traversal or symlinks.
+    private func resolvePackPath(_ relativePath: String) -> URL? {
+        PathContainment.safePath(relativePath: relativePath, within: packPath)
+    }
 
     /// Read a file from the pack checkout directory. Rejects paths that escape
     /// the pack root via traversal or symlinks.
     private func readPackFile(_ relativePath: String) throws -> String {
-        guard let fileURL = PathContainment.safePath(relativePath: relativePath, within: packPath) else {
+        guard let fileURL = resolvePackPath(relativePath) else {
             throw PackAdapterError.pathTraversal(relativePath)
         }
 
@@ -194,11 +200,17 @@ struct ExternalPackAdapter: TechPack {
             return .settingsMerge(source: nil)
 
         case .settingsFile(let source):
-            let sourceURL = packPath.appendingPathComponent(source)
+            guard let sourceURL = resolvePackPath(source) else {
+                output.warn("Settings source '\(source)' escapes pack directory — skipping component")
+                return nil
+            }
             return .settingsMerge(source: sourceURL)
 
         case .copyPackFile(let config):
-            let sourceURL = packPath.appendingPathComponent(config.source)
+            guard let sourceURL = resolvePackPath(config.source) else {
+                output.warn("Pack source '\(config.source)' escapes pack directory — skipping component")
+                return nil
+            }
             let fileType: CopyFileType
             if let extType = config.fileType {
                 fileType = CopyFileType(rawValue: extType.rawValue) ?? .generic
