@@ -43,8 +43,8 @@ protocol TechPack: Sendable {
     var displayName: String { get }
     var description: String { get }
     var components: [ComponentDefinition] { get }
-    var templates: [TemplateContribution] { get }
-    var hookContributions: [HookContribution] { get }
+    var templates: [TemplateContribution] { get throws }
+    var hookContributions: [HookContribution] { get throws }
     var gitignoreEntries: [String] { get }
     /// Doctor checks that cannot be auto-derived from components.
     /// For pack-level or project-level concerns (e.g. Xcode CLT, config files).
@@ -53,7 +53,7 @@ protocol TechPack: Sendable {
 
     /// Resolve pack-specific placeholder values for CLAUDE.local.md templates.
     /// Called before template substitution so packs can supply values like `__PROJECT__`.
-    func templateValues(context: ProjectConfigContext) -> [String: String]
+    func templateValues(context: ProjectConfigContext) throws -> [String: String]
 }
 
 extension TechPack {

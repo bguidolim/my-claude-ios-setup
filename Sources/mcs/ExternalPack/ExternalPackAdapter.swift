@@ -43,42 +43,33 @@ struct ExternalPackAdapter: TechPack {
     // MARK: - Templates
 
     var templates: [TemplateContribution] {
-        guard let externalTemplates = manifest.templates else { return [] }
-        var result: [TemplateContribution] = []
-        for ext in externalTemplates {
-            do {
+        get throws {
+            guard let externalTemplates = manifest.templates else { return [] }
+            return try externalTemplates.map { ext in
                 let content = try readPackFile(ext.contentFile)
-                result.append(TemplateContribution(
+                return TemplateContribution(
                     sectionIdentifier: ext.sectionIdentifier,
                     templateContent: content,
                     placeholders: ext.placeholders ?? []
-                ))
-            } catch {
-                output.error("Template '\(ext.sectionIdentifier)' could not be loaded: \(error.localizedDescription)")
-                output.plain("  The generated CLAUDE.local.md will be missing the '\(ext.sectionIdentifier)' section.")
+                )
             }
         }
-        return result
     }
 
     // MARK: - Hook Contributions
 
     var hookContributions: [HookContribution] {
-        guard let externalHooks = manifest.hookContributions else { return [] }
-        var result: [HookContribution] = []
-        for ext in externalHooks {
-            do {
+        get throws {
+            guard let externalHooks = manifest.hookContributions else { return [] }
+            return try externalHooks.map { ext in
                 let fragment = try readPackFile(ext.fragmentFile)
-                result.append(HookContribution(
+                return HookContribution(
                     hookName: ext.hookName,
                     scriptFragment: fragment,
                     position: ext.position?.hookPosition ?? .after
-                ))
-            } catch {
-                output.error("Hook fragment '\(ext.hookName)' could not be loaded: \(error.localizedDescription)")
+                )
             }
         }
-        return result
     }
 
     // MARK: - Gitignore Entries
@@ -100,21 +91,14 @@ struct ExternalPackAdapter: TechPack {
 
     // MARK: - Template Values (Prompt Execution)
 
-    func templateValues(context: ProjectConfigContext) -> [String: String] {
+    func templateValues(context: ProjectConfigContext) throws -> [String: String] {
         guard let prompts = manifest.prompts, !prompts.isEmpty else { return [:] }
         let executor = PromptExecutor(output: context.output, scriptRunner: scriptRunner)
-
-        do {
-            return try executor.executeAll(
-                prompts: prompts,
-                packPath: packPath,
-                projectPath: context.projectPath
-            )
-        } catch {
-            context.output.error("Failed to resolve template values for pack '\(manifest.identifier)': \(error.localizedDescription)")
-            context.output.plain("  Template placeholders will not be substituted. Re-run 'mcs sync' after fixing the issue.")
-            return [:]
-        }
+        return try executor.executeAll(
+            prompts: prompts,
+            packPath: packPath,
+            projectPath: context.projectPath
+        )
     }
 
     // MARK: - Project Configuration

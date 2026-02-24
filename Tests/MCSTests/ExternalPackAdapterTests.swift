@@ -249,7 +249,7 @@ struct ExternalPackAdapterTests {
         )
 
         let adapter = ExternalPackAdapter(manifest: manifest, packPath: tmpDir)
-        let templates = adapter.templates
+        let templates = try adapter.templates
         #expect(templates.count == 1)
         #expect(templates[0].sectionIdentifier == "test-pack")
         #expect(templates[0].templateContent.contains("__PROJECT__"))
@@ -291,7 +291,7 @@ struct ExternalPackAdapterTests {
         )
 
         let adapter = ExternalPackAdapter(manifest: manifest, packPath: tmpDir)
-        let hooks = adapter.hookContributions
+        let hooks = try adapter.hookContributions
         #expect(hooks.count == 1)
         #expect(hooks[0].hookName == "session_start")
         #expect(hooks[0].scriptFragment.contains("checking simulator"))
@@ -367,8 +367,8 @@ struct ExternalPackAdapterTests {
         )
         let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
 
-        // Path traversal should be blocked — templates returns empty
-        #expect(adapter.templates.isEmpty)
+        // Path traversal should be blocked — templates throws
+        #expect(throws: PackAdapterError.self) { _ = try adapter.templates }
     }
 
     @Test("Template via symlink escaping pack directory returns empty")
@@ -415,7 +415,7 @@ struct ExternalPackAdapterTests {
         let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
 
         // Symlink escapes pack dir — should be blocked
-        #expect(adapter.templates.isEmpty)
+        #expect(throws: PackAdapterError.self) { _ = try adapter.templates }
     }
 
     @Test("Hook fragment with ../ path traversal returns empty")
@@ -454,7 +454,7 @@ struct ExternalPackAdapterTests {
         let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
 
         // Path traversal should be blocked
-        #expect(adapter.hookContributions.isEmpty)
+        #expect(throws: PackAdapterError.self) { _ = try adapter.hookContributions }
     }
 
     @Test("Template with valid path inside pack loads successfully")
@@ -495,8 +495,9 @@ struct ExternalPackAdapterTests {
         )
         let adapter = ExternalPackAdapter(manifest: manifest, packPath: packDir)
 
-        #expect(adapter.templates.count == 1)
-        #expect(adapter.templates[0].templateContent == "## Valid Content")
+        let validTemplates = try adapter.templates
+        #expect(validTemplates.count == 1)
+        #expect(validTemplates[0].templateContent == "## Valid Content")
     }
 
     // MARK: - Helpers

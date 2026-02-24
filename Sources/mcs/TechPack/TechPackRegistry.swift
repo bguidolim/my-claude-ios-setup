@@ -85,7 +85,7 @@ struct TechPackRegistry: Sendable {
 
     /// Get template contributions for a specific pack.
     func templateContributions(for packIdentifier: String) -> [TemplateContribution] {
-        pack(for: packIdentifier)?.templates ?? []
+        (try? pack(for: packIdentifier)?.templates) ?? []
     }
 
     /// Create a registry that includes external packs loaded from disk.

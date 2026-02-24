@@ -233,13 +233,13 @@ struct ProjectConfigurator {
         }
 
         // Templates
-        let templateSections = pack.templates.map { "+\($0.sectionIdentifier) section" }
+        let templateSections = ((try? pack.templates) ?? []).map { "+\($0.sectionIdentifier) section" }
         if !templateSections.isEmpty {
             output.dimmed("  Templates:    \(templateSections.joined(separator: ", ")) in CLAUDE.local.md")
         }
 
         // Hook entries (settings.local.json)
-        let hookEntries = pack.hookContributions.map { "+\(hookEventName(for: $0.hookName)) hook entry" }
+        let hookEntries = ((try? pack.hookContributions) ?? []).map { "+\(hookEventName(for: $0.hookName)) hook entry" }
         if !hookEntries.isEmpty {
             output.dimmed("  Hooks:        \(hookEntries.joined(separator: ", "))")
         }
@@ -367,7 +367,7 @@ struct ProjectConfigurator {
 
         // 3. Resolve all template/placeholder values upfront (single pass)
         let repoName = resolveRepoName(at: projectPath)
-        var allValues = resolveAllTemplateValues(packs: packs, projectPath: projectPath, repoName: repoName)
+        var allValues = try resolveAllTemplateValues(packs: packs, projectPath: projectPath, repoName: repoName)
 
         // 4. Auto-prompt for undeclared placeholders in pack files
         let undeclared = scanForUndeclaredPlaceholders(packs: packs, resolvedValues: allValues)
@@ -389,7 +389,7 @@ struct ProjectConfigurator {
         }
 
         // 6. Compose settings.local.json from ALL selected packs
-        composeProjectSettings(at: projectPath, packs: packs, excludedComponents: excludedComponents)
+        try composeProjectSettings(at: projectPath, packs: packs, excludedComponents: excludedComponents)
 
         // 7. Compose CLAUDE.local.md with pre-resolved values
         try composeClaudeLocal(at: projectPath, packs: packs, values: allValues)
@@ -603,8 +603,8 @@ struct ProjectConfigurator {
             }
         }
 
-        // Track template sections
-        for contribution in pack.templates {
+        // Track template sections (non-critical — errors will surface in composeClaudeLocal)
+        for contribution in (try? pack.templates) ?? [] {
             artifacts.templateSections.append(contribution.sectionIdentifier)
         }
 
@@ -618,7 +618,7 @@ struct ProjectConfigurator {
         at projectPath: URL,
         packs: [any TechPack],
         excludedComponents: [String: Set<String>] = [:]
-    ) {
+    ) throws {
         let settingsPath = projectPath
             .appendingPathComponent(Constants.FileNames.claudeDirectory)
             .appendingPathComponent("settings.local.json")
@@ -628,7 +628,7 @@ struct ProjectConfigurator {
 
         // Gather hook entries from all packs
         for pack in packs {
-            for contribution in pack.hookContributions {
+            for contribution in try pack.hookContributions {
                 let command = "bash .claude/hooks/\(contribution.hookName).sh"
                 let entry = Settings.HookEntry(type: "command", command: command)
                 let group = Settings.HookGroup(matcher: nil, hooks: [entry])
@@ -709,7 +709,12 @@ struct ProjectConfigurator {
                 try settings.save(to: settingsPath)
                 output.success("Composed settings.local.json")
             } catch {
-                output.warn("Could not write settings.local.json: \(error.localizedDescription)")
+                output.error("Could not write settings.local.json: \(error.localizedDescription)")
+                output.error("Hooks and plugins will not be active. Re-run 'mcs sync' after fixing the issue.")
+                throw MCSError.fileOperationFailed(
+                    path: "settings.local.json",
+                    reason: error.localizedDescription
+                )
             }
         } else if FileManager.default.fileExists(atPath: settingsPath.path) {
             // No packs contribute settings — remove stale file
@@ -745,7 +750,7 @@ struct ProjectConfigurator {
         var allContributions: [TemplateContribution] = []
 
         for pack in packs {
-            allContributions.append(contentsOf: pack.templates)
+            allContributions.append(contentsOf: try pack.templates)
         }
 
         guard !allContributions.isEmpty else {
@@ -861,7 +866,7 @@ struct ProjectConfigurator {
         packs: [any TechPack],
         projectPath: URL,
         repoName: String
-    ) -> [String: String] {
+    ) throws -> [String: String] {
         var allValues: [String: String] = ["REPO_NAME": repoName]
         let context = ProjectConfigContext(
             projectPath: projectPath,
@@ -869,7 +874,7 @@ struct ProjectConfigurator {
             output: output
         )
         for pack in packs {
-            let packValues = pack.templateValues(context: context)
+            let packValues = try pack.templateValues(context: context)
             allValues.merge(packValues) { _, new in new }
         }
         return allValues
@@ -897,8 +902,8 @@ struct ProjectConfigurator {
                 }
             }
 
-            // Scan template content
-            for template in pack.templates {
+            // Scan template content (non-critical — errors will surface in composeClaudeLocal)
+            for template in (try? pack.templates) ?? [] {
                 for placeholder in TemplateEngine.findUnreplacedPlaceholders(in: template.templateContent) {
                     let key = Self.stripPlaceholderDelimiters(placeholder)
                     if !resolvedKeys.contains(key) {
