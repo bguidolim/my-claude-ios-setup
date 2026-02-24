@@ -8,6 +8,7 @@ struct LockfileOperations {
     let shell: ShellRunner
 
     /// Checkout exact pack versions from the lockfile.
+    /// Aborts if any checkout fails, since `--lock` guarantees reproducibility.
     func checkoutLockedVersions(at projectPath: URL) throws {
         guard let lockfile = try Lockfile.load(projectRoot: projectPath) else {
             output.error("No mcs.lock.yaml found. Run 'mcs sync' first to create one.")
@@ -16,10 +17,19 @@ struct LockfileOperations {
 
         output.info("Checking out locked pack versions...")
 
+        var failedPacks: [String] = []
         for locked in lockfile.packs {
+            // Validate commit SHA is a valid hex string (defense against flag injection)
+            guard locked.commitSHA.range(of: #"^[0-9a-f]{7,64}$"#, options: .regularExpression) != nil else {
+                output.warn("  \(locked.identifier): invalid commit SHA '\(locked.commitSHA)'")
+                failedPacks.append(locked.identifier)
+                continue
+            }
+
             let packPath = environment.packsDirectory.appendingPathComponent(locked.identifier)
             guard FileManager.default.fileExists(atPath: packPath.path) else {
-                output.warn("Pack '\(locked.identifier)' not found locally. Run 'mcs pack add \(locked.sourceURL)' first.")
+                output.warn("  Pack '\(locked.identifier)' not found locally. Run 'mcs pack add \(locked.sourceURL)' first.")
+                failedPacks.append(locked.identifier)
                 continue
             }
 
@@ -43,8 +53,15 @@ struct LockfileOperations {
                     output.success("  \(locked.identifier): fetched and checked out \(String(locked.commitSHA.prefix(7)))")
                 } else {
                     output.warn("  \(locked.identifier): failed to checkout \(String(locked.commitSHA.prefix(7)))")
+                    failedPacks.append(locked.identifier)
                 }
             }
+        }
+
+        if !failedPacks.isEmpty {
+            output.error("Failed to checkout locked versions for: \(failedPacks.joined(separator: ", "))")
+            output.error("Sync aborted to prevent inconsistent configuration.")
+            throw ExitCode.failure
         }
     }
 
