@@ -46,10 +46,24 @@ struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
 
         let state = ProjectState(projectRoot: context.projectRoot)
 
+        // Surface corrupt state files instead of silently falling to legacy path
+        if let loadError = state.loadError {
+            return .warn("could not read .mcs-project: \(loadError.localizedDescription) — run 'mcs sync' to regenerate")
+        }
+
         // If we have stored resolved values, use content-hash comparison
         if let storedValues = state.resolvedValues {
-            let expectedSections = buildExpectedSections(state: state, values: storedValues)
+            let (expectedSections, buildErrors) = buildExpectedSections(state: state, values: storedValues)
+
+            if !buildErrors.isEmpty {
+                return .warn("could not fully verify: \(buildErrors.joined(separator: "; "))")
+            }
+
             let result = SectionValidator.validate(fileURL: claudeLocal, expectedSections: expectedSections)
+
+            if result.sections.isEmpty && !expectedSections.isEmpty {
+                return .fail("could not validate sections — file may have changed during check")
+            }
 
             if result.hasOutdated {
                 let outdated = result.outdatedSections.map { "\($0.identifier) (\($0.detail))" }
@@ -75,17 +89,31 @@ struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
 
     func fix() -> FixResult {
         let state = ProjectState(projectRoot: context.projectRoot)
+
+        if let loadError = state.loadError {
+            return .failed("could not read .mcs-project: \(loadError.localizedDescription)")
+        }
+
         guard let storedValues = state.resolvedValues else {
             return .notFixable("Run 'mcs sync' to update CLAUDE.local.md (no stored values for auto-fix)")
         }
 
         let claudeLocal = context.projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
-        let expectedSections = buildExpectedSections(state: state, values: storedValues)
+        let (expectedSections, buildErrors) = buildExpectedSections(state: state, values: storedValues)
+
+        if !buildErrors.isEmpty {
+            return .failed("could not build expected sections: \(buildErrors.joined(separator: "; "))")
+        }
 
         do {
             let updated = try SectionValidator.fix(fileURL: claudeLocal, expectedSections: expectedSections)
             if updated {
                 return .fixed("re-rendered outdated sections from stored values")
+            }
+            // Verify the file is readable — SectionValidator.fix returns false both when
+            // nothing needs fixing AND when it can't read the file
+            guard FileManager.default.isReadableFile(atPath: claudeLocal.path) else {
+                return .failed("CLAUDE.local.md became unreadable during fix")
             }
             return .fixed("no changes needed")
         } catch {
@@ -96,15 +124,23 @@ struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
     // MARK: - Helpers
 
     /// Build expected sections by re-rendering current pack templates with stored values.
+    /// Returns both the expected sections and any errors encountered during template loading.
     private func buildExpectedSections(
         state: ProjectState,
         values: [String: String]
-    ) -> [String: (version: String, content: String)] {
+    ) -> (sections: [String: (version: String, content: String)], errors: [String]) {
         var expected: [String: (version: String, content: String)] = [:]
+        var errors: [String] = []
 
         for packID in state.configuredPacks {
             guard let pack = context.registry.pack(for: packID) else { continue }
-            guard let templates = try? pack.templates else { continue }
+            let templates: [TemplateContribution]
+            do {
+                templates = try pack.templates
+            } catch {
+                errors.append("\(packID): failed to load templates — \(error.localizedDescription)")
+                continue
+            }
             for contribution in templates {
                 let rendered = TemplateEngine.substitute(
                     template: contribution.templateContent,
@@ -117,7 +153,7 @@ struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
             }
         }
 
-        return expected
+        return (expected, errors)
     }
 }
 

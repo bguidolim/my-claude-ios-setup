@@ -305,6 +305,77 @@ struct CLAUDELocalFreshnessCheckTests {
             Issue.record("Expected notFixable but got \(fixResult)")
         }
     }
+
+    // MARK: - Multiple sections with partial drift
+
+    @Test("Multiple sections — only drifted one is reported")
+    func partialDrift() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let resolvedValues = ["NAME": "World"]
+        let goodRendered = TemplateEngine.substitute(template: "Hello __NAME__", values: resolvedValues)
+
+        try writeClaudeLocal(at: tmpDir, sections: [
+            (id: "pack-a", version: MCSVersion.current, content: goodRendered),
+            (id: "pack-b", version: MCSVersion.current, content: "This was tampered"),
+        ])
+        try writeProjectState(at: tmpDir, packs: ["pack-a", "pack-b"], resolvedValues: resolvedValues)
+
+        let registry = makeRegistry(packs: [
+            (id: "pack-a", templates: [
+                TemplateContribution(sectionIdentifier: "pack-a", templateContent: "Hello __NAME__", placeholders: ["__NAME__"]),
+            ]),
+            (id: "pack-b", templates: [
+                TemplateContribution(sectionIdentifier: "pack-b", templateContent: "Original content", placeholders: []),
+            ]),
+        ])
+        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
+        let check = CLAUDELocalFreshnessCheck(context: context)
+
+        let result = check.check()
+        if case .fail(let msg) = result {
+            #expect(msg.contains("pack-b"))
+            #expect(!msg.contains("pack-a"))
+        } else {
+            Issue.record("Expected fail but got \(result)")
+        }
+    }
+
+    // MARK: - Template loading error surfaced
+
+    @Test("Pack with throwing templates — warns instead of silent skip")
+    func templateLoadingError() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let resolvedValues = ["NAME": "World"]
+        let rendered = TemplateEngine.substitute(template: "Hello __NAME__", values: resolvedValues)
+
+        try writeClaudeLocal(at: tmpDir, sections: [
+            (id: "good-pack", version: MCSVersion.current, content: rendered),
+            (id: "bad-pack", version: MCSVersion.current, content: "Some content"),
+        ])
+        try writeProjectState(at: tmpDir, packs: ["good-pack", "bad-pack"], resolvedValues: resolvedValues)
+
+        let goodPack = StubTechPack(
+            identifier: "good-pack",
+            templates: [TemplateContribution(sectionIdentifier: "good-pack", templateContent: "Hello __NAME__", placeholders: ["__NAME__"])]
+        )
+        let badPack = ThrowingTechPack(identifier: "bad-pack")
+        let registry = TechPackRegistry.withExternalPacks([goodPack, badPack])
+
+        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
+        let check = CLAUDELocalFreshnessCheck(context: context)
+
+        let result = check.check()
+        if case .warn(let msg) = result {
+            #expect(msg.contains("bad-pack"))
+            #expect(msg.contains("could not fully verify"))
+        } else {
+            Issue.record("Expected warn but got \(result)")
+        }
+    }
 }
 
 // MARK: - Test doubles
@@ -320,4 +391,24 @@ private struct StubTechPack: TechPack {
     let supplementaryDoctorChecks: [any DoctorCheck] = []
 
     func configureProject(at path: URL, context: ProjectConfigContext) throws {}
+}
+
+private struct ThrowingTechPack: TechPack {
+    let identifier: String
+    let displayName: String = "Throwing Pack"
+    let description: String = "A pack whose templates throw"
+    let components: [ComponentDefinition] = []
+    var templates: [TemplateContribution] {
+        get throws { throw TestError.templateLoadFailed }
+    }
+    let hookContributions: [HookContribution] = []
+    let gitignoreEntries: [String] = []
+    let supplementaryDoctorChecks: [any DoctorCheck] = []
+
+    func configureProject(at path: URL, context: ProjectConfigContext) throws {}
+
+    private enum TestError: Error, LocalizedError {
+        case templateLoadFailed
+        var errorDescription: String? { "simulated template load failure" }
+    }
 }
