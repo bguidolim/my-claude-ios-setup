@@ -1,4 +1,4 @@
-name: CI
+name: PR Checks
 
 on:
   push:
@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   build-and-test:
+    name: Build and Test
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
