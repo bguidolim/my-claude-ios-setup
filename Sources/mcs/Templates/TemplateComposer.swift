@@ -189,6 +189,99 @@ enum TemplateComposer {
         return result.joined(separator: "\n")
     }
 
+    // MARK: - Compose or update
+
+    /// Result of composing or updating CLAUDE.local.md content.
+    struct ComposeResult {
+        let content: String
+        let warnings: [String]
+    }
+
+    /// Pure compose-or-update decision: produces final content from contributions
+    /// without performing any file I/O.
+    ///
+    /// - If `existingContent` is nil or has no section markers, produces a fresh compose.
+    /// - If `existingContent` has markers, updates each section in place preserving user content.
+    static func composeOrUpdate(
+        existingContent: String?,
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) -> ComposeResult {
+        let hasMarkers = existingContent.map { !parseSections(from: $0).isEmpty } ?? false
+
+        guard let existingContent, hasMarkers else {
+            return freshCompose(contributions: contributions, values: values)
+        }
+
+        return updateExisting(
+            existingContent: existingContent,
+            contributions: contributions,
+            values: values
+        )
+    }
+
+    /// Build a fresh composed file from contributions.
+    private static func freshCompose(
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) -> ComposeResult {
+        let coreContent = contributions
+            .first { $0.sectionIdentifier == "core" }?.templateContent ?? ""
+        let packContributions = contributions
+            .filter { $0.sectionIdentifier != "core" }
+
+        let composed = compose(
+            coreContent: coreContent,
+            packContributions: packContributions,
+            values: values
+        )
+        return ComposeResult(content: composed, warnings: [])
+    }
+
+    /// Update an existing file that has section markers, preserving user content.
+    private static func updateExisting(
+        existingContent: String,
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) -> ComposeResult {
+        let version = MCSVersion.current
+        var warnings: [String] = []
+
+        let unpaired = unpairedSections(in: existingContent)
+        if !unpaired.isEmpty {
+            warnings.append("Unpaired section markers in CLAUDE.local.md: \(unpaired.joined(separator: ", "))")
+            warnings.append("Sections with missing end markers will not be updated to prevent data loss.")
+            warnings.append("Add the missing end markers manually, then re-run mcs sync.")
+        }
+
+        let userContent = extractUserContent(from: existingContent)
+
+        var updated = existingContent
+        for contribution in contributions {
+            let processedContent = TemplateEngine.substitute(
+                template: contribution.templateContent,
+                values: values
+            )
+            updated = replaceSection(
+                in: updated,
+                sectionIdentifier: contribution.sectionIdentifier,
+                newContent: processedContent,
+                newVersion: version
+            )
+        }
+
+        let trimmedUser = userContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedUser.isEmpty {
+            let currentUser = extractUserContent(from: updated)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if currentUser.isEmpty {
+                updated += "\n\n" + trimmedUser + "\n"
+            }
+        }
+
+        return ComposeResult(content: updated, warnings: warnings)
+    }
+
     // MARK: - Section removal
 
     /// Remove a section identified by its begin/end markers from the content.

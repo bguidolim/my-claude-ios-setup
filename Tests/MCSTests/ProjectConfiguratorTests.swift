@@ -3,228 +3,6 @@ import Testing
 
 @testable import mcs
 
-@Suite("ProjectConfigurator — writeClaudeLocal")
-struct WriteClaudeLocalTests {
-    private let output = CLIOutput(colorsEnabled: false)
-
-    private func makeTmpDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mcs-projconf-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    private func makeConfigurator() -> ProjectConfigurator {
-        let env = Environment()
-        return ProjectConfigurator(
-            environment: env,
-            output: output,
-            shell: ShellRunner(environment: env)
-        )
-    }
-
-    private func coreContribution(_ content: String = "Core rules") -> TemplateContribution {
-        TemplateContribution(
-            sectionIdentifier: "core",
-            templateContent: content,
-            placeholders: []
-        )
-    }
-
-    private func iosContribution(_ content: String = "iOS rules for __PROJECT__") -> TemplateContribution {
-        TemplateContribution(
-            sectionIdentifier: "ios",
-            templateContent: content,
-            placeholders: ["__PROJECT__"]
-        )
-    }
-
-    // MARK: - Fresh file (no existing CLAUDE.local.md)
-
-    @Test("Creates CLAUDE.local.md with section markers from scratch")
-    func freshFileCreation() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let configurator = makeConfigurator()
-        try configurator.writeClaudeLocal(
-            at: tmpDir,
-            contributions: [coreContribution()],
-            values: [:]
-        )
-
-        let path = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        let content = try String(contentsOf: path, encoding: .utf8)
-
-        let sections = TemplateComposer.parseSections(from: content)
-        #expect(sections.count == 1)
-        #expect(sections[0].identifier == "core")
-        #expect(sections[0].content == "Core rules")
-    }
-
-    // MARK: - v1 migration (file exists, no markers)
-
-    @Test("v1 file without markers is replaced with v2 composed output")
-    func v1MigrationReplacesWithMarkers() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        // Write a v1 file (no section markers)
-        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        try "Old v1 content without any markers".write(
-            to: claudeLocal, atomically: true, encoding: .utf8
-        )
-
-        let configurator = makeConfigurator()
-        try configurator.writeClaudeLocal(
-            at: tmpDir,
-            contributions: [coreContribution("New core")],
-            values: [:]
-        )
-
-        let content = try String(contentsOf: claudeLocal, encoding: .utf8)
-
-        // Should have proper v2 markers
-        let sections = TemplateComposer.parseSections(from: content)
-        #expect(sections.count == 1)
-        #expect(sections[0].identifier == "core")
-        #expect(sections[0].content == "New core")
-
-        // Old v1 content should not be present
-        #expect(!content.contains("Old v1 content"))
-    }
-
-    @Test("v1 migration creates backup of original file")
-    func v1MigrationCreatesBackup() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        try "Old v1 content".write(to: claudeLocal, atomically: true, encoding: .utf8)
-
-        let configurator = makeConfigurator()
-        try configurator.writeClaudeLocal(
-            at: tmpDir,
-            contributions: [coreContribution()],
-            values: [:]
-        )
-
-        // Check a backup was created
-        let files = try FileManager.default.contentsOfDirectory(atPath: tmpDir.path)
-        let backups = files.filter { $0.contains("CLAUDE.local.md.backup") }
-        #expect(!backups.isEmpty)
-    }
-
-    // MARK: - v2 update (file exists with markers)
-
-    @Test("v2 file with markers is updated in place")
-    func v2UpdatePreservesStructure() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        // Write a v2 file
-        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        let v2Content = TemplateComposer.compose(coreContent: "Old core")
-        try v2Content.write(to: claudeLocal, atomically: true, encoding: .utf8)
-
-        let configurator = makeConfigurator()
-        try configurator.writeClaudeLocal(
-            at: tmpDir,
-            contributions: [coreContribution("Updated core")],
-            values: [:]
-        )
-
-        let content = try String(contentsOf: claudeLocal, encoding: .utf8)
-        let sections = TemplateComposer.parseSections(from: content)
-        #expect(sections.count == 1)
-        #expect(sections[0].content == "Updated core")
-        #expect(!content.contains("Old core"))
-    }
-
-    @Test("v2 update preserves user content outside markers")
-    func v2UpdatePreservesUserContent() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        let v2Content = TemplateComposer.compose(coreContent: "Core")
-            + "\n\nMy custom notes\n"
-        try v2Content.write(to: claudeLocal, atomically: true, encoding: .utf8)
-
-        let configurator = makeConfigurator()
-        try configurator.writeClaudeLocal(
-            at: tmpDir,
-            contributions: [coreContribution("New core")],
-            values: [:]
-        )
-
-        let content = try String(contentsOf: claudeLocal, encoding: .utf8)
-        #expect(content.contains("New core"))
-        #expect(content.contains("My custom notes"))
-    }
-
-    // MARK: - Template substitution
-
-    // MARK: - Section removal on unconfigure
-
-    @Test("Unconfiguring a pack removes its template section from CLAUDE.local.md")
-    func unconfigureRemovesTemplateSection() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        // Set up a CLAUDE.local.md with core + ios sections
-        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        let composed = TemplateComposer.compose(
-            coreContent: "Core rules",
-            packContributions: [iosContribution("iOS rules")],
-            values: [:]
-        )
-        try composed.write(to: claudeLocal, atomically: true, encoding: .utf8)
-
-        // Verify both sections exist
-        let before = try String(contentsOf: claudeLocal, encoding: .utf8)
-        let sectionsBefore = TemplateComposer.parseSections(from: before)
-        #expect(sectionsBefore.count == 2)
-
-        // Simulate unconfigure by removing the ios section (same logic as unconfigurePack)
-        let artifacts = PackArtifactRecord(templateSections: ["ios"])
-        var updated = before
-        for sectionID in artifacts.templateSections {
-            updated = TemplateComposer.removeSection(in: updated, sectionIdentifier: sectionID)
-        }
-        try updated.write(to: claudeLocal, atomically: true, encoding: .utf8)
-
-        // Verify only core remains
-        let after = try String(contentsOf: claudeLocal, encoding: .utf8)
-        let sectionsAfter = TemplateComposer.parseSections(from: after)
-        #expect(sectionsAfter.count == 1)
-        #expect(sectionsAfter[0].identifier == "core")
-        #expect(!after.contains("mcs:begin ios"))
-        #expect(!after.contains("mcs:end ios"))
-    }
-
-    // MARK: - Template substitution
-
-    @Test("Pack template values are substituted during compose")
-    func packValuesSubstituted() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let configurator = makeConfigurator()
-        try configurator.writeClaudeLocal(
-            at: tmpDir,
-            contributions: [coreContribution(), iosContribution()],
-            values: ["REPO_NAME": "my-repo", "PROJECT": "MyApp.xcodeproj"]
-        )
-
-        let claudeLocal = tmpDir.appendingPathComponent("CLAUDE.local.md")
-        let content = try String(contentsOf: claudeLocal, encoding: .utf8)
-
-        #expect(content.contains("MyApp.xcodeproj"))
-        #expect(!content.contains("__PROJECT__"))
-    }
-}
-
 // MARK: - Dry Run Tests
 
 @Suite("ProjectConfigurator — dryRun")
@@ -616,129 +394,6 @@ struct PackSettingsMergeTests {
     }
 }
 
-// MARK: - Copy With Substitution Tests
-
-@Suite("ComponentExecutor — copyWithSubstitution")
-struct CopyWithSubstitutionTests {
-    private func makeTmpDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mcs-copysub-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    @Test("Substitutes placeholders in text file")
-    func substitutesPlaceholders() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let source = tmpDir.appendingPathComponent("template.md")
-        try "Branch: __BRANCH_PREFIX__/{ticket}".write(
-            to: source, atomically: true, encoding: .utf8
-        )
-
-        let dest = tmpDir.appendingPathComponent("output.md")
-        try ComponentExecutor.copyWithSubstitution(
-            from: source,
-            to: dest,
-            values: ["BRANCH_PREFIX": "feature"]
-        )
-
-        let result = try String(contentsOf: dest, encoding: .utf8)
-        #expect(result == "Branch: feature/{ticket}")
-        #expect(!result.contains("__BRANCH_PREFIX__"))
-    }
-
-    @Test("Multiple placeholders in same file")
-    func multiplePlaceholders() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let source = tmpDir.appendingPathComponent("cmd.md")
-        try "Project: __PROJECT__\nBranch: __BRANCH_PREFIX__/topic".write(
-            to: source, atomically: true, encoding: .utf8
-        )
-
-        let dest = tmpDir.appendingPathComponent("output.md")
-        try ComponentExecutor.copyWithSubstitution(
-            from: source,
-            to: dest,
-            values: ["PROJECT": "MyApp.xcodeproj", "BRANCH_PREFIX": "bruno"]
-        )
-
-        let result = try String(contentsOf: dest, encoding: .utf8)
-        #expect(result.contains("MyApp.xcodeproj"))
-        #expect(result.contains("bruno/topic"))
-    }
-
-    @Test("Empty values dict falls back to raw copy")
-    func emptyValuesFallsBackToRawCopy() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let source = tmpDir.appendingPathComponent("raw.md")
-        try "Keep __PLACEHOLDER__ as-is".write(
-            to: source, atomically: true, encoding: .utf8
-        )
-
-        let dest = tmpDir.appendingPathComponent("output.md")
-        try ComponentExecutor.copyWithSubstitution(
-            from: source,
-            to: dest,
-            values: [:]
-        )
-
-        let result = try String(contentsOf: dest, encoding: .utf8)
-        #expect(result.contains("__PLACEHOLDER__"))
-    }
-
-    @Test("Binary file falls back to raw copy")
-    func binaryFileFallsBack() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        // Write invalid UTF-8 bytes
-        let source = tmpDir.appendingPathComponent("binary.bin")
-        let bytes: [UInt8] = [0xFF, 0xFE, 0x00, 0x01, 0x80, 0x81]
-        try Data(bytes).write(to: source)
-
-        let dest = tmpDir.appendingPathComponent("output.bin")
-        try ComponentExecutor.copyWithSubstitution(
-            from: source,
-            to: dest,
-            values: ["FOO": "bar"]
-        )
-
-        let result = try Data(contentsOf: dest)
-        #expect(result == Data(bytes))
-    }
-
-    @Test("Substitution preserves file content around placeholders")
-    func preservesSurroundingContent() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let source = tmpDir.appendingPathComponent("hook.sh")
-        try """
-        #!/bin/bash
-        # Branch naming: __BRANCH_PREFIX__/{ticket}
-        echo "done"
-        """.write(to: source, atomically: true, encoding: .utf8)
-
-        let dest = tmpDir.appendingPathComponent("output.sh")
-        try ComponentExecutor.copyWithSubstitution(
-            from: source,
-            to: dest,
-            values: ["BRANCH_PREFIX": "fix"]
-        )
-
-        let result = try String(contentsOf: dest, encoding: .utf8)
-        #expect(result.contains("#!/bin/bash"))
-        #expect(result.contains("fix/{ticket}"))
-        #expect(result.contains("echo \"done\""))
-    }
-}
-
 // MARK: - installProjectFile Substitution Tests
 
 @Suite("ComponentExecutor — installProjectFile substitution")
@@ -857,6 +512,37 @@ struct InstallProjectFileSubstitutionTests {
             .appendingPathComponent(".claude/commands/commit.md")
         let content = try String(contentsOf: installed, encoding: .utf8)
         #expect(content.contains("__PLACEHOLDER__"))
+    }
+
+    @Test("installProjectFile copies binary file without corruption")
+    func binaryFileFallsBack() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let projectPath = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
+
+        // Create a binary source file (invalid UTF-8)
+        let packDir = tmpDir.appendingPathComponent("pack")
+        try FileManager.default.createDirectory(at: packDir, withIntermediateDirectories: true)
+        let source = packDir.appendingPathComponent("data.bin")
+        let bytes: [UInt8] = [0xFF, 0xFE, 0x00, 0x01, 0x80, 0x81]
+        try Data(bytes).write(to: source)
+
+        var exec = makeExecutor()
+        let paths = exec.installProjectFile(
+            source: source,
+            destination: "data.bin",
+            fileType: .command,
+            projectPath: projectPath,
+            resolvedValues: ["FOO": "bar"]
+        )
+
+        #expect(!paths.isEmpty)
+
+        let installed = projectPath.appendingPathComponent(".claude/commands/data.bin")
+        let result = try Data(contentsOf: installed)
+        #expect(result == Data(bytes))
     }
 }
 

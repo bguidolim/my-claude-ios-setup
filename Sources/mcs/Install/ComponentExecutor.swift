@@ -230,7 +230,7 @@ struct ComponentExecutor {
     /// Copy a file or directory, substituting `__PLACEHOLDER__` values in text files.
     /// Recurses into subdirectories. Falls back to binary copy for non-UTF-8 files
     /// or when no values are provided.
-    static func copyWithSubstitution(
+    private static func copyWithSubstitution(
         from source: URL,
         to destination: URL,
         values: [String: String]

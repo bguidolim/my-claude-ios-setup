@@ -722,82 +722,33 @@ struct ProjectConfigurator {
     // MARK: - CLAUDE.local.md Writing
 
     /// Compose and write CLAUDE.local.md from template contributions.
-    func writeClaudeLocal(
+    private func writeClaudeLocal(
         at projectPath: URL,
         contributions: [TemplateContribution],
         values: [String: String]
     ) throws {
-        let version = MCSVersion.current
         let claudeLocalPath = projectPath.appendingPathComponent(Constants.FileNames.claudeLocalMD)
         let fm = FileManager.default
 
-        let coreContribution = contributions.first { $0.sectionIdentifier == "core" }
-        let otherContributions = contributions.filter { $0.sectionIdentifier != "core" }
-        let coreContent = coreContribution?.templateContent ?? ""
-
-        let composed: String
         let existingContent: String? = fm.fileExists(atPath: claudeLocalPath.path)
             ? try String(contentsOf: claudeLocalPath, encoding: .utf8)
             : nil
 
-        let hasMarkers = existingContent.map {
-            !TemplateComposer.parseSections(from: $0).isEmpty
-        } ?? false
+        let result = TemplateComposer.composeOrUpdate(
+            existingContent: existingContent,
+            contributions: contributions,
+            values: values
+        )
 
-        if let existingContent, hasMarkers {
-            let unpaired = TemplateComposer.unpairedSections(in: existingContent)
-            if !unpaired.isEmpty {
-                output.warn("Unpaired section markers in CLAUDE.local.md: \(unpaired.joined(separator: ", "))")
-                output.warn("Sections with missing end markers will not be updated to prevent data loss.")
-                output.warn("Add the missing end markers manually, then re-run mcs sync.")
-            }
-
-            let userContent = TemplateComposer.extractUserContent(from: existingContent)
-
-            let processedCore = TemplateEngine.substitute(template: coreContent, values: values)
-            var updated = TemplateComposer.replaceSection(
-                in: existingContent,
-                sectionIdentifier: "core",
-                newContent: processedCore,
-                newVersion: version
-            )
-
-            for contribution in otherContributions {
-                let processedContent = TemplateEngine.substitute(
-                    template: contribution.templateContent,
-                    values: values
-                )
-                updated = TemplateComposer.replaceSection(
-                    in: updated,
-                    sectionIdentifier: contribution.sectionIdentifier,
-                    newContent: processedContent,
-                    newVersion: version
-                )
-            }
-
-            let trimmedUser = userContent.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedUser.isEmpty {
-                let currentUser = TemplateComposer.extractUserContent(from: updated)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if currentUser.isEmpty {
-                    updated += "\n\n" + trimmedUser + "\n"
-                }
-            }
-
-            composed = updated
-        } else {
-            composed = TemplateComposer.compose(
-                coreContent: coreContent,
-                packContributions: otherContributions,
-                values: values
-            )
+        for warning in result.warnings {
+            output.warn(warning)
         }
 
         if fm.fileExists(atPath: claudeLocalPath.path) {
             var backup = Backup()
             try backup.backupFile(at: claudeLocalPath)
         }
-        try composed.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
+        try result.content.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
         output.success("Generated CLAUDE.local.md")
     }
 
