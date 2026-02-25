@@ -26,6 +26,6 @@ Only check items that apply to this PR. Delete irrelevant ones.
 - [ ] Any `fix()` implementation does cleanup/migration only — never installs or registers resources
 - [ ] State migrations are guarded by `isNeeded()` to stay idempotent with `mcs sync`
 - [ ] New file write/copy/delete paths use `PathContainment.safePath()` and handle the `nil` (escape) case
-- [ ] `CLAUDE.md` updated if architecture, commands, or subsystems changed
+- [ ] Docs updated if behavior changed (`CLAUDE.md`, `docs/`, `techpack.yaml` schema in `ExternalPackManifest.swift`)
 
 </details>
