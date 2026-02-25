@@ -1,9 +1,8 @@
 import Foundation
 
 /// Bridges an `ExternalPackManifest` (loaded from `techpack.yaml`) to the
-/// `TechPack` protocol, allowing external packs to participate in the same install,
-/// doctor, and configure flows as compiled-in packs.
-/// Note: migrations are not yet supported.
+/// `TechPack` protocol, allowing external packs to participate in install,
+/// doctor, and configure flows.
 struct ExternalPackAdapter: TechPack {
     let manifest: ExternalPackManifest
     let packPath: URL

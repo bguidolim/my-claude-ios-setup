@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-/// Shared lockfile operations used by SyncCommand and ConfigureCommand.
+/// Shared lockfile operations used by SyncCommand.
 struct LockfileOperations {
     let environment: Environment
     let output: CLIOutput

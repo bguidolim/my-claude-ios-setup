@@ -9,10 +9,8 @@ struct GitignoreManager: Sendable {
     static let coreEntries: [String] = [
         Constants.FileNames.claudeDirectory,
         "*.local.*",
-        "\(Constants.FileNames.claudeDirectory)/memories/",
         "\(Constants.FileNames.claudeDirectory)/\(Constants.FileNames.mcsProject)",
         "\(Constants.FileNames.claudeDirectory)/\(Constants.FileNames.mcsLock)",
-        "\(Constants.Serena.directory)"
     ]
 
     /// Resolve the global gitignore file path.

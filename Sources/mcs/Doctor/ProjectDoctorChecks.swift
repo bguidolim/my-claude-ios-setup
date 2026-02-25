@@ -11,7 +11,6 @@ enum ProjectDoctorChecks {
     static func checks(context: ProjectDoctorContext) -> [any DoctorCheck] {
         [
             CLAUDELocalFreshnessCheck(context: context),
-            ProjectSerenaMemoryCheck(projectRoot: context.projectRoot),
             ProjectStateFileCheck(projectRoot: context.projectRoot),
         ]
     }
@@ -19,8 +18,7 @@ enum ProjectDoctorChecks {
 
 // MARK: - CLAUDE.local.md freshness check
 
-/// Verifies CLAUDE.local.md sections via content-hash comparison (when stored values exist)
-/// or version-only comparison (legacy fallback).
+/// Verifies CLAUDE.local.md sections via content-hash comparison against stored values.
 struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
     let context: ProjectDoctorContext
 
@@ -51,40 +49,27 @@ struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
             return .warn("could not read .mcs-project: \(error.localizedDescription) — run 'mcs sync' to regenerate")
         }
 
-        // If we have stored resolved values, use content-hash comparison
-        if let storedValues = state.resolvedValues {
-            let (expectedSections, buildErrors) = buildExpectedSections(state: state, values: storedValues)
-
-            if !buildErrors.isEmpty {
-                return .warn("could not fully verify: \(buildErrors.joined(separator: "; "))")
-            }
-
-            let result = SectionValidator.validate(fileURL: claudeLocal, expectedSections: expectedSections)
-
-            if result.sections.isEmpty && !expectedSections.isEmpty {
-                return .fail("could not validate sections — file may have changed during check")
-            }
-
-            if result.hasOutdated {
-                let outdated = result.outdatedSections.map { "\($0.identifier) (\($0.detail))" }
-                return .fail("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync' or 'mcs doctor --fix'")
-            }
-            return .pass("all sections up to date (content verified)")
+        guard let storedValues = state.resolvedValues else {
+            return .warn("no stored values for verification — run 'mcs sync'")
         }
 
-        // Legacy fallback: version-only check
-        let currentVersion = MCSVersion.current
-        var outdated: [String] = []
-        for section in sections {
-            if section.version != currentVersion {
-                outdated.append("\(section.identifier) (v\(section.version))")
-            }
+        let (expectedSections, buildErrors) = buildExpectedSections(state: state, values: storedValues)
+
+        if !buildErrors.isEmpty {
+            return .warn("could not fully verify: \(buildErrors.joined(separator: "; "))")
         }
 
-        if outdated.isEmpty {
-            return .pass("all sections at v\(currentVersion) (version-only)")
+        let result = SectionValidator.validate(fileURL: claudeLocal, expectedSections: expectedSections)
+
+        if result.sections.isEmpty && !expectedSections.isEmpty {
+            return .fail("could not validate sections — file may have changed during check")
         }
-        return .warn("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync' (version-only)")
+
+        if result.hasOutdated {
+            let outdated = result.outdatedSections.map { "\($0.identifier) (\($0.detail))" }
+            return .fail("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync' or 'mcs doctor --fix'")
+        }
+        return .pass("all sections up to date (content verified)")
     }
 
     func fix() -> FixResult {
@@ -155,88 +140,6 @@ struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
         }
 
         return (expected, errors)
-    }
-}
-
-// MARK: - Project-local Serena memory migration
-
-/// Checks for <project>/.serena/memories/ that should be migrated to .claude/memories/
-/// and replaced with a symlink.
-struct ProjectSerenaMemoryCheck: DoctorCheck, Sendable {
-    let projectRoot: URL
-
-    var name: String { "Project Serena memories" }
-    var section: String { "Project" }
-
-    func check() -> CheckResult {
-        let serenaDir = projectRoot
-            .appendingPathComponent(Constants.Serena.directory)
-            .appendingPathComponent(Constants.Serena.memoriesDirectory)
-        let fm = FileManager.default
-
-        guard fm.fileExists(atPath: serenaDir.path) else {
-            return .pass("no \(Constants.Serena.directory)/\(Constants.Serena.memoriesDirectory)/ found")
-        }
-
-        // Already a symlink → already migrated
-        if let attrs = try? fm.attributesOfItem(atPath: serenaDir.path),
-           attrs[.type] as? FileAttributeType == .typeSymbolicLink {
-            return .pass("\(Constants.Serena.directory)/\(Constants.Serena.memoriesDirectory)/ is a symlink (migrated)")
-        }
-
-        let contents: [String]
-        do {
-            contents = try fm.contentsOfDirectory(atPath: serenaDir.path)
-        } catch {
-            return .fail("\(Constants.Serena.directory)/\(Constants.Serena.memoriesDirectory)/ exists but could not be read")
-        }
-        guard !contents.isEmpty else {
-            return .fail("\(Constants.Serena.directory)/\(Constants.Serena.memoriesDirectory)/ exists as directory — should be a symlink")
-        }
-        return .fail("\(Constants.Serena.directory)/\(Constants.Serena.memoriesDirectory)/ has \(contents.count) file(s) — migrate to \(Constants.FileNames.claudeDirectory)/\(Constants.Serena.memoriesDirectory)/")
-    }
-
-    func fix() -> FixResult {
-        let fm = FileManager.default
-        let serenaDir = projectRoot
-            .appendingPathComponent(Constants.Serena.directory)
-            .appendingPathComponent(Constants.Serena.memoriesDirectory)
-        let claudeDir = projectRoot
-            .appendingPathComponent(Constants.FileNames.claudeDirectory)
-            .appendingPathComponent(Constants.Serena.memoriesDirectory)
-
-        do {
-            if !fm.fileExists(atPath: claudeDir.path) {
-                try fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
-            }
-
-            // List source files — fail hard if listing fails
-            let sourceFiles = try fm.contentsOfDirectory(at: serenaDir, includingPropertiesForKeys: nil)
-
-            // Copy all files
-            for file in sourceFiles {
-                let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
-                if !fm.fileExists(atPath: dest.path) {
-                    try fm.copyItem(at: file, to: dest)
-                }
-            }
-
-            // Verify all source files exist at destination before deleting source
-            for file in sourceFiles {
-                let dest = claudeDir.appendingPathComponent(file.lastPathComponent)
-                guard fm.fileExists(atPath: dest.path) else {
-                    return .failed("\(file.lastPathComponent) not found at destination after copy")
-                }
-            }
-
-            // Replace directory with symlink
-            try fm.removeItem(at: serenaDir)
-            try fm.createSymbolicLink(at: serenaDir, withDestinationURL: claudeDir)
-
-            return .fixed("migrated \(sourceFiles.count) file(s) and created symlink")
-        } catch {
-            return .failed(error.localizedDescription)
-        }
     }
 }
 

@@ -90,7 +90,7 @@ Per-project state stored as JSON at `<project>/.claude/.mcs-project`. Tracks:
 - **mcs version**: the version that last wrote the file
 - **Timestamp**: when the file was last updated
 
-Written by `mcs sync` after convergence. Supports legacy key=value format migration.
+Written by `mcs sync` after convergence.
 
 ### Global vs. Project State
 
@@ -98,7 +98,7 @@ Written by `mcs sync` after convergence. Supports legacy key=value format migrat
 |---|---|---|
 | **Scope** | Machine-wide | Single project |
 | **Written by** | `mcs sync --global` | `mcs sync` |
-| **Format** | Key=value | JSON |
+| **Format** | JSON | JSON |
 | **Tracks** | Globally installed components, pack IDs, file hashes | Per-pack artifact records, configured pack IDs |
 
 ### Backup (`Core/Backup.swift`)
@@ -125,7 +125,7 @@ External packs are Git repositories containing a `techpack.yaml` manifest. The s
 2. **ExternalPackManifest** — Codable model for `techpack.yaml` (components, templates, hooks, doctor checks, prompts, configure scripts). Supports shorthand syntax for concise component definitions
 3. **ExternalPackAdapter** — bridges `ExternalPackManifest` to the `TechPack` protocol so external packs participate in all sync/doctor flows
 4. **PackRegistryFile** — YAML registry (`~/.mcs/registry.yaml`) tracking which packs are installed
-5. **TechPackRegistry** — unified registry that loads external packs and exposes them alongside the (now empty) compiled-in pack list
+5. **TechPackRegistry** — unified registry that loads external packs from disk
 
 ### Pack Manifest (`techpack.yaml`)
 
@@ -250,7 +250,7 @@ Packs provide:
 2. **Supplementary component checks**: additional checks declared on components
 3. **Supplementary pack checks**: pack-level concerns not tied to a specific component
 4. **Standalone checks**: cross-component concerns (hook event registration, settings validation, gitignore)
-5. **Project checks**: CLAUDE.local.md version, Serena memory migration, project state file
+5. **Project checks**: CLAUDE.local.md freshness, project state file
 
 ### fix() Responsibility Boundary
 

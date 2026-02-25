@@ -784,10 +784,6 @@ struct ProjectConfigurator {
 
             composed = updated
         } else {
-            if existingContent != nil {
-                output.info("Migrating CLAUDE.local.md from v1 to v2 format")
-            }
-
             composed = TemplateComposer.compose(
                 coreContent: coreContent,
                 packContributions: otherContributions,

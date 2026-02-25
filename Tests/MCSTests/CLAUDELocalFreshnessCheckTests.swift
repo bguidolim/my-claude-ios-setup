@@ -50,7 +50,7 @@ struct CLAUDELocalFreshnessCheckTests {
         let fakePacks: [any TechPack] = packs.map { pack in
             StubTechPack(identifier: pack.id, templates: pack.templates)
         }
-        return TechPackRegistry.withExternalPacks(fakePacks)
+        return TechPackRegistry(packs: fakePacks)
     }
 
     // MARK: - Content matches (pass)
@@ -117,10 +117,10 @@ struct CLAUDELocalFreshnessCheckTests {
         }
     }
 
-    // MARK: - Legacy fallback (no resolvedValues)
+    // MARK: - No resolvedValues (warns to run sync)
 
-    @Test("Legacy state without resolvedValues — version-only check")
-    func legacyFallback() throws {
+    @Test("State without resolvedValues — warns to run sync")
+    func noResolvedValues() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -139,10 +139,10 @@ struct CLAUDELocalFreshnessCheckTests {
         let check = CLAUDELocalFreshnessCheck(context: context)
 
         let result = check.check()
-        if case .pass(let msg) = result {
-            #expect(msg.contains("version-only"))
+        if case .warn(let msg) = result {
+            #expect(msg.contains("no stored values"))
         } else {
-            Issue.record("Expected pass (version-only) but got \(result)")
+            Issue.record("Expected .warn but got \(result)")
         }
     }
 
@@ -253,10 +253,10 @@ struct CLAUDELocalFreshnessCheckTests {
         #expect(loaded.configuredPacks.contains("test-pack"))
     }
 
-    // MARK: - Legacy fallback with outdated version
+    // MARK: - Outdated markers without stored values
 
-    @Test("Legacy state with outdated version markers — warns with version-only hint")
-    func legacyFallbackOutdatedVersion() throws {
+    @Test("Outdated version markers without stored values — warns to run sync")
+    func outdatedMarkersNoStoredValues() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -275,8 +275,7 @@ struct CLAUDELocalFreshnessCheckTests {
 
         let result = check.check()
         if case .warn(let msg) = result {
-            #expect(msg.contains("version-only"))
-            #expect(msg.contains("test-pack"))
+            #expect(msg.contains("no stored values"))
         } else {
             Issue.record("Expected warn but got \(result)")
         }
@@ -363,7 +362,7 @@ struct CLAUDELocalFreshnessCheckTests {
             templates: [TemplateContribution(sectionIdentifier: "good-pack", templateContent: "Hello __NAME__", placeholders: ["__NAME__"])]
         )
         let badPack = ThrowingTechPack(identifier: "bad-pack")
-        let registry = TechPackRegistry.withExternalPacks([goodPack, badPack])
+        let registry = TechPackRegistry(packs: [goodPack, badPack])
 
         let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
         let check = CLAUDELocalFreshnessCheck(context: context)
@@ -379,7 +378,7 @@ struct CLAUDELocalFreshnessCheckTests {
 
     // MARK: - Corrupt state file
 
-    @Test("Corrupt .mcs-project — check warns instead of silent legacy fallback")
+    @Test("Corrupt .mcs-project — check warns with descriptive message")
     func corruptStateFileCheck() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }

@@ -32,18 +32,18 @@ struct CommandFileCheckTests {
         }
     }
 
-    @Test("warn when file lacks managed marker (legacy v1 format)")
+    @Test("warn when file lacks managed marker")
     func warnWithoutManagedMarker() throws {
         let url = try makeTempFile(content: """
             # My Command
-            Some v1 content with no marker.
+            Some content with no marker.
             """)
         defer { try? FileManager.default.removeItem(at: url) }
 
         let check = CommandFileCheck(name: "test", path: url)
         let result = check.check()
         if case .warn(let msg) = result {
-            #expect(msg.contains("legacy"))
+            #expect(msg.contains("missing managed marker"))
         } else {
             Issue.record("Expected .warn, got \(result)")
         }

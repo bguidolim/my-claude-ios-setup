@@ -48,8 +48,8 @@ mcs cleanup --force              # Delete backups without confirmation
 - `CLI.swift` — `@main` struct, `MCSVersion.current`, subcommand registration (`SyncCommand` is the default subcommand)
 
 ### Core (`Sources/mcs/Core/`)
-- `Constants.swift` — centralized string constants (file names, CLI paths, hooks, Serena, JSON keys, external packs, plugins)
-- `Environment.swift` — paths, arch detection, brew path, shell RC
+- `Constants.swift` — centralized string constants (file names, CLI paths, JSON keys, external packs, plugins)
+- `Environment.swift` — paths, arch detection, brew path
 - `CLIOutput.swift` — ANSI colors, logging, prompts, multi-select, doctor summary
 - `ShellRunner.swift` — Process execution wrapper
 - `Settings.swift` — Codable model for `settings.json` and `settings.local.json`, deep-merge
@@ -81,9 +81,9 @@ mcs cleanup --force              # Delete backups without confirmation
 
 ### Doctor (`Sources/mcs/Doctor/`)
 - `DoctorRunner.swift` — 5-layer check orchestration with project-aware pack resolution
-- `CoreDoctorChecks.swift` — check structs (CommandCheck, MCPServerCheck, PluginCheck, HookCheck, SettingsCheck, GitignoreCheck, HookEventCheck, CommandFileCheck, FileExistsCheck)
+- `CoreDoctorChecks.swift` — check structs (CommandCheck, MCPServerCheck, PluginCheck, HookCheck, GitignoreCheck, CommandFileCheck, FileExistsCheck)
 - `DerivedDoctorChecks.swift` — `deriveDoctorCheck()` extension on ComponentDefinition
-- `ProjectDoctorChecks.swift` — project-scoped checks (CLAUDE.local.md version, Serena memory migration, state file)
+- `ProjectDoctorChecks.swift` — project-scoped checks (CLAUDE.local.md freshness, state file)
 - `SectionValidator.swift` — validation of CLAUDE.local.md section markers
 
 ### Commands (`Sources/mcs/Commands/`)
@@ -91,14 +91,11 @@ mcs cleanup --force              # Delete backups without confirmation
 - `DoctorCommand.swift` — health checks with optional --fix and --pack filter
 - `CleanupCommand.swift` — backup file management with --force flag
 - `PackCommand.swift` — `mcs pack add/remove/list/update` subcommands
-- `InstallCommand.swift` — deprecated shim, warns to use `mcs sync`
-- `ConfigureCommand.swift` — deprecated shim, warns to use `mcs sync`
 
 ### Install (`Sources/mcs/Install/`)
 - `ProjectConfigurator.swift` — per-project multi-pack convergence engine (artifact tracking, settings composition, CLAUDE.local.md writing, gitignore)
 - `GlobalConfigurator.swift` — global-scope sync engine (brew packages, plugins, MCP servers to ~/.claude/)
 - `ComponentExecutor.swift` — dispatches install actions (brew, MCP servers, plugins, gitignore, project-scoped file copy/removal)
-- `SelectionState.swift` — tracks selected component IDs during install
 - `PackInstaller.swift` — auto-installs missing pack components
 - `PackUninstaller.swift` — removes pack components (MCP servers, plugins, settings keys)
 - `LockfileOperations.swift` — reads/writes `mcs.lock.yaml`, checks out locked versions, updates lockfile
@@ -123,7 +120,6 @@ mcs cleanup --force              # Delete backups without confirmation
 - **Convergent sync**: `ProjectState` records per-pack `PackArtifactRecord` (MCP servers, files, template sections); re-running converges to desired state by diffing previous vs. selected packs
 - **External pack protocol**: `TechPack` protocol with `ExternalPackAdapter` bridging YAML manifests (`techpack.yaml`) to the same install/doctor/sync flows
 - **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
-- **File-based memory**: memories stored in `<project>/.claude/memories/*.md`, indexed by docs-mcp-server for semantic search
 - **Settings composition**: each pack's hook entries compose into `<project>/.claude/settings.local.json` as individual `HookGroup` entries
 - **Backup for mixed-ownership files**: timestamped backup before modifying files with user content (CLAUDE.local.md); tool-managed files are not backed up since they can be regenerated
 - **Component-derived doctor checks**: `ComponentDefinition` is the single source of truth — `deriveDoctorCheck()` auto-generates verification from `installAction`, supplementary checks handle extras

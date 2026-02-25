@@ -12,7 +12,7 @@ struct MCS: ParsableCommand {
         commandName: "mcs",
         abstract: "Managed Claude Stack — Configure Claude Code with MCP servers, plugins, skills, and hooks",
         version: MCSVersion.current,
-        subcommands: [SyncCommand.self, InstallCommand.self, DoctorCommand.self, ConfigureCommand.self, CleanupCommand.self, PackCommand.self],
+        subcommands: [SyncCommand.self, DoctorCommand.self, CleanupCommand.self, PackCommand.self],
         defaultSubcommand: SyncCommand.self
     )
 }

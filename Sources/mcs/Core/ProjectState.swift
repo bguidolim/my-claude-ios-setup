@@ -122,7 +122,7 @@ struct ProjectState {
 
     // MARK: - Resolved Values
 
-    /// Template placeholder values from the last sync, or nil for legacy state files.
+    /// Template placeholder values from the last sync, or nil if not yet synced.
     var resolvedValues: [String: String]? {
         storage.resolvedValues
     }
@@ -156,32 +156,6 @@ struct ProjectState {
     private mutating func load() throws {
         guard FileManager.default.fileExists(atPath: path.path) else { return }
         let data = try Data(contentsOf: path)
-        // Try JSON first (new format)
-        if data.first == UInt8(ascii: "{") {
-            storage = try JSONDecoder().decode(StateStorage.self, from: data)
-        } else {
-            // Legacy flat key=value format — migrate
-            migrateLegacyFormat(data)
-        }
-    }
-
-    /// Parse the old `KEY=VALUE` format into the new JSON model.
-    private mutating func migrateLegacyFormat(_ data: Data) {
-        guard let content = String(data: data, encoding: .utf8) else { return }
-        var legacy: [String: String] = [:]
-        for line in content.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty,
-                  let eqIndex = trimmed.firstIndex(of: "=") else { continue }
-            let key = String(trimmed[trimmed.startIndex..<eqIndex])
-            let value = String(trimmed[trimmed.index(after: eqIndex)...])
-            legacy[key] = value
-        }
-
-        if let packs = legacy["CONFIGURED_PACKS"], !packs.isEmpty {
-            storage.configuredPacks = packs.components(separatedBy: ",").sorted()
-        }
-        storage.mcsVersion = legacy["MCS_VERSION"]
-        storage.configuredAt = legacy["CONFIGURED_AT"]
+        storage = try JSONDecoder().decode(StateStorage.self, from: data)
     }
 }

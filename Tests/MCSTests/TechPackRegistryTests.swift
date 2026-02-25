@@ -7,7 +7,7 @@ import Testing
 struct TechPackRegistryTests {
     // MARK: - Basic registry
 
-    @Test("Shared registry has no compiled-in packs")
+    @Test("Shared registry has no packs")
     func sharedIsEmpty() {
         let packs = TechPackRegistry.shared.availablePacks
         #expect(packs.isEmpty)
@@ -49,7 +49,7 @@ struct TechPackRegistryTests {
             placeholders: ["__NAME__"]
         )
         let fakePack = FakeTechPack(identifier: "test-pack", templates: [template])
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let registry = TechPackRegistry(packs: [fakePack])
         let templates = registry.templateContributions(for: "test-pack")
         #expect(!templates.isEmpty)
         #expect(templates.first?.sectionIdentifier == "test")
@@ -61,43 +61,27 @@ struct TechPackRegistryTests {
         #expect(templates.isEmpty)
     }
 
-    // MARK: - External packs
+    // MARK: - Packs
 
-    @Test("External packs appear in availablePacks")
-    func externalPacksAppear() {
+    @Test("Packs appear in availablePacks")
+    func packsAppear() {
         let fakePack = FakeTechPack(identifier: "android")
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let registry = TechPackRegistry(packs: [fakePack])
         let ids = registry.availablePacks.map(\.identifier)
         #expect(ids.contains("android"))
     }
 
-    @Test("Find external pack by identifier")
-    func findExternalByIdentifier() {
+    @Test("Find pack by identifier")
+    func findByIdentifier() {
         let fakePack = FakeTechPack(identifier: "android")
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let registry = TechPackRegistry(packs: [fakePack])
         let found = registry.pack(for: "android")
         #expect(found != nil)
         #expect(found?.displayName == "Fake Pack")
     }
 
-    @Test("isExternalPack returns true for external packs")
-    func isExternalPackDetection() {
-        let fakePack = FakeTechPack(identifier: "android")
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
-        #expect(registry.isExternalPack("android") == true)
-        #expect(registry.isExternalPack("nonexistent") == false)
-    }
-
-    @Test("externalPackIdentifiers returns correct set")
-    func externalPackIdentifiersSet() {
-        let pack1 = FakeTechPack(identifier: "android")
-        let pack2 = FakeTechPack(identifier: "web")
-        let registry = TechPackRegistry.withExternalPacks([pack1, pack2])
-        #expect(registry.externalPackIdentifiers == Set(["android", "web"]))
-    }
-
-    @Test("External pack components included in allPackComponents")
-    func externalPackComponents() {
+    @Test("Pack components included in allPackComponents")
+    func packComponents() {
         let component = ComponentDefinition(
             id: "ext.comp",
             displayName: "Ext Comp",
@@ -112,37 +96,37 @@ struct TechPackRegistryTests {
             identifier: "ext",
             components: [component]
         )
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let registry = TechPackRegistry(packs: [fakePack])
         let allIDs = registry.allPackComponents.map(\.id)
         #expect(allIDs.contains("ext.comp"))
     }
 
-    @Test("Registry with empty external packs has no available packs")
-    func emptyExternalPacks() {
-        let registry = TechPackRegistry.withExternalPacks([])
+    @Test("Registry with empty packs has no available packs")
+    func emptyPacks() {
+        let registry = TechPackRegistry(packs: [])
         #expect(registry.availablePacks.isEmpty)
     }
 
-    @Test("supplementaryDoctorChecks returns checks for registered external pack")
-    func supplementaryDoctorChecksWithExternalPack() {
+    @Test("supplementaryDoctorChecks returns checks for registered pack")
+    func supplementaryDoctorChecksWithPack() {
         let check = CommandCheck(name: "test-check", section: "Dependencies", command: "test")
         let fakePack = FakeTechPack(
             identifier: "test-pack",
             supplementaryDoctorChecks: [check]
         )
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let registry = TechPackRegistry(packs: [fakePack])
         let checks = registry.supplementaryDoctorChecks(installedPacks: ["test-pack"])
         #expect(!checks.isEmpty)
         #expect(checks.first?.name == "test-check")
     }
 
-    @Test("gitignoreEntries returns entries for registered external pack")
-    func gitignoreEntriesWithExternalPack() {
+    @Test("gitignoreEntries returns entries for registered pack")
+    func gitignoreEntriesWithPack() {
         let fakePack = FakeTechPack(
             identifier: "test-pack",
             gitignoreEntries: [".testdir"]
         )
-        let registry = TechPackRegistry.withExternalPacks([fakePack])
+        let registry = TechPackRegistry(packs: [fakePack])
         let entries = registry.gitignoreEntries(installedPacks: ["test-pack"])
         #expect(entries.contains(".testdir"))
     }

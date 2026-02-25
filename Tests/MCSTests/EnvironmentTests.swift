@@ -26,9 +26,5 @@ struct EnvironmentTests {
         #expect(env.claudeJSON.path == home.appendingPathComponent(".claude.json").path)
         #expect(env.claudeSettings.path ==
             home.appendingPathComponent(".claude/settings.json").path)
-        #expect(env.memoriesDirectory.path ==
-            home.appendingPathComponent(".claude/memories").path)
-        #expect(env.binDirectory.path ==
-            home.appendingPathComponent(".claude/bin").path)
     }
 }
