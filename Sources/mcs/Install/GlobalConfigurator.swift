@@ -339,12 +339,18 @@ struct GlobalConfigurator {
             return
         }
 
+        var remaining = artifacts
+        var removedServers: Set<MCPServerRef> = []
+        var removedFiles: Set<String> = []
+
         // Remove MCP servers
         for server in artifacts.mcpServers {
             if exec.removeMCPServer(name: server.name, scope: server.scope) {
+                removedServers.insert(server)
                 output.dimmed("  Removed MCP server: \(server.name)")
             }
         }
+        remaining.mcpServers.removeAll { removedServers.contains($0) }
 
         // Remove files from ~/.claude/ tree
         let fm = FileManager.default
@@ -353,19 +359,25 @@ struct GlobalConfigurator {
                 relativePath: relativePath,
                 within: environment.claudeDirectory
             ) else {
-                output.warn("Path '\(relativePath)' escapes claude directory — skipping removal")
+                output.warn("Path '\(relativePath)' escapes claude directory — clearing from tracking")
+                removedFiles.insert(relativePath)
                 continue
             }
 
-            if fm.fileExists(atPath: fullPath.path) {
-                do {
-                    try fm.removeItem(at: fullPath)
-                    output.dimmed("  Removed: \(relativePath)")
-                } catch {
-                    output.warn("  Could not remove \(relativePath): \(error.localizedDescription)")
-                }
+            if !fm.fileExists(atPath: fullPath.path) {
+                removedFiles.insert(relativePath)
+                continue
+            }
+
+            do {
+                try fm.removeItem(at: fullPath)
+                removedFiles.insert(relativePath)
+                output.dimmed("  Removed: \(relativePath)")
+            } catch {
+                output.warn("  Could not remove \(relativePath): \(error.localizedDescription)")
             }
         }
+        remaining.files.removeAll { removedFiles.contains($0) }
 
         // Remove auto-derived hook commands and contributed settings keys
         let hasHooksToRemove = !artifacts.hookCommands.isEmpty
@@ -378,7 +390,9 @@ struct GlobalConfigurator {
             } catch {
                 output.warn("  Could not parse settings.json: \(error.localizedDescription)")
                 output.warn("  Settings for \(packID) were not cleaned up. Fix settings.json and re-run.")
-                state.removePack(packID)
+                // Keep pack in state — settings cleanup was not attempted
+                state.setArtifacts(remaining, for: packID)
+                output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync --global' to retry.")
                 return
             }
             if hasHooksToRemove {
@@ -402,6 +416,8 @@ struct GlobalConfigurator {
                 // top-level keys that still exist in the destination file.
                 let dropKeys = Set(artifacts.settingsKeys.filter { !$0.contains(".") })
                 try settings.save(to: settingsPath, dropKeys: dropKeys)
+                remaining.hookCommands = []
+                remaining.settingsKeys = []
                 for cmd in artifacts.hookCommands {
                     output.dimmed("  Removed hook: \(cmd)")
                 }
@@ -410,11 +426,15 @@ struct GlobalConfigurator {
                 }
             } catch {
                 output.warn("  Could not write settings.json: \(error.localizedDescription)")
-                output.warn("  Settings may still be present. Re-run 'mcs sync --global' to retry.")
             }
         }
 
-        state.removePack(packID)
+        if remaining.isEmpty {
+            state.removePack(packID)
+        } else {
+            state.setArtifacts(remaining, for: packID)
+            output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync --global' to retry.")
+        }
     }
 
     // MARK: - Global Artifact Installation

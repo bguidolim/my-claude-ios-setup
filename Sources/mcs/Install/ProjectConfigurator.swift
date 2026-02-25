@@ -415,18 +415,30 @@ struct ProjectConfigurator {
             return
         }
 
+        var remaining = artifacts
+        var removedServers: Set<MCPServerRef> = []
+        var removedFiles: Set<String> = []
+
         // Remove MCP servers
         for server in artifacts.mcpServers {
             if exec.removeMCPServer(name: server.name, scope: server.scope) {
+                removedServers.insert(server)
                 output.dimmed("  Removed MCP server: \(server.name)")
             }
         }
+        remaining.mcpServers.removeAll { removedServers.contains($0) }
 
         // Remove project files
+        let fm = FileManager.default
         for path in artifacts.files {
-            exec.removeProjectFile(relativePath: path, projectPath: projectPath)
-            output.dimmed("  Removed: \(path)")
+            let existed = PathContainment.safePath(relativePath: path, within: projectPath)
+                .map { fm.fileExists(atPath: $0.path) } ?? false
+            if exec.removeProjectFile(relativePath: path, projectPath: projectPath) {
+                removedFiles.insert(path)
+                if existed { output.dimmed("  Removed: \(path)") }
+            }
         }
+        remaining.files.removeAll { removedFiles.contains($0) }
 
         // Remove auto-derived hook commands and contributed settings keys
         let hasHooksToRemove = !artifacts.hookCommands.isEmpty
@@ -435,26 +447,37 @@ struct ProjectConfigurator {
             let settingsPath = projectPath
                 .appendingPathComponent(Constants.FileNames.claudeDirectory)
                 .appendingPathComponent("settings.local.json")
+            var settings: Settings
             do {
-                var settings = try Settings.load(from: settingsPath)
-                if hasHooksToRemove {
-                    let commandsToRemove = Set(artifacts.hookCommands)
-                    if var hooks = settings.hooks {
-                        for (event, groups) in hooks {
-                            hooks[event] = groups.filter { group in
-                                guard let cmd = group.hooks?.first?.command else { return true }
-                                return !commandsToRemove.contains(cmd)
-                            }
+                settings = try Settings.load(from: settingsPath)
+            } catch {
+                output.warn("Could not parse settings.local.json: \(error.localizedDescription)")
+                output.warn("Settings for \(packID) were not cleaned up. Fix settings.local.json and re-run.")
+                state.setArtifacts(remaining, for: packID)
+                output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync' to retry.")
+                return
+            }
+            if hasHooksToRemove {
+                let commandsToRemove = Set(artifacts.hookCommands)
+                if var hooks = settings.hooks {
+                    for (event, groups) in hooks {
+                        hooks[event] = groups.filter { group in
+                            guard let cmd = group.hooks?.first?.command else { return true }
+                            return !commandsToRemove.contains(cmd)
                         }
-                        hooks = hooks.filter { !$0.value.isEmpty }
-                        settings.hooks = hooks.isEmpty ? nil : hooks
                     }
+                    hooks = hooks.filter { !$0.value.isEmpty }
+                    settings.hooks = hooks.isEmpty ? nil : hooks
                 }
-                if hasSettingsToRemove {
-                    settings.removeKeys(artifacts.settingsKeys)
-                }
+            }
+            if hasSettingsToRemove {
+                settings.removeKeys(artifacts.settingsKeys)
+            }
+            do {
                 let dropKeys = Set(artifacts.settingsKeys.filter { !$0.contains(".") })
                 try settings.save(to: settingsPath, dropKeys: dropKeys)
+                remaining.hookCommands = []
+                remaining.settingsKeys = []
                 for cmd in artifacts.hookCommands {
                     output.dimmed("  Removed hook: \(cmd)")
                 }
@@ -462,7 +485,7 @@ struct ProjectConfigurator {
                     output.dimmed("  Removed setting: \(key)")
                 }
             } catch {
-                output.warn("Could not clean up settings from settings.local.json: \(error.localizedDescription)")
+                output.warn("Could not write settings.local.json: \(error.localizedDescription)")
             }
         }
 
@@ -480,13 +503,22 @@ struct ProjectConfigurator {
                     for sectionID in artifacts.templateSections {
                         output.dimmed("  Removed template section: \(sectionID)")
                     }
+                } else {
+                    output.dimmed("  Template sections already absent from CLAUDE.local.md")
                 }
+                // Clear regardless — if sections aren't in the file, they're already gone
+                remaining.templateSections = []
             } catch {
                 output.warn("Could not update CLAUDE.local.md: \(error.localizedDescription)")
             }
         }
 
-        state.removePack(packID)
+        if remaining.isEmpty {
+            state.removePack(packID)
+        } else {
+            state.setArtifacts(remaining, for: packID)
+            output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync' to retry.")
+        }
     }
 
     // MARK: - Global Dependencies
