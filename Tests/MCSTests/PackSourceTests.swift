@@ -38,6 +38,12 @@ struct PackSourceResolverTests {
         #expect(result == .gitURL("git://github.com/user/repo.git"))
     }
 
+    @Test("http:// URL returns gitURL")
+    func httpURL() throws {
+        let result = try PackSourceResolver().resolve("http://example.com/user/repo.git")
+        #expect(result == .gitURL("http://example.com/user/repo.git"))
+    }
+
     // MARK: - GitHub shorthand
 
     @Test("user/repo expands to GitHub URL")
@@ -111,6 +117,19 @@ struct PackSourceResolverTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let result = try PackSourceResolver().resolve("file://\(tmpDir.path)")
+        guard case .localPath(let url) = result else {
+            Issue.record("Expected .localPath, got \(result)")
+            return
+        }
+        #expect(url.standardizedFileURL.path == tmpDir.standardizedFileURL.path)
+    }
+
+    @Test("file://localhost/ URL is parsed correctly via Foundation URL")
+    func fileLocalhostScheme() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let result = try PackSourceResolver().resolve("file://localhost\(tmpDir.path)")
         guard case .localPath(let url) = result else {
             Issue.record("Expected .localPath, got \(result)")
             return

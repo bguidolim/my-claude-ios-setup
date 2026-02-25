@@ -24,7 +24,7 @@ enum PackSourceError: Error, Equatable, LocalizedError {
 /// Resolves user input into a pack source (git URL or local filesystem path).
 ///
 /// Detection order:
-/// 1. Known URL schemes (`https://`, `git@`, `ssh://`, `git://`) → git pack
+/// 1. Known URL schemes (`https://`, `http://`, `git@`, `ssh://`, `git://`) → git pack
 /// 2. Existing filesystem path (absolute, relative, `~/`, `file://`) → local pack
 /// 3. GitHub shorthand (`user/repo`) → expand to `https://github.com/user/repo.git`
 ///
@@ -41,14 +41,24 @@ struct PackSourceResolver {
         }
 
         // 1. Known URL schemes → git pack
-        let urlPrefixes = ["https://", "git@", "ssh://", "git://"]
+        let urlPrefixes = ["https://", "http://", "git@", "ssh://", "git://"]
         if urlPrefixes.contains(where: { input.hasPrefix($0) }) {
             return .gitURL(input)
         }
 
         // 2. Filesystem path — check if input resolves to an existing directory.
-        //    Note: file:// is treated as a filesystem path, not a git URL.
-        let pathString = input.hasPrefix("file://") ? String(input.dropFirst("file://".count)) : input
+        //    file:// is parsed via Foundation URL for correct RFC 8089 handling
+        //    (e.g. file://localhost/path), with fallback to simple prefix stripping.
+        let pathString: String
+        if input.hasPrefix("file://") {
+            if let fileURL = URL(string: input), fileURL.isFileURL, !fileURL.path.isEmpty {
+                pathString = fileURL.path
+            } else {
+                pathString = String(input.dropFirst("file://".count))
+            }
+        } else {
+            pathString = input
+        }
 
         // expandingTildeInPath handles ~/... and is a no-op for other paths.
         // URL(fileURLWithPath:) resolves relative paths (../, ./) against CWD.

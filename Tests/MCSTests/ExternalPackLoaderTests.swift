@@ -61,6 +61,24 @@ struct ExternalPackLoaderTests {
     }
 
     /// Set up a minimal test environment with pack directories.
+    private func sampleLocalEntry(
+        identifier: String = "local-pack",
+        localPath: String = "/Users/dev/local-pack"
+    ) -> PackRegistryFile.PackEntry {
+        PackRegistryFile.PackEntry(
+            identifier: identifier,
+            displayName: "Local Pack",
+            version: "1.0.0",
+            sourceURL: localPath,
+            ref: nil,
+            commitSHA: "local",
+            localPath: localPath,
+            addedAt: "2026-01-01T00:00:00Z",
+            trustedScriptHashes: [:],
+            isLocal: true
+        )
+    }
+
     private func setupTestEnv() throws -> (tmpDir: URL, env: Environment) {
         let tmpDir = try makeTmpDir()
         let env = Environment(home: tmpDir)
@@ -490,18 +508,7 @@ struct ExternalPackLoaderTests {
         let registry = PackRegistryFile(path: env.packsRegistry)
         var data = PackRegistryFile.RegistryData()
         registry.register(
-            PackRegistryFile.PackEntry(
-                identifier: "my-local-pack",
-                displayName: "My Local Pack",
-                version: "1.0.0",
-                sourceURL: localPackDir.path,
-                ref: nil,
-                commitSHA: "local",
-                localPath: localPackDir.path,
-                addedAt: "2026-01-01T00:00:00Z",
-                trustedScriptHashes: [:],
-                isLocal: true
-            ),
+            sampleLocalEntry(identifier: "my-local-pack", localPath: localPackDir.path),
             in: &data
         )
         try registry.save(data)
@@ -523,18 +530,7 @@ struct ExternalPackLoaderTests {
         let registry = PackRegistryFile(path: env.packsRegistry)
         var data = PackRegistryFile.RegistryData()
         registry.register(
-            PackRegistryFile.PackEntry(
-                identifier: "missing-local",
-                displayName: "Missing Local",
-                version: "1.0.0",
-                sourceURL: "/nonexistent/path/missing-local",
-                ref: nil,
-                commitSHA: "local",
-                localPath: "/nonexistent/path/missing-local",
-                addedAt: "2026-01-01T00:00:00Z",
-                trustedScriptHashes: [:],
-                isLocal: true
-            ),
+            sampleLocalEntry(identifier: "missing-local", localPath: "/nonexistent/path/missing-local"),
             in: &data
         )
         try registry.save(data)

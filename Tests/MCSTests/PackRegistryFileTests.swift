@@ -31,6 +31,24 @@ struct PackRegistryFileTests {
         )
     }
 
+    private func sampleLocalEntry(
+        identifier: String = "local-pack",
+        localPath: String = "/Users/dev/local-pack"
+    ) -> PackRegistryFile.PackEntry {
+        PackRegistryFile.PackEntry(
+            identifier: identifier,
+            displayName: "Local Pack",
+            version: "1.0.0",
+            sourceURL: localPath,
+            ref: nil,
+            commitSHA: "local",
+            localPath: localPath,
+            addedAt: "2026-01-01T00:00:00Z",
+            trustedScriptHashes: [:],
+            isLocal: true
+        )
+    }
+
     // MARK: - Load from missing / empty file
 
     @Test("Load from missing file returns empty registry")
@@ -255,18 +273,7 @@ struct PackRegistryFileTests {
 
     @Test("isLocalPack returns true for local pack entry")
     func isLocalPackTrue() {
-        let entry = PackRegistryFile.PackEntry(
-            identifier: "local-pack",
-            displayName: "Local Pack",
-            version: "1.0.0",
-            sourceURL: "/path/to/local-pack",
-            ref: nil,
-            commitSHA: "local",
-            localPath: "/path/to/local-pack",
-            addedAt: "2026-01-01T00:00:00Z",
-            trustedScriptHashes: [:],
-            isLocal: true
-        )
+        let entry = sampleLocalEntry()
         #expect(entry.isLocalPack)
     }
 
@@ -279,18 +286,7 @@ struct PackRegistryFileTests {
         let registry = PackRegistryFile(path: file)
 
         var data = PackRegistryFile.RegistryData()
-        let entry = PackRegistryFile.PackEntry(
-            identifier: "my-local",
-            displayName: "My Local",
-            version: "1.0.0",
-            sourceURL: "/Users/dev/my-local",
-            ref: nil,
-            commitSHA: "local",
-            localPath: "/Users/dev/my-local",
-            addedAt: "2026-01-01T00:00:00Z",
-            trustedScriptHashes: [:],
-            isLocal: true
-        )
+        let entry = sampleLocalEntry(identifier: "my-local", localPath: "/Users/dev/my-local")
         registry.register(entry, in: &data)
         try registry.save(data)
 
@@ -329,18 +325,7 @@ struct PackRegistryFileTests {
 
     @Test("resolvedPath returns URL for local pack with absolute path")
     func resolvedPathLocalAbsolute() {
-        let entry = PackRegistryFile.PackEntry(
-            identifier: "local-pack",
-            displayName: "Local Pack",
-            version: "1.0.0",
-            sourceURL: "/Users/dev/local-pack",
-            ref: nil,
-            commitSHA: "local",
-            localPath: "/Users/dev/local-pack",
-            addedAt: "2026-01-01T00:00:00Z",
-            trustedScriptHashes: [:],
-            isLocal: true
-        )
+        let entry = sampleLocalEntry()
         let packsDir = URL(fileURLWithPath: "/tmp/packs")
         let result = entry.resolvedPath(packsDirectory: packsDir)
         #expect(result?.path == "/Users/dev/local-pack")
@@ -348,36 +333,14 @@ struct PackRegistryFileTests {
 
     @Test("resolvedPath returns nil for local pack with empty path")
     func resolvedPathLocalEmpty() {
-        let entry = PackRegistryFile.PackEntry(
-            identifier: "bad-pack",
-            displayName: "Bad Pack",
-            version: "1.0.0",
-            sourceURL: "",
-            ref: nil,
-            commitSHA: "local",
-            localPath: "",
-            addedAt: "2026-01-01T00:00:00Z",
-            trustedScriptHashes: [:],
-            isLocal: true
-        )
+        let entry = sampleLocalEntry(localPath: "")
         let packsDir = URL(fileURLWithPath: "/tmp/packs")
         #expect(entry.resolvedPath(packsDirectory: packsDir) == nil)
     }
 
     @Test("resolvedPath returns nil for local pack with relative path")
     func resolvedPathLocalRelative() {
-        let entry = PackRegistryFile.PackEntry(
-            identifier: "bad-pack",
-            displayName: "Bad Pack",
-            version: "1.0.0",
-            sourceURL: "relative/path",
-            ref: nil,
-            commitSHA: "local",
-            localPath: "relative/path",
-            addedAt: "2026-01-01T00:00:00Z",
-            trustedScriptHashes: [:],
-            isLocal: true
-        )
+        let entry = sampleLocalEntry(localPath: "relative/path")
         let packsDir = URL(fileURLWithPath: "/tmp/packs")
         #expect(entry.resolvedPath(packsDirectory: packsDir) == nil)
     }

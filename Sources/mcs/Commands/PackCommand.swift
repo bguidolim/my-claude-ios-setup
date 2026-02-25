@@ -596,13 +596,12 @@ struct UpdatePack: LockedCommand {
         let shell = ShellRunner(environment: env)
 
         let registry = PackRegistryFile(path: env.packsRegistry)
-        let loader = ExternalPackLoader(environment: env, registry: registry)
-        let fetcher = PackFetcher(
-            shell: shell,
-            output: output,
-            packsDirectory: env.packsDirectory
+        let updater = PackUpdater(
+            fetcher: PackFetcher(shell: shell, output: output, packsDirectory: env.packsDirectory),
+            trustManager: PackTrustManager(output: output),
+            environment: env,
+            output: output
         )
-        let trustManager = PackTrustManager(output: output)
 
         let registryData: PackRegistryFile.RegistryData
         do {
@@ -643,92 +642,22 @@ struct UpdatePack: LockedCommand {
 
             output.info("Checking \(entry.displayName)...")
 
-            guard let packPath = PathContainment.safePath(
-                relativePath: entry.localPath,
-                within: env.packsDirectory
-            ) else {
-                output.error("Pack '\(entry.identifier)' has a localPath that escapes packs directory — skipping")
+            guard let packPath = entry.resolvedPath(packsDirectory: env.packsDirectory) else {
+                output.error("Pack '\(entry.identifier)' has an invalid path — skipping")
                 continue
             }
 
-            // Fetch updates
-            let updateResult: PackFetcher.FetchResult?
-            do {
-                updateResult = try fetcher.update(packPath: packPath, ref: entry.ref)
-            } catch {
-                output.warn("Failed to update '\(entry.identifier)': \(error.localizedDescription)")
-                continue
-            }
-
-            guard let updateResult else {
+            let result = updater.updateGitPack(entry: entry, packPath: packPath, registry: registry)
+            switch result {
+            case .alreadyUpToDate:
                 output.success("\(entry.displayName): already up to date")
-                continue
+            case .updated(let updatedEntry):
+                registry.register(updatedEntry, in: &updatedData)
+                updatedCount += 1
+                output.success("\(entry.displayName): updated to v\(updatedEntry.version) (\(updatedEntry.commitSHA.prefix(7)))")
+            case .skipped(let reason):
+                output.warn("\(entry.identifier): \(reason)")
             }
-
-            // Re-validate manifest
-            let manifest: ExternalPackManifest
-            do {
-                manifest = try loader.validate(at: packPath)
-            } catch {
-                output.warn("\(entry.identifier): updated but manifest is invalid: \(error.localizedDescription)")
-                continue
-            }
-
-            // Check for new scripts requiring re-trust
-            let newItems: [TrustableItem]
-            do {
-                newItems = try trustManager.detectNewScripts(
-                    currentHashes: entry.trustedScriptHashes,
-                    updatedPackPath: packPath,
-                    manifest: manifest
-                )
-            } catch {
-                output.warn("\(entry.identifier): could not analyze scripts: \(error.localizedDescription)")
-                continue
-            }
-
-            var scriptHashes = entry.trustedScriptHashes
-            if !newItems.isEmpty {
-                output.warn("\(entry.displayName) has new or modified scripts:")
-                let decision: PackTrustManager.TrustDecision
-                do {
-                    decision = try trustManager.promptForTrust(
-                        manifest: manifest,
-                        packPath: packPath,
-                        items: newItems
-                    )
-                } catch {
-                    output.warn("Trust verification failed: \(error.localizedDescription)")
-                    continue
-                }
-
-                guard decision.approved else {
-                    output.info("\(entry.displayName): update skipped (trust not granted)")
-                    continue
-                }
-                // Merge new hashes
-                for (path, hash) in decision.scriptHashes {
-                    scriptHashes[path] = hash
-                }
-            }
-
-            // Update registry entry
-            let updatedEntry = PackRegistryFile.PackEntry(
-                identifier: entry.identifier,
-                displayName: manifest.displayName,
-                version: manifest.version,
-                sourceURL: entry.sourceURL,
-                ref: entry.ref,
-                commitSHA: updateResult.commitSHA,
-                localPath: entry.localPath,
-                addedAt: entry.addedAt,
-                trustedScriptHashes: scriptHashes,
-                isLocal: entry.isLocal
-            )
-            registry.register(updatedEntry, in: &updatedData)
-            updatedCount += 1
-
-            output.success("\(entry.displayName): updated to v\(manifest.version) (\(updateResult.commitSHA.prefix(7)))")
         }
 
         // Save all updates

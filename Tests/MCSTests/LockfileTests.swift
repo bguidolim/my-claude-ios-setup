@@ -31,6 +31,24 @@ struct LockfileTests {
         )
     }
 
+    private func makeLocalEntry(
+        identifier: String,
+        localPath: String = "/Users/dev/local-pack"
+    ) -> PackRegistryFile.PackEntry {
+        PackRegistryFile.PackEntry(
+            identifier: identifier,
+            displayName: identifier,
+            version: "1.0.0",
+            sourceURL: localPath,
+            ref: nil,
+            commitSHA: "local",
+            localPath: localPath,
+            addedAt: "2026-01-01T00:00:00Z",
+            trustedScriptHashes: [:],
+            isLocal: true
+        )
+    }
+
     // MARK: - Generation
 
     @Test("Generate lockfile from registry entries and selected packs")
@@ -165,18 +183,7 @@ struct LockfileTests {
     func localPackInLockfile() {
         let entries = [
             makeEntry(identifier: "ios", commitSHA: "sha-ios"),
-            PackRegistryFile.PackEntry(
-                identifier: "my-local",
-                displayName: "My Local",
-                version: "1.0.0",
-                sourceURL: "/path/to/my-local",
-                ref: nil,
-                commitSHA: "local",
-                localPath: "/path/to/my-local",
-                addedAt: "2026-01-01T00:00:00Z",
-                trustedScriptHashes: [:],
-                isLocal: true
-            ),
+            makeLocalEntry(identifier: "my-local", localPath: "/path/to/my-local"),
         ]
 
         let lockfile = Lockfile.generate(
