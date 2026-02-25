@@ -335,7 +335,8 @@ struct ProjectConfigurator {
 
         // 4. Auto-prompt for undeclared placeholders in pack files
         let undeclared = ConfiguratorSupport.scanForUndeclaredPlaceholders(
-            packs: packs, resolvedValues: allValues, includeTemplates: true
+            packs: packs, resolvedValues: allValues, includeTemplates: true,
+            onWarning: { output.warn($0) }
         )
         for key in undeclared {
             let value = output.promptInline("Set value for \(key)", default: nil)
@@ -760,10 +761,11 @@ struct ProjectConfigurator {
         values: [String: String]
     ) throws {
         var allContributions: [TemplateContribution] = []
-
         for pack in packs {
             if let templates = preloadedTemplates[pack.identifier] {
                 allContributions.append(contentsOf: templates)
+            } else if !pack.templateSectionIdentifiers.isEmpty {
+                output.warn("Skipping templates for \(pack.displayName) (failed to load earlier)")
             }
         }
 

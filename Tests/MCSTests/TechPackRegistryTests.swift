@@ -42,7 +42,7 @@ struct TechPackRegistryTests {
     // MARK: - Template contributions
 
     @Test("templateContributions returns templates for registered pack")
-    func templateContributions() {
+    func templateContributions() throws {
         let template = TemplateContribution(
             sectionIdentifier: "test",
             templateContent: "Test content __NAME__",
@@ -50,14 +50,14 @@ struct TechPackRegistryTests {
         )
         let fakePack = FakeTechPack(identifier: "test-pack", templates: [template])
         let registry = TechPackRegistry(packs: [fakePack])
-        let templates = registry.templateContributions(for: "test-pack")
+        let templates = try registry.templateContributions(for: "test-pack")
         #expect(!templates.isEmpty)
         #expect(templates.first?.sectionIdentifier == "test")
     }
 
     @Test("templateContributions returns empty for unknown pack")
-    func templateContributionsUnknown() {
-        let templates = TechPackRegistry.shared.templateContributions(for: "android")
+    func templateContributionsUnknown() throws {
+        let templates = try TechPackRegistry.shared.templateContributions(for: "android")
         #expect(templates.isEmpty)
     }
 

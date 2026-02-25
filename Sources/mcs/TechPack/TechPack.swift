@@ -69,6 +69,9 @@ protocol TechPack: Sendable {
 }
 
 extension TechPack {
+    // NOTE: This default calls `try? templates` which performs disk I/O and silently
+    // drops errors. Concrete conformers with throwing `templates` should override this
+    // with a lightweight implementation (e.g., ExternalPackAdapter reads from manifest).
     var templateSectionIdentifiers: [String] {
         (try? templates)?.map(\.sectionIdentifier) ?? []
     }

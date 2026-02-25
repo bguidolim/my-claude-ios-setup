@@ -162,7 +162,8 @@ enum ConfiguratorSupport {
     static func scanForUndeclaredPlaceholders(
         packs: [any TechPack],
         resolvedValues: [String: String],
-        includeTemplates: Bool = false
+        includeTemplates: Bool = false,
+        onWarning: ((String) -> Void)? = nil
     ) -> [String] {
         var undeclared = Set<String>()
         let resolvedKeys = Set(resolvedValues.keys)
@@ -190,8 +191,7 @@ enum ConfiguratorSupport {
                         }
                     }
                 } catch {
-                    // Template content unavailable — cannot scan for placeholders.
-                    // Missing placeholders will surface later during template composition.
+                    onWarning?("Could not scan templates for \(pack.displayName): \(error.localizedDescription)")
                 }
             }
         }
