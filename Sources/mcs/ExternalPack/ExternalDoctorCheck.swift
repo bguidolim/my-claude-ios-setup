@@ -32,14 +32,16 @@ struct ExternalCommandExistsCheck: DoctorCheck, Sendable {
 
     func check() -> CheckResult {
         let shell = ShellRunner(environment: Environment())
-        let result = shell.run(command, arguments: args)
-        if result.succeeded {
-            return .pass("available")
-        }
-        // When args are provided, the caller wants to verify the command succeeds
-        // with those specific args — PATH presence alone is not sufficient.
-        if args.isEmpty, shell.commandExists(command) {
-            return .pass("installed")
+        if args.isEmpty {
+            // No args: try direct execution, fall back to PATH presence check.
+            let result = shell.run(command, arguments: [])
+            if result.succeeded { return .pass("available") }
+            if shell.commandExists(command) { return .pass("installed") }
+        } else {
+            // With args: run through shell so PATH resolves bare command names.
+            let quoted = ([command] + args).map { "'\($0)'" }.joined(separator: " ")
+            let result = shell.shell(quoted)
+            if result.succeeded { return .pass("available") }
         }
         return .fail("not found")
     }
