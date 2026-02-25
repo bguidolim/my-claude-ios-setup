@@ -450,4 +450,28 @@ struct ComposeOrUpdateTests {
         #expect(result.content.contains("MyApp.xcodeproj"))
         #expect(!result.content.contains("__PROJECT__"))
     }
+
+    @Test("Unpaired markers produce warnings and leave damaged section unchanged")
+    func unpairedMarkersWarn() {
+        let existing = """
+        <!-- mcs:begin core v1.0.0 -->
+        Core rules
+        <!-- mcs:end core -->
+
+        <!-- mcs:begin ios v1.0.0 -->
+        iOS rules without end marker
+        """
+
+        let ios = packContribution("ios", "Updated iOS")
+        let result = TemplateComposer.composeOrUpdate(
+            existingContent: existing,
+            contributions: [coreContribution("New core"), ios],
+            values: [:]
+        )
+
+        #expect(result.warnings.count == 3)
+        #expect(result.warnings[0].contains("Unpaired section markers"))
+        // The unpaired "ios" section is left unchanged by replaceSection's safety check
+        #expect(result.content.contains("iOS rules without end marker"))
+    }
 }

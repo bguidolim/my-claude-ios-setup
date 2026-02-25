@@ -200,29 +200,51 @@ enum TemplateComposer {
     /// Pure compose-or-update decision: produces final content from contributions
     /// without performing any file I/O.
     ///
-    /// - If `existingContent` is nil or has no section markers → fresh compose.
-    /// - If `existingContent` has markers → update each section in place, preserving user content.
+    /// - If `existingContent` is nil or has no section markers, produces a fresh compose.
+    /// - If `existingContent` has markers, updates each section in place preserving user content.
     static func composeOrUpdate(
         existingContent: String?,
         contributions: [TemplateContribution],
         values: [String: String]
     ) -> ComposeResult {
-        let version = MCSVersion.current
-        let coreContribution = contributions.first { $0.sectionIdentifier == "core" }
-        let otherContributions = contributions.filter { $0.sectionIdentifier != "core" }
-        let coreContent = coreContribution?.templateContent ?? ""
-
         let hasMarkers = existingContent.map { !parseSections(from: $0).isEmpty } ?? false
 
         guard let existingContent, hasMarkers else {
-            let composed = compose(
-                coreContent: coreContent,
-                packContributions: otherContributions,
-                values: values
-            )
-            return ComposeResult(content: composed, warnings: [])
+            return freshCompose(contributions: contributions, values: values)
         }
 
+        return updateExisting(
+            existingContent: existingContent,
+            contributions: contributions,
+            values: values
+        )
+    }
+
+    /// Build a fresh composed file from contributions.
+    private static func freshCompose(
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) -> ComposeResult {
+        let coreContent = contributions
+            .first { $0.sectionIdentifier == "core" }?.templateContent ?? ""
+        let packContributions = contributions
+            .filter { $0.sectionIdentifier != "core" }
+
+        let composed = compose(
+            coreContent: coreContent,
+            packContributions: packContributions,
+            values: values
+        )
+        return ComposeResult(content: composed, warnings: [])
+    }
+
+    /// Update an existing file that has section markers, preserving user content.
+    private static func updateExisting(
+        existingContent: String,
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) -> ComposeResult {
+        let version = MCSVersion.current
         var warnings: [String] = []
 
         let unpaired = unpairedSections(in: existingContent)
@@ -234,15 +256,8 @@ enum TemplateComposer {
 
         let userContent = extractUserContent(from: existingContent)
 
-        let processedCore = TemplateEngine.substitute(template: coreContent, values: values)
-        var updated = replaceSection(
-            in: existingContent,
-            sectionIdentifier: "core",
-            newContent: processedCore,
-            newVersion: version
-        )
-
-        for contribution in otherContributions {
+        var updated = existingContent
+        for contribution in contributions {
             let processedContent = TemplateEngine.substitute(
                 template: contribution.templateContent,
                 values: values
