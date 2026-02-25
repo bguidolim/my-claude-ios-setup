@@ -359,7 +359,8 @@ struct GlobalConfigurator {
                 relativePath: relativePath,
                 within: environment.claudeDirectory
             ) else {
-                output.warn("Path '\(relativePath)' escapes claude directory — skipping removal")
+                output.warn("Path '\(relativePath)' escapes claude directory — clearing from tracking")
+                removedFiles.insert(relativePath)
                 continue
             }
 
@@ -425,7 +426,6 @@ struct GlobalConfigurator {
                 }
             } catch {
                 output.warn("  Could not write settings.json: \(error.localizedDescription)")
-                output.warn("  Settings may still be present. Re-run 'mcs sync --global' to retry.")
             }
         }
 

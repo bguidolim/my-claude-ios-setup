@@ -264,12 +264,12 @@ struct ComponentExecutor {
     }
 
     /// Remove a file from the project by its project-relative path.
-    /// Returns `true` if the file was removed or didn't exist (already clean).
+    /// Returns `true` if the file was removed, didn't exist, or escapes the project directory.
     @discardableResult
     func removeProjectFile(relativePath: String, projectPath: URL) -> Bool {
         guard let fullPath = PathContainment.safePath(relativePath: relativePath, within: projectPath) else {
-            output.warn("Path '\(relativePath)' escapes project directory — skipping removal")
-            return false
+            output.warn("Path '\(relativePath)' escapes project directory — clearing from tracking")
+            return true
         }
 
         let fm = FileManager.default

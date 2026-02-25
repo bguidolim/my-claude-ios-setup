@@ -429,10 +429,13 @@ struct ProjectConfigurator {
         remaining.mcpServers.removeAll { removedServers.contains($0) }
 
         // Remove project files
+        let fm = FileManager.default
         for path in artifacts.files {
+            let existed = PathContainment.safePath(relativePath: path, within: projectPath)
+                .map { fm.fileExists(atPath: $0.path) } ?? false
             if exec.removeProjectFile(relativePath: path, projectPath: projectPath) {
                 removedFiles.insert(path)
-                output.dimmed("  Removed: \(path)")
+                if existed { output.dimmed("  Removed: \(path)") }
             }
         }
         remaining.files.removeAll { removedFiles.contains($0) }
@@ -483,7 +486,6 @@ struct ProjectConfigurator {
                 }
             } catch {
                 output.warn("Could not write settings.local.json: \(error.localizedDescription)")
-                output.warn("Settings may still be present. Re-run 'mcs sync' to retry.")
             }
         }
 
