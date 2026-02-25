@@ -484,11 +484,12 @@ struct ProjectConfigurator {
                 }
                 if updated != content {
                     try updated.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
-                    remaining.templateSections = []
                     for sectionID in artifacts.templateSections {
                         output.dimmed("  Removed template section: \(sectionID)")
                     }
                 }
+                // Clear regardless — if sections aren't in the file, they're already gone
+                remaining.templateSections = []
             } catch {
                 output.warn("Could not update CLAUDE.local.md: \(error.localizedDescription)")
             }
