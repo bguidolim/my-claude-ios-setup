@@ -213,7 +213,9 @@ ls /path/to/pack/techpack.yaml # Verify local pack has manifest
 
 **Symptom**: `mcs pack update` fails for a specific pack.
 
-**Fix**: Try removing and re-adding the pack:
+**Note**: Local packs don't need updating — changes are picked up automatically on next `mcs sync`.
+
+**Fix**: For git packs, try removing and re-adding:
 ```bash
 mcs pack remove <name>
 mcs pack add <url>

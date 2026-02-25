@@ -517,8 +517,8 @@ ls -la .claude/           # Artifacts should be gone
 cat CLAUDE.local.md       # Template sections removed
 
 # Test updates — make a change to your pack, then
-mcs pack update my-pack
-mcs sync                  # Re-select — should pick up changes
+mcs sync                  # Local packs pick up changes automatically
+# For git packs: mcs pack update my-pack && mcs sync
 ```
 
 ---

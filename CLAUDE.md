@@ -75,6 +75,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `ExternalPackAdapter.swift` — bridges `ExternalPackManifest` to the `TechPack` protocol
 - `ExternalPackLoader.swift` — discovers and loads packs from `~/.mcs/packs/` (git) or absolute paths (local)
 - `PackFetcher.swift` — Git clone/pull for pack repositories
+- `PackSourceResolver.swift` — resolves user input into git URL or local path (URL schemes, filesystem, GitHub shorthand)
 - `PackRegistryFile.swift` — YAML registry of installed external packs (`~/.mcs/registry.yaml`)
 - `PackTrustManager.swift` — pack trust verification
 - `PromptExecutor.swift` — executes pack prompts (interactive value resolution during sync)
@@ -92,7 +93,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `SyncCommand.swift` — primary command (`mcs sync`), handles both project-scoped and global-scoped sync with `--pack`, `--all`, `--dry-run`, `--customize`, `--global`, `--lock`, `--update` flags
 - `DoctorCommand.swift` — health checks with optional --fix and --pack filter
 - `CleanupCommand.swift` — backup file management with --force flag
-- `PackCommand.swift` — `mcs pack add/remove/list/update` subcommands; `resolvePackSource()` handles 3-tier input detection (URL schemes → filesystem paths → GitHub shorthand)
+- `PackCommand.swift` — `mcs pack add/remove/list/update` subcommands; uses `PackSourceResolver` for 3-tier input detection (URL schemes → filesystem paths → GitHub shorthand)
 
 ### Install (`Sources/mcs/Install/`)
 - `ProjectConfigurator.swift` — per-project multi-pack convergence engine (artifact tracking, settings composition, CLAUDE.local.md writing, gitignore)
@@ -100,6 +101,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `ComponentExecutor.swift` — dispatches install actions (brew, MCP servers, plugins, gitignore, project-scoped file copy/removal)
 - `PackInstaller.swift` — auto-installs missing pack components
 - `PackUninstaller.swift` — removes pack components (MCP servers, plugins, settings keys)
+- `PackUpdater.swift` — shared fetch → validate → trust cycle for updating a single git pack (used by `UpdatePack` and `LockfileOperations`)
 - `LockfileOperations.swift` — reads/writes `mcs.lock.yaml`, checks out locked versions, updates lockfile
 
 ### Templates (`Sources/mcs/Templates/`)
