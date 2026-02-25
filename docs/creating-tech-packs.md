@@ -527,7 +527,7 @@ mcs sync                  # Re-select — should pick up changes
 
 **Keep it focused.** A pack for iOS development shouldn't also install Python linters. Multiple small packs compose better than one giant one.
 
-**Use short IDs.** Write `id: node`, not `id: my-pack.node`. The engine auto-prefixes.
+**Use short IDs.** Write `id: node`, not `id: my-pack.node`. Dots in IDs are rejected — the engine always auto-prefixes with the pack identifier.
 
 **Default to `local` scope for MCP servers.** This gives per-user, per-project isolation. Only use `project` scope for team-shared servers, and `user` scope for truly global tools.
 

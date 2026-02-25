@@ -46,7 +46,7 @@ These fields are available on every component, regardless of which shorthand key
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | `String` | Yes | Unique identifier. Short form auto-prefixed with `<pack>.` |
+| `id` | `String` | Yes | Short identifier (no dots). Auto-prefixed with `<pack>.` |
 | `description` | `String` | Yes | One-line description |
 | `displayName` | `String` | No | Display name (defaults to `id`) |
 | `dependencies` | `[String]` | No | Component IDs this depends on. Short form auto-prefixed |
@@ -288,7 +288,7 @@ templates:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `sectionIdentifier` | `String` | Yes | Unique section ID. Must start with pack identifier |
+| `sectionIdentifier` | `String` | Yes | Short section ID (no dots). Auto-prefixed with `<pack>.` |
 | `contentFile` | `String` | Yes | Path to markdown file in the pack repo |
 | `placeholders` | `[String]` | No | `__PLACEHOLDER__` tokens used in the template |
 
@@ -453,8 +453,9 @@ The engine validates manifests on load. These rules are enforced:
 
 - `schemaVersion` must be `1`
 - `identifier` must be non-empty, lowercase alphanumeric with hyphens, not starting with a hyphen
-- Component IDs must be unique and prefixed with the pack identifier (or use short form for auto-prefixing)
-- Template `sectionIdentifier` must start with the pack identifier
+- Component IDs must be short names without dots (auto-prefixed with `<pack>.`) and unique within the pack
+- Intra-pack dependency references must resolve to existing component IDs in the same pack
+- Template `sectionIdentifier` must be a short name without dots (auto-prefixed with `<pack>.`)
 - Prompt `key` values must be unique
 - Doctor check required fields must be present and non-empty
 
