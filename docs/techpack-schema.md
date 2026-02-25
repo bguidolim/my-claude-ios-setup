@@ -379,7 +379,7 @@ Doctor checks verify pack health. They can be defined at two levels:
 
 | Type | Required Fields | Description |
 |------|----------------|-------------|
-| `commandExists` | `command` | Is a CLI command available on PATH? |
+| `commandExists` | `command` | Without `args`: checks PATH presence. With `args`: runs the command and checks exit code |
 | `fileExists` | `path` | Does a file exist? |
 | `directoryExists` | `path` | Does a directory exist? |
 | `fileContains` | `path`, `pattern` | Does a file match a regex pattern? |

@@ -20,8 +20,10 @@ struct MisconfiguredDoctorCheck: DoctorCheck, Sendable {
 
 // MARK: - Command Exists Check
 
-/// Checks that a command is available. First attempts to run with the given arguments;
-/// if that fails, falls back to checking PATH presence.
+/// Checks that a command is available. Bare command names are resolved via `/usr/bin/which`.
+/// - **No args**: only checks PATH presence (does not run the command — avoids hangs from
+///   interactive CLIs like `ollama`).
+/// - **With args**: executes the resolved command with the given arguments and checks the exit code.
 struct ExternalCommandExistsCheck: DoctorCheck, Sendable {
     let name: String
     let section: String
@@ -32,14 +34,30 @@ struct ExternalCommandExistsCheck: DoctorCheck, Sendable {
 
     func check() -> CheckResult {
         let shell = ShellRunner(environment: Environment())
-        let result = shell.run(command, arguments: args)
-        if result.succeeded {
-            return .pass("available")
+
+        // Resolve bare command names to absolute paths. Process.executableURL
+        // does not search PATH, so "ollama" must become "/opt/homebrew/bin/ollama".
+        let resolved: String
+        if command.hasPrefix("/") {
+            guard FileManager.default.isExecutableFile(atPath: command) else {
+                return .fail("not found")
+            }
+            resolved = command
+        } else {
+            let which = shell.run("/usr/bin/which", arguments: [command])
+            guard which.succeeded, !which.stdout.isEmpty else {
+                // Command not on PATH at all.
+                return .fail("not found")
+            }
+            resolved = which.stdout
         }
-        // Also try as a command name on PATH (not a full path)
-        if shell.commandExists(command) {
-            return .pass("installed")
-        }
+
+        // No args: the intent is just "is this binary available?" — finding it
+        // on PATH is sufficient. Running it could hang (e.g. ollama starts a server).
+        if args.isEmpty { return .pass("installed") }
+
+        let result = shell.run(resolved, arguments: args)
+        if result.succeeded { return .pass("available") }
         return .fail("not found")
     }
 

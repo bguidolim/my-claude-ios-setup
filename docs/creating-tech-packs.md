@@ -395,6 +395,20 @@ Use `doctorChecks` on a component when the auto-derived check isn't enough:
 
 This is needed because `shell:` commands have no auto-derived check — the engine can't guess what a shell command installs.
 
+With `args`, `commandExists` goes beyond PATH presence — it actually runs the command and checks the exit code. This is useful for verifying that a specific resource exists:
+
+```yaml
+  - id: ollama-model
+    type: configuration
+    shell: "ollama pull nomic-embed-text"
+    doctorChecks:
+      - type: commandExists
+        name: nomic-embed-text model
+        section: AI Models
+        command: ollama
+        args: ["show", "nomic-embed-text"]
+```
+
 ### Pack-level checks
 
 For verifying things that aren't tied to a specific component:

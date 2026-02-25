@@ -40,6 +40,24 @@ struct ExternalDoctorCheckTests {
         }
     }
 
+    @Test("Command exists check fails when args fail even if command is on PATH")
+    func commandExistsWithFailingArgs() {
+        let check = ExternalCommandExistsCheck(
+            name: "bogus subcommand",
+            section: "Dependencies",
+            command: "/bin/ls",
+            args: ["--nonexistent-flag-xyz"],
+            fixCommand: nil,
+            scriptRunner: nil
+        )
+        let result = check.check()
+        if case .fail = result {
+            // expected — args failed, PATH fallback should NOT rescue it
+        } else {
+            Issue.record("Expected .fail when args fail, got \(result)")
+        }
+    }
+
     @Test("Command exists check fails for unknown command")
     func commandExistsUnknown() {
         let check = ExternalCommandExistsCheck(
