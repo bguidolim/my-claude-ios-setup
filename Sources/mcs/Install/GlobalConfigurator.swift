@@ -339,9 +339,12 @@ struct GlobalConfigurator {
             return
         }
 
+        var remaining = artifacts
+
         // Remove MCP servers
         for server in artifacts.mcpServers {
             if exec.removeMCPServer(name: server.name, scope: server.scope) {
+                remaining.mcpServers.removeAll { $0 == server }
                 output.dimmed("  Removed MCP server: \(server.name)")
             }
         }
@@ -357,13 +360,17 @@ struct GlobalConfigurator {
                 continue
             }
 
-            if fm.fileExists(atPath: fullPath.path) {
-                do {
-                    try fm.removeItem(at: fullPath)
-                    output.dimmed("  Removed: \(relativePath)")
-                } catch {
-                    output.warn("  Could not remove \(relativePath): \(error.localizedDescription)")
-                }
+            if !fm.fileExists(atPath: fullPath.path) {
+                remaining.files.removeAll { $0 == relativePath }
+                continue
+            }
+
+            do {
+                try fm.removeItem(at: fullPath)
+                remaining.files.removeAll { $0 == relativePath }
+                output.dimmed("  Removed: \(relativePath)")
+            } catch {
+                output.warn("  Could not remove \(relativePath): \(error.localizedDescription)")
             }
         }
 
@@ -378,7 +385,9 @@ struct GlobalConfigurator {
             } catch {
                 output.warn("  Could not parse settings.json: \(error.localizedDescription)")
                 output.warn("  Settings for \(packID) were not cleaned up. Fix settings.json and re-run.")
-                state.removePack(packID)
+                // Keep pack in state — settings cleanup was not attempted
+                state.setArtifacts(remaining, for: packID)
+                output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync --global' to retry.")
                 return
             }
             if hasHooksToRemove {
@@ -402,6 +411,8 @@ struct GlobalConfigurator {
                 // top-level keys that still exist in the destination file.
                 let dropKeys = Set(artifacts.settingsKeys.filter { !$0.contains(".") })
                 try settings.save(to: settingsPath, dropKeys: dropKeys)
+                remaining.hookCommands = []
+                remaining.settingsKeys = []
                 for cmd in artifacts.hookCommands {
                     output.dimmed("  Removed hook: \(cmd)")
                 }
@@ -414,7 +425,12 @@ struct GlobalConfigurator {
             }
         }
 
-        state.removePack(packID)
+        if remaining.isEmpty {
+            state.removePack(packID)
+        } else {
+            state.setArtifacts(remaining, for: packID)
+            output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync --global' to retry.")
+        }
     }
 
     // MARK: - Global Artifact Installation

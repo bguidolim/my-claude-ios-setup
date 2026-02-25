@@ -282,6 +282,68 @@ struct ProjectStateTests {
         #expect(json != nil)
         #expect(json?["mcsVersion"] as? String == MCSVersion.current)
     }
+
+    // MARK: - PackArtifactRecord.isEmpty
+
+    @Test("Empty artifact record reports isEmpty")
+    func emptyArtifactRecord() {
+        let record = PackArtifactRecord()
+        #expect(record.isEmpty)
+    }
+
+    @Test("Non-empty artifact record reports not isEmpty")
+    func nonEmptyArtifactRecord() {
+        let record = PackArtifactRecord(
+            mcpServers: [MCPServerRef(name: "test", scope: "local")]
+        )
+        #expect(!record.isEmpty)
+    }
+
+    @Test("Artifact record with only files is not empty")
+    func filesOnlyNotEmpty() {
+        let record = PackArtifactRecord(files: [".claude/skills/test/SKILL.md"])
+        #expect(!record.isEmpty)
+    }
+
+    @Test("Artifact record with only settings keys is not empty")
+    func settingsOnlyNotEmpty() {
+        let record = PackArtifactRecord(settingsKeys: ["env.FOO"])
+        #expect(!record.isEmpty)
+    }
+
+    // MARK: - Partial artifact update
+
+    @Test("setArtifacts overwrites existing record without removing pack")
+    func partialArtifactUpdate() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        var state = try ProjectState(projectRoot: tmpDir)
+        state.recordPack("ios")
+        state.setArtifacts(PackArtifactRecord(
+            mcpServers: [MCPServerRef(name: "server", scope: "local")],
+            files: [".claude/skills/test/SKILL.md"],
+            hookCommands: ["bash .claude/hooks/test.sh"]
+        ), for: "ios")
+        try state.save()
+
+        // Simulate partial cleanup: only MCP server was removed
+        var loaded = try ProjectState(projectRoot: tmpDir)
+        let remaining = PackArtifactRecord(
+            files: [".claude/skills/test/SKILL.md"],
+            hookCommands: ["bash .claude/hooks/test.sh"]
+        )
+        loaded.setArtifacts(remaining, for: "ios")
+        try loaded.save()
+
+        // Pack should still be configured with reduced artifact record
+        let final = try ProjectState(projectRoot: tmpDir)
+        #expect(final.configuredPacks.contains("ios"))
+        let artifacts = final.artifacts(for: "ios")
+        #expect(artifacts?.mcpServers.isEmpty == true)
+        #expect(artifacts?.files == [".claude/skills/test/SKILL.md"])
+        #expect(artifacts?.hookCommands == ["bash .claude/hooks/test.sh"])
+    }
 }
 
 // MARK: - ProjectDoctorChecks

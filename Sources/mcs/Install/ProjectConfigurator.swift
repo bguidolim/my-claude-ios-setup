@@ -415,17 +415,22 @@ struct ProjectConfigurator {
             return
         }
 
+        var remaining = artifacts
+
         // Remove MCP servers
         for server in artifacts.mcpServers {
             if exec.removeMCPServer(name: server.name, scope: server.scope) {
+                remaining.mcpServers.removeAll { $0 == server }
                 output.dimmed("  Removed MCP server: \(server.name)")
             }
         }
 
         // Remove project files
         for path in artifacts.files {
-            exec.removeProjectFile(relativePath: path, projectPath: projectPath)
-            output.dimmed("  Removed: \(path)")
+            if exec.removeProjectFile(relativePath: path, projectPath: projectPath) {
+                remaining.files.removeAll { $0 == path }
+                output.dimmed("  Removed: \(path)")
+            }
         }
 
         // Remove auto-derived hook commands and contributed settings keys
@@ -455,6 +460,8 @@ struct ProjectConfigurator {
                 }
                 let dropKeys = Set(artifacts.settingsKeys.filter { !$0.contains(".") })
                 try settings.save(to: settingsPath, dropKeys: dropKeys)
+                remaining.hookCommands = []
+                remaining.settingsKeys = []
                 for cmd in artifacts.hookCommands {
                     output.dimmed("  Removed hook: \(cmd)")
                 }
@@ -477,6 +484,7 @@ struct ProjectConfigurator {
                 }
                 if updated != content {
                     try updated.write(to: claudeLocalPath, atomically: true, encoding: .utf8)
+                    remaining.templateSections = []
                     for sectionID in artifacts.templateSections {
                         output.dimmed("  Removed template section: \(sectionID)")
                     }
@@ -486,7 +494,12 @@ struct ProjectConfigurator {
             }
         }
 
-        state.removePack(packID)
+        if remaining.isEmpty {
+            state.removePack(packID)
+        } else {
+            state.setArtifacts(remaining, for: packID)
+            output.warn("Some artifacts for \(packID) could not be removed. Re-run 'mcs sync' to retry.")
+        }
     }
 
     // MARK: - Global Dependencies

@@ -13,6 +13,12 @@ struct PackArtifactRecord: Codable, Equatable, Sendable {
     var hookCommands: [String] = []
     /// Settings keys contributed by this pack.
     var settingsKeys: [String] = []
+
+    /// Whether all artifact lists are empty (cleanup is complete).
+    var isEmpty: Bool {
+        mcpServers.isEmpty && files.isEmpty && templateSections.isEmpty
+            && hookCommands.isEmpty && settingsKeys.isEmpty
+    }
 }
 
 /// Reference to a registered MCP server for later removal.
