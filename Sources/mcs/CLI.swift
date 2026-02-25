@@ -10,7 +10,7 @@ enum MCSVersion {
 struct MCS: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "mcs",
-        abstract: "My Claude Setup — Configure Claude Code with MCP servers, plugins, skills, and hooks",
+        abstract: "Managed Claude Stack — Configure Claude Code with MCP servers, plugins, skills, and hooks",
         version: MCSVersion.current,
         subcommands: [SyncCommand.self, InstallCommand.self, DoctorCommand.self, ConfigureCommand.self, CleanupCommand.self, PackCommand.self],
         defaultSubcommand: SyncCommand.self

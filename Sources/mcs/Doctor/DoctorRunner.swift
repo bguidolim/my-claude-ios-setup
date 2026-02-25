@@ -24,7 +24,7 @@ struct DoctorRunner {
     }
 
     mutating func run() throws {
-        output.header("My Claude Setup — Doctor")
+        output.header("Managed Claude Stack — Doctor")
 
         let env = Environment()
         let registry = self.registry

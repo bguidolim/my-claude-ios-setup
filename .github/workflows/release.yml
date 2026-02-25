@@ -79,8 +79,8 @@ jobs:
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/bguidolim/homebrew-tap.git" tap
           cd tap
-          cat > Formula/my-claude-setup.rb << FORMULA
-          class MyClaudeSetup < Formula
+          cat > Formula/managed-claude-stack.rb << FORMULA
+          class ManagedClaudeStack < Formula
             desc "Configure Claude Code with MCP servers, plugins, skills, and hooks"
             homepage "https://github.com/bguidolim/MyClaudeSetup"
             url "https://github.com/bguidolim/MyClaudeSetup/releases/download/${TAG_NAME}/mcs-${TAG_NAME}-macos-universal.tar.gz"
@@ -91,15 +91,15 @@ jobs:
             def install
               libexec.install "mcs"
               bin.install_symlink libexec/"mcs"
-              bin.install_symlink libexec/"mcs" => "my-claude-setup"
+              bin.install_symlink libexec/"mcs" => "managed-claude-stack"
             end
 
             test do
-              assert_match "My Claude Setup", shell_output("#{bin}/mcs --help")
+              assert_match "Managed Claude Stack", shell_output("#{bin}/mcs --help")
             end
           end
           FORMULA
 
-          git add Formula/my-claude-setup.rb
-          git commit -m "Update my-claude-setup to ${TAG_NAME}"
+          git add Formula/managed-claude-stack.rb
+          git commit -m "Update managed-claude-stack to ${TAG_NAME}"
           git push

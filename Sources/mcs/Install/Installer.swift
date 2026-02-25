@@ -33,7 +33,7 @@ struct Installer {
     // MARK: - Phase 1: Welcome
 
     mutating func phaseWelcome() throws {
-        output.header("My Claude Setup")
+        output.header("Managed Claude Stack")
         output.plain("")
         output.plain("  Configure Claude Code with MCP servers, plugins,")
         output.plain("  skills, and hooks for development.")

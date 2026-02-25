@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "my-claude-setup",
+    name: "managed-claude-stack",
     platforms: [
         .macOS(.v13),
     ],

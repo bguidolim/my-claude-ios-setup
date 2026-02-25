@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ My Claude Setup (`mcs`)
+# ⚡ Managed Claude Stack (`mcs`)
 
 **Your Claude Code environment — packaged, portable, and reproducible.**
 
@@ -13,7 +13,7 @@
 <br/>
 
 ```bash
-brew install bguidolim/tap/my-claude-setup
+brew install bguidolim/tap/managed-claude-stack
 mcs pack add https://github.com/you/your-pack
 mcs sync
 ```
@@ -71,7 +71,7 @@ You've spent hours getting Claude Code just right — MCP servers, plugins, hook
 ### 1. Install
 
 ```bash
-brew install bguidolim/tap/my-claude-setup
+brew install bguidolim/tap/managed-claude-stack
 ```
 
 ### 2. Add a tech pack
@@ -122,7 +122,7 @@ Create a team pack with your org's MCP servers, approved plugins, commit hooks, 
 
 ```bash
 # New team member onboarding
-brew install bguidolim/tap/my-claude-setup
+brew install bguidolim/tap/managed-claude-stack
 mcs pack add https://github.com/your-org/team-claude-pack
 mcs sync --all
 # Done. Everything configured.
