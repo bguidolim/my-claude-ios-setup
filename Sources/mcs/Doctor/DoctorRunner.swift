@@ -43,7 +43,12 @@ struct DoctorRunner {
             } else {
                 // No global state file yet — fall back to registry for backward compat
                 let packRegistry = PackRegistryFile(path: env.packsRegistry)
-                globallyConfiguredPackIDs = Set((try? packRegistry.load())?.packs.map(\.identifier) ?? [])
+                do {
+                    globallyConfiguredPackIDs = Set((try packRegistry.load()).packs.map(\.identifier))
+                } catch {
+                    output.warn("Could not read pack registry: \(error.localizedDescription) — no packs will be checked")
+                    globallyConfiguredPackIDs = []
+                }
             }
         } catch {
             // Corrupt state file — fall back to registry
