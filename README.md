@@ -12,17 +12,19 @@
 
 <br/>
 
+</div>
+
+---
+> [!WARNING]
+> **This project is under active development.** Expect breaking changes, bugs, and incomplete features. Migrations between versions are not guaranteed. Use at your own risk.
+---
+
+## Quick Install
 ```bash
 brew install bguidolim/tap/managed-claude-stack
 mcs pack add you/your-pack
 mcs sync
 ```
-
-</div>
-
-> [!WARNING]
-> **This project is under active development.** Expect breaking changes, bugs, and incomplete features. Migrations between versions are not guaranteed. Use at your own risk.
-
 ---
 
 ## The Problem
