@@ -164,6 +164,9 @@ struct DoctorRunner {
         // Gitignore (cross-component aggregation — engine-level)
         checks.append(GitignoreCheck(registry: registry, installedPackIDs: installedPackIDs))
 
+        // Project index (cross-project tracking)
+        checks.append(ProjectIndexCheck())
+
         return checks
     }
 

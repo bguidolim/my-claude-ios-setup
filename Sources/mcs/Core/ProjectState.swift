@@ -13,11 +13,47 @@ struct PackArtifactRecord: Codable, Equatable, Sendable {
     var hookCommands: [String] = []
     /// Settings keys contributed by this pack.
     var settingsKeys: [String] = []
+    /// Homebrew packages installed by MCS for this pack (ownership tracking).
+    var brewPackages: [String] = []
+    /// Plugins installed by MCS for this pack (ownership tracking).
+    var plugins: [String] = []
 
     /// Whether all artifact lists are empty (cleanup is complete).
     var isEmpty: Bool {
         mcpServers.isEmpty && files.isEmpty && templateSections.isEmpty
             && hookCommands.isEmpty && settingsKeys.isEmpty
+            && brewPackages.isEmpty && plugins.isEmpty
+    }
+
+    // Custom decoder for backward compatibility — existing JSON files may lack
+    // the new brewPackages/plugins keys.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mcpServers = try container.decodeIfPresent([MCPServerRef].self, forKey: .mcpServers) ?? []
+        files = try container.decodeIfPresent([String].self, forKey: .files) ?? []
+        templateSections = try container.decodeIfPresent([String].self, forKey: .templateSections) ?? []
+        hookCommands = try container.decodeIfPresent([String].self, forKey: .hookCommands) ?? []
+        settingsKeys = try container.decodeIfPresent([String].self, forKey: .settingsKeys) ?? []
+        brewPackages = try container.decodeIfPresent([String].self, forKey: .brewPackages) ?? []
+        plugins = try container.decodeIfPresent([String].self, forKey: .plugins) ?? []
+    }
+
+    init(
+        mcpServers: [MCPServerRef] = [],
+        files: [String] = [],
+        templateSections: [String] = [],
+        hookCommands: [String] = [],
+        settingsKeys: [String] = [],
+        brewPackages: [String] = [],
+        plugins: [String] = []
+    ) {
+        self.mcpServers = mcpServers
+        self.files = files
+        self.templateSections = templateSections
+        self.hookCommands = hookCommands
+        self.settingsKeys = settingsKeys
+        self.brewPackages = brewPackages
+        self.plugins = plugins
     }
 }
 

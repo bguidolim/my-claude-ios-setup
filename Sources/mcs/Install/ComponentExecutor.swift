@@ -66,6 +66,33 @@ struct ComponentExecutor {
         return result.succeeded
     }
 
+    /// Uninstall a Homebrew package. Returns `true` if removal succeeded or package was already gone.
+    func uninstallBrewPackage(_ package: String) -> Bool {
+        let brew = Homebrew(shell: shell, environment: environment)
+        guard brew.isInstalled else { return false }
+        guard brew.isPackageInstalled(package) else { return true }
+        let result = brew.uninstall(package)
+        if !result.succeeded {
+            output.warn("Could not uninstall brew package '\(package)': \(String(result.stderr.prefix(200)))")
+        }
+        return result.succeeded
+    }
+
+    /// Remove a plugin via the Claude CLI. Returns `true` if removal succeeded.
+    func removePlugin(_ fullName: String) -> Bool {
+        guard shell.commandExists(Constants.CLI.claudeCommand) else {
+            output.warn("Claude Code CLI not found, cannot remove plugin")
+            return false
+        }
+        let claude = ClaudeIntegration(shell: shell)
+        let ref = PluginRef(fullName)
+        let result = claude.pluginRemove(ref: ref)
+        if !result.succeeded {
+            output.warn("Could not remove plugin '\(ref.bareName)': \(result.stderr)")
+        }
+        return result.succeeded
+    }
+
     // MARK: - Gitignore
 
     /// Add entries to the global gitignore.

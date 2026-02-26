@@ -539,12 +539,14 @@ struct RemovePack: LockedCommand {
             }
         }
 
-        // 5. Uninstall artifacts BEFORE deleting checkout
+        // 5. Uninstall artifacts BEFORE deleting checkout (ref counter needs full index)
+        let techPackRegistry = TechPackRegistry.loadWithExternalPacks(environment: env, output: output)
         if let manifest {
             var uninstaller = PackUninstaller(
                 environment: env,
                 output: output,
-                shell: shell
+                shell: shell,
+                registry: techPackRegistry
             )
             let summary = uninstaller.uninstall(manifest: manifest, packPath: packPath)
             if summary.totalRemoved > 0 {
@@ -553,6 +555,27 @@ struct RemovePack: LockedCommand {
             for err in summary.errors {
                 output.warn(err)
             }
+        }
+
+        // 5b. Clean pack from global state artifacts
+        do {
+            var globalState = try ProjectState(stateFile: env.globalStateFile)
+            if globalState.configuredPacks.contains(identifier) {
+                globalState.removePack(identifier)
+                try globalState.save()
+            }
+        } catch {
+            output.warn("Could not update global state: \(error.localizedDescription)")
+        }
+
+        // 5c. Remove pack from project index entries
+        do {
+            let indexFile = ProjectIndex(path: env.projectsIndexFile)
+            var indexData = try indexFile.load()
+            indexFile.removePack(identifier, from: &indexData)
+            try indexFile.save(indexData)
+        } catch {
+            output.warn("Could not update project index: \(error.localizedDescription)")
         }
 
         // 6. Remove from registry

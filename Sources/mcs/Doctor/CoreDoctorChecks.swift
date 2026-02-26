@@ -201,6 +201,55 @@ struct GitignoreCheck: DoctorCheck, Sendable {
     }
 }
 
+struct ProjectIndexCheck: DoctorCheck, Sendable {
+    var name: String { "Project index" }
+    var section: String { "Project" }
+
+    func check() -> CheckResult {
+        let env = Environment()
+        let indexFile = ProjectIndex(path: env.projectsIndexFile)
+        guard let data = try? indexFile.load() else {
+            return .warn("~/.mcs/projects.yaml not found — run 'mcs sync' to create")
+        }
+        if data.projects.isEmpty {
+            return .warn("no projects tracked — run 'mcs sync' to populate")
+        }
+
+        let fm = FileManager.default
+        var stale: [String] = []
+        for entry in data.projects {
+            guard entry.path != ProjectIndex.globalSentinel else { continue }
+            if !fm.fileExists(atPath: entry.path) {
+                stale.append(entry.path)
+            }
+        }
+
+        let projectCount = data.projects.count
+        if stale.isEmpty {
+            return .pass("\(projectCount) scope(s) tracked")
+        }
+        return .warn("\(stale.count) stale path(s) in \(projectCount) tracked scope(s)")
+    }
+
+    func fix() -> FixResult {
+        let env = Environment()
+        let indexFile = ProjectIndex(path: env.projectsIndexFile)
+        guard var data = try? indexFile.load() else {
+            return .notFixable("Could not read project index")
+        }
+        let pruned = indexFile.pruneStale(in: &data)
+        if pruned.isEmpty {
+            return .notFixable("No stale entries found")
+        }
+        do {
+            try indexFile.save(data)
+            return .fixed("removed \(pruned.count) stale entry/entries")
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+}
+
 struct CommandFileCheck: DoctorCheck, Sendable {
     let name: String
     let section = "Commands"

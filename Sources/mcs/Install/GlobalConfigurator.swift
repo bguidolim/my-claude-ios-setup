@@ -206,6 +206,12 @@ struct GlobalConfigurator {
         for path in artifacts.files {
             output.dimmed("      File: \(path)")
         }
+        for pkg in artifacts.brewPackages {
+            output.dimmed("      Brew package: \(pkg)")
+        }
+        for plugin in artifacts.plugins {
+            output.dimmed("      Plugin: \(PluginRef(plugin).bareName)")
+        }
     }
 
     // MARK: - Configure (Multi-Pack)
@@ -282,7 +288,13 @@ struct GlobalConfigurator {
             let isNew = additions.contains(pack.identifier)
             let label = isNew ? "Configuring" : "Updating"
             output.info("\(label) \(pack.displayName) (global)...")
-            let artifacts = installGlobalArtifacts(pack, excludedIDs: excluded, resolvedValues: allValues)
+            let previousArtifacts = state.artifacts(for: pack.identifier)
+            let artifacts = installGlobalArtifacts(
+                pack,
+                previousArtifacts: previousArtifacts,
+                excludedIDs: excluded,
+                resolvedValues: allValues
+            )
             state.setArtifacts(artifacts, for: pack.identifier)
             state.setExcludedComponents(excluded, for: pack.identifier)
             state.recordPack(pack.identifier)
@@ -319,7 +331,21 @@ struct GlobalConfigurator {
             )
         }
 
-        // 7. Inform user about project-scoped features that were skipped
+        // 7. Update project index for cross-project tracking
+        do {
+            let indexFile = ProjectIndex(path: environment.projectsIndexFile)
+            var indexData = try indexFile.load()
+            indexFile.upsert(
+                projectPath: ProjectIndex.globalSentinel,
+                packIDs: packs.map(\.identifier),
+                in: &indexData
+            )
+            try indexFile.save(indexData)
+        } catch {
+            output.warn("Could not update project index: \(error.localizedDescription)")
+        }
+
+        // 8. Inform user about project-scoped features that were skipped
         printProjectScopedSkips(packs: packs)
     }
 
@@ -343,7 +369,44 @@ struct GlobalConfigurator {
         var removedServers: Set<MCPServerRef> = []
         var removedFiles: Set<String> = []
 
-        // Remove MCP servers
+        // Remove MCS-owned brew packages (with reference counting)
+        let refCounter = ResourceRefCounter(
+            environment: environment,
+            output: output,
+            registry: registry
+        )
+        for package in artifacts.brewPackages {
+            if refCounter.isStillNeeded(
+                .brewPackage(package),
+                excludingScope: ProjectIndex.globalSentinel,
+                excludingPack: packID
+            ) {
+                output.dimmed("  Keeping brew package '\(package)' — still needed by another scope")
+            } else {
+                if exec.uninstallBrewPackage(package) {
+                    output.dimmed("  Removed brew package: \(package)")
+                }
+            }
+        }
+        remaining.brewPackages = []
+
+        // Remove MCS-owned plugins (with reference counting)
+        for pluginName in artifacts.plugins {
+            if refCounter.isStillNeeded(
+                .plugin(pluginName),
+                excludingScope: ProjectIndex.globalSentinel,
+                excludingPack: packID
+            ) {
+                output.dimmed("  Keeping plugin '\(PluginRef(pluginName).bareName)' — still needed by another scope")
+            } else {
+                if exec.removePlugin(pluginName) {
+                    output.dimmed("  Removed plugin: \(PluginRef(pluginName).bareName)")
+                }
+            }
+        }
+        remaining.plugins = []
+
+        // Remove MCP servers (project-independent, no ref counting needed)
         for server in artifacts.mcpServers {
             if exec.removeMCPServer(name: server.name, scope: server.scope) {
                 removedServers.insert(server)
@@ -442,12 +505,20 @@ struct GlobalConfigurator {
     /// Install global-scope artifacts for a pack (brew, MCP with scope "user",
     /// plugins, and files to `~/.claude/`).
     /// Returns a `PackArtifactRecord` tracking what was installed.
+    ///
+    /// Starts from the previous artifact record to preserve brew/plugin ownership
+    /// from earlier syncs. Convergent fields (mcpServers, files, hookCommands) are
+    /// rebuilt fresh; ownership fields (brewPackages, plugins) carry forward.
     private func installGlobalArtifacts(
         _ pack: any TechPack,
+        previousArtifacts: PackArtifactRecord? = nil,
         excludedIDs: Set<String> = [],
         resolvedValues: [String: String] = [:]
     ) -> PackArtifactRecord {
         var artifacts = PackArtifactRecord()
+        // Carry forward ownership records from previous sync
+        artifacts.brewPackages = previousArtifacts?.brewPackages ?? []
+        artifacts.plugins = previousArtifacts?.plugins ?? []
         let exec = makeExecutor()
 
         for component in pack.components {
@@ -468,6 +539,10 @@ struct GlobalConfigurator {
             case .brewInstall(let package):
                 output.dimmed("  Installing \(component.displayName)...")
                 if exec.installBrewPackage(package) {
+                    // Record ownership — MCS installed this package
+                    if !artifacts.brewPackages.contains(package) {
+                        artifacts.brewPackages.append(package)
+                    }
                     output.success("  \(component.displayName) installed")
                 } else {
                     output.warn("  \(component.displayName) failed to install")
@@ -493,6 +568,10 @@ struct GlobalConfigurator {
             case .plugin(let name):
                 output.dimmed("  Installing plugin \(component.displayName)...")
                 if exec.installPlugin(name) {
+                    // Record ownership — MCS installed this plugin
+                    if !artifacts.plugins.contains(name) {
+                        artifacts.plugins.append(name)
+                    }
                     output.success("  \(component.displayName) installed")
                 } else {
                     output.warn("  \(component.displayName) failed to install")

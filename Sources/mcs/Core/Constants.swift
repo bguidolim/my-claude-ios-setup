@@ -52,6 +52,9 @@ enum Constants {
 
         /// Sentinel value for `commitSHA` on local (non-git) packs.
         static let localCommitSentinel = "local"
+
+        /// The project index filename tracking cross-project pack usage.
+        static let projectsIndexFilename = "projects.yaml"
     }
 
     // MARK: - Plugins

@@ -62,6 +62,11 @@ struct Environment: Sendable {
         mcsDirectory.appendingPathComponent("global-state.json")
     }
 
+    /// Cross-project index mapping project paths to installed packs (`~/.mcs/projects.yaml`).
+    var projectsIndexFile: URL {
+        mcsDirectory.appendingPathComponent(Constants.ExternalPacks.projectsIndexFilename)
+    }
+
     /// POSIX lock file for preventing concurrent mcs execution (`~/.mcs/lock`).
     var lockFile: URL {
         mcsDirectory.appendingPathComponent(Constants.FileNames.mcsLock)

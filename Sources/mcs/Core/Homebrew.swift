@@ -25,6 +25,12 @@ struct Homebrew: Sendable {
         shell.run(environment.brewPath, arguments: ["install", name])
     }
 
+    /// Uninstall a Homebrew package. May fail if other formulas depend on it.
+    @discardableResult
+    func uninstall(_ name: String) -> ShellResult {
+        shell.run(environment.brewPath, arguments: ["uninstall", name])
+    }
+
     /// Start a Homebrew service.
     @discardableResult
     func startService(_ name: String) -> ShellResult {

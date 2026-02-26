@@ -7,12 +7,16 @@ import Foundation
 /// collected rather than thrown — partial cleanup is better than none.
 ///
 /// **Not reversed by design:**
-/// - `brewInstall` — shared system resource, may be used by other tools
 /// - `shellCommand` — arbitrary side effects, no generic undo
+///
+/// **Reference-counted removal:**
+/// - `brewInstall` — removed only if MCS installed it and no other scope still needs it
+/// - `plugin` — removed only if no other scope still needs it; gated by ref counter
 struct PackUninstaller {
     let environment: Environment
     let output: CLIOutput
     let shell: ShellRunner
+    var registry: TechPackRegistry = .shared
 
     /// Summary of what was removed and any errors encountered.
     struct RemovalSummary {
@@ -41,7 +45,7 @@ struct PackUninstaller {
         // 1. Remove components by install action type
         if let components = manifest.components {
             for component in components {
-                removeComponent(component, packPath: packPath, summary: &summary)
+                removeComponent(component, packIdentifier: manifest.identifier, packPath: packPath, summary: &summary)
             }
         }
 
@@ -66,6 +70,7 @@ struct PackUninstaller {
 
     private mutating func removeComponent(
         _ component: ExternalComponentDefinition,
+        packIdentifier: String,
         packPath: URL,
         summary: inout RemovalSummary
     ) {
@@ -81,13 +86,26 @@ struct PackUninstaller {
             }
 
         case .plugin(let name):
-            let claude = ClaudeIntegration(shell: shell)
+            let refCounter = ResourceRefCounter(
+                environment: environment,
+                output: output,
+                registry: registry
+            )
             let ref = PluginRef(name)
-            let result = claude.pluginRemove(ref: ref)
-            if result.succeeded {
-                summary.plugins.append(ref.bareName)
+            if refCounter.isStillNeeded(
+                .plugin(name),
+                excludingScope: "__pack_remove__",
+                excludingPack: packIdentifier
+            ) {
+                output.dimmed("  Keeping plugin '\(ref.bareName)' — still needed by another scope")
             } else {
-                summary.errors.append("Plugin '\(ref.bareName)': \(result.stderr)")
+                let claude = ClaudeIntegration(shell: shell)
+                let result = claude.pluginRemove(ref: ref)
+                if result.succeeded {
+                    summary.plugins.append(ref.bareName)
+                } else {
+                    summary.errors.append("Plugin '\(ref.bareName)': \(result.stderr)")
+                }
             }
 
         case .copyPackFile(let config):
@@ -122,7 +140,35 @@ struct PackUninstaller {
             // For now, settings are not reversed — user runs `mcs sync` to rebuild.
             break
 
-        case .brewInstall, .shellCommand:
+        case .brewInstall(let package):
+            // Check if MCS owns this package (it's in global-state artifacts)
+            let globalState = try? ProjectState(stateFile: environment.globalStateFile)
+            let mcsOwns = globalState?.configuredPacks.contains(where: { packID in
+                globalState?.artifacts(for: packID)?.brewPackages.contains(package) ?? false
+            }) ?? false
+
+            if mcsOwns {
+                let refCounter = ResourceRefCounter(
+                    environment: environment,
+                    output: output,
+                    registry: registry
+                )
+                if refCounter.isStillNeeded(
+                    .brewPackage(package),
+                    excludingScope: "__pack_remove__",
+                    excludingPack: packIdentifier
+                ) {
+                    output.dimmed("  Keeping brew package '\(package)' — still needed by another scope")
+                } else {
+                    let exec = ComponentExecutor(environment: environment, output: output, shell: shell)
+                    if exec.uninstallBrewPackage(package) {
+                        summary.manifestEntries.append("brew:\(package)")
+                    }
+                }
+            }
+            // If MCS doesn't own it, skip silently (pre-existing resource)
+
+        case .shellCommand:
             // Not reversed by design
             break
         }

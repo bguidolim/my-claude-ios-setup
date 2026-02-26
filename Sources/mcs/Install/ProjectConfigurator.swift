@@ -419,6 +419,20 @@ struct ProjectConfigurator {
                 reason: error.localizedDescription
             )
         }
+
+        // 11. Update project index for cross-project tracking
+        do {
+            let indexFile = ProjectIndex(path: environment.projectsIndexFile)
+            var indexData = try indexFile.load()
+            indexFile.upsert(
+                projectPath: projectPath.path,
+                packIDs: packs.map(\.identifier),
+                in: &indexData
+            )
+            try indexFile.save(indexData)
+        } catch {
+            output.warn("Could not update project index: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Pack Unconfiguration
@@ -441,6 +455,52 @@ struct ProjectConfigurator {
         var remaining = artifacts
         var removedServers: Set<MCPServerRef> = []
         var removedFiles: Set<String> = []
+
+        // Remove MCS-owned brew packages (with reference counting)
+        if !artifacts.brewPackages.isEmpty {
+            let refCounter = ResourceRefCounter(
+                environment: environment,
+                output: output,
+                registry: registry
+            )
+            for package in artifacts.brewPackages {
+                if refCounter.isStillNeeded(
+                    .brewPackage(package),
+                    excludingScope: projectPath.path,
+                    excludingPack: packID
+                ) {
+                    output.dimmed("  Keeping brew package '\(package)' — still needed by another scope")
+                } else {
+                    if exec.uninstallBrewPackage(package) {
+                        output.dimmed("  Removed brew package: \(package)")
+                    }
+                }
+            }
+            remaining.brewPackages = []
+        }
+
+        // Remove MCS-owned plugins (with reference counting)
+        if !artifacts.plugins.isEmpty {
+            let refCounter = ResourceRefCounter(
+                environment: environment,
+                output: output,
+                registry: registry
+            )
+            for pluginName in artifacts.plugins {
+                if refCounter.isStillNeeded(
+                    .plugin(pluginName),
+                    excludingScope: projectPath.path,
+                    excludingPack: packID
+                ) {
+                    output.dimmed("  Keeping plugin '\(PluginRef(pluginName).bareName)' — still needed by another scope")
+                } else {
+                    if exec.removePlugin(pluginName) {
+                        output.dimmed("  Removed plugin: \(PluginRef(pluginName).bareName)")
+                    }
+                }
+            }
+            remaining.plugins = []
+        }
 
         // Remove MCP servers
         for server in artifacts.mcpServers {
