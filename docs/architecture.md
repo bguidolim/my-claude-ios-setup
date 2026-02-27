@@ -263,6 +263,16 @@ Packs provide:
 
 `doctor --fix` does NOT handle additive operations (installing packages, registering servers, copying files). These are handled by `mcs sync`.
 
+### Check Scope Resolution
+
+Individual checks resolve component presence through three tiers:
+
+1. **Project path**: when packs are resolved from project scope, checks look in `<project>/.claude/` first (e.g., `<project>/.claude/skills/my-skill.md`)
+2. **Global fallback**: if not found at project scope, checks fall back to `~/.claude/` (covers globally-installed components)
+3. **Exclusion suppression**: components excluded via `--customize` show as dimmed `○ excluded via --customize` instead of failing
+
+MCP server checks follow the same pattern: project-scoped entries (`projects[path].mcpServers` in `~/.claude.json`) are checked before global entries (`mcpServers`).
+
 ### Pack Resolution
 
 When determining which packs to check, doctor uses a priority chain:

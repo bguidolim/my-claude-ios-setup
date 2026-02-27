@@ -180,6 +180,12 @@ cat .claude/.mcs-project
 mcs sync
 ```
 
+### Components showing "excluded via --customize"
+
+**Symptom**: `mcs doctor` shows dimmed `○ <component>: excluded via --customize` entries.
+
+This is informational, not a failure. These components were explicitly deselected during `mcs sync --customize` and are intentionally skipped. If the component is installed globally, it will show as passing instead.
+
 ### Unpaired section markers
 
 **Symptom**: `mcs sync` warns about "unpaired section markers."
