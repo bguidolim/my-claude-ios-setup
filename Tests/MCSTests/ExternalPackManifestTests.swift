@@ -470,6 +470,33 @@ struct ExternalPackManifestTests {
         }
     }
 
+    @Test("Validation rejects hookEventExists with unknown event")
+    func rejectHookEventExistsUnknownEvent() throws {
+        let yaml = """
+            schemaVersion: 1
+            identifier: test
+            displayName: Test
+            description: Test
+            version: "1.0.0"
+            supplementaryDoctorChecks:
+              - type: hookEventExists
+                name: Bad hook check
+                section: Hooks
+                event: BogusEvent
+            """
+
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let manifest = try ExternalPackManifest.load(from: file)
+        #expect(throws: ManifestError.self) {
+            try manifest.validate()
+        }
+    }
+
     @Test("Validation rejects settingsKeyEquals without keyPath")
     func rejectSettingsKeyEqualsNoKeyPath() throws {
         let yaml = """

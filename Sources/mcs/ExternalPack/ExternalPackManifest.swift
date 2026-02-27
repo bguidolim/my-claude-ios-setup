@@ -158,6 +158,9 @@ extension ExternalPackManifest {
             guard let event = check.event, !event.isEmpty else {
                 throw ManifestError.invalidDoctorCheck(name: check.name, reason: "hookEventExists requires non-empty 'event'")
             }
+            guard Constants.Hooks.validEvents.contains(event) else {
+                throw ManifestError.invalidDoctorCheck(name: check.name, reason: "hookEventExists has unknown event '\(event)'")
+            }
         case .settingsKeyEquals:
             guard let keyPath = check.keyPath, !keyPath.isEmpty else {
                 throw ManifestError.invalidDoctorCheck(name: check.name, reason: "settingsKeyEquals requires non-empty 'keyPath'")

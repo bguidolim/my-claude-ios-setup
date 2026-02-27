@@ -150,7 +150,7 @@ struct PackTrustManager: Sendable {
 
         if !hookFragments.isEmpty {
             output.plain("")
-            output.sectionHeader("Hook Fragments (run on every session)")
+            output.sectionHeader("Hook Files (run on every session)")
             for item in hookFragments {
                 let lineCount = item.content.components(separatedBy: "\n").count
                 let path = item.relativePath ?? "inline"
@@ -402,7 +402,7 @@ struct TrustableItem: Sendable {
 
     enum TrustableType: Sendable {
         case shellCommand      // From component install actions
-        case hookFragment      // From hook contributions (runs on every session)
+        case hookFragment      // From hook component files (runs on every session)
         case configureScript   // From configureProject
         case doctorCommand     // From commandExists doctor checks (runs during doctor)
         case doctorScript      // From shellScript doctor checks
