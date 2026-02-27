@@ -290,6 +290,14 @@ mcs cleanup --force              # Delete backups without confirmation
 
 ---
 
+## 🔍 Verifying Your Setup with Poirot
+
+After `mcs sync`, want to confirm everything landed correctly? [**Poirot**](https://github.com/leonardocardoso/poirot) is a native macOS companion that gives you a visual overview of your Claude Code configuration — MCP servers, settings, sessions, and more — all in one place.
+
+The perfect complement to `mcs`: configure your environment with `mcs`, then use Poirot to see exactly what's installed and running.
+
+---
+
 ## 📚 Documentation
 
 | Document | Description |
