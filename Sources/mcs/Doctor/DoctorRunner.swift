@@ -19,7 +19,7 @@ struct DoctorRunner {
     private var warnCount = 0
     private var fixedCount = 0
     /// Failed checks collected during diagnosis, to be fixed after confirmation.
-    private var pendingFixes: [(name: String, check: any DoctorCheck)] = []
+    private var pendingFixes: [any DoctorCheck] = []
 
     init(
         fixMode: Bool,
@@ -250,7 +250,7 @@ struct DoctorRunner {
             case .fail(let msg):
                 docFail(name, msg)
                 if fixMode {
-                    pendingFixes.append((name: name, check: entry.check))
+                    pendingFixes.append(entry.check)
                 }
             case .warn(let msg):
                 docWarn(name, msg)
@@ -267,31 +267,30 @@ struct DoctorRunner {
 
         output.header("Fixes")
 
-        // Show what will be executed
-        for (name, check) in pendingFixes {
+        for check in pendingFixes {
             if let command = check.fixCommandPreview {
-                output.dimmed("• \(name): `\(command)`")
+                output.dimmed("• \(check.name): `\(command)`")
             } else {
-                output.dimmed("• \(name): built-in fix")
+                output.dimmed("• \(check.name): built-in fix")
             }
         }
 
-        // Prompt unless --yes
+        let fixLabel = pendingFixes.count == 1 ? "fix" : "fixes"
         if !skipConfirmation {
-            guard output.askYesNo("Apply \(pendingFixes.count) fix\(pendingFixes.count == 1 ? "" : "es")?") else {
+            guard output.askYesNo("Apply \(pendingFixes.count) \(fixLabel)?", default: false) else {
                 output.dimmed("Skipped all fixes.")
                 return
             }
         }
 
-        for (name, check) in pendingFixes {
+        for check in pendingFixes {
             switch check.fix() {
-            case .fixed(let fixMsg):
-                docFixed(name, fixMsg)
-            case .failed(let fixMsg):
-                docFixFailed(name, fixMsg)
-            case .notFixable(let fixMsg):
-                output.warn("  ↳ \(fixMsg)")
+            case .fixed(let msg):
+                docFixed(check.name, msg)
+            case .failed(let msg):
+                docFixFailed(check.name, msg)
+            case .notFixable(let msg):
+                output.warn("  ↳ \(msg)")
             }
         }
     }

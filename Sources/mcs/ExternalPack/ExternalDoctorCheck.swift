@@ -210,7 +210,11 @@ struct ExternalShellScriptCheck: DoctorCheck, Sendable {
     let fixCommand: String?
     let scriptRunner: ScriptRunner
 
-    var fixCommandPreview: String? { fixCommand ?? fixScriptPath?.lastPathComponent }
+    var fixCommandPreview: String? {
+        if let fixCommand { return fixCommand }
+        guard let fixScriptPath else { return nil }
+        return fixScriptPath.path.replacingOccurrences(of: packPath.path + "/", with: "")
+    }
 
     func check() -> CheckResult {
         let result: ScriptRunner.ScriptResult
