@@ -110,7 +110,7 @@ struct DerivedDoctorCheckTests {
 
     // MARK: - copyPackFile derivation
 
-    @Test("copyPackFile without projectRoot derives FileExistsCheck with global path")
+    @Test("copyPackFile without projectRoot derives FileExistsCheck with global path and no fallback")
     func copyPackFileGlobalPath() {
         let component = ComponentDefinition(
             id: "test.skill",
@@ -132,10 +132,10 @@ struct DerivedDoctorCheckTests {
         #expect(fileCheck != nil)
         // Global path: ~/.claude/skills/my-skill.md
         #expect(fileCheck!.path.path.hasSuffix("/.claude/skills/my-skill.md"))
-        #expect(!fileCheck!.path.path.contains("/my-project/"))
+        #expect(fileCheck!.fallbackPath == nil)
     }
 
-    @Test("copyPackFile with projectRoot derives FileExistsCheck with project path")
+    @Test("copyPackFile with projectRoot derives FileExistsCheck with project path and global fallback")
     func copyPackFileProjectPath() {
         let projectRoot = URL(fileURLWithPath: "/tmp/my-project")
         let component = ComponentDefinition(
@@ -157,6 +157,10 @@ struct DerivedDoctorCheckTests {
         let fileCheck = check as? FileExistsCheck
         #expect(fileCheck != nil)
         #expect(fileCheck!.path.path == "/tmp/my-project/.claude/skills/my-skill.md")
+        // Fallback to global path
+        #expect(fileCheck!.fallbackPath != nil)
+        #expect(fileCheck!.fallbackPath!.path.hasSuffix("/.claude/skills/my-skill.md"))
+        #expect(!fileCheck!.fallbackPath!.path.contains("/my-project/"))
     }
 
     @Test("copyPackFile projectRoot resolves correctly for all CopyFileType variants")
@@ -187,6 +191,108 @@ struct DerivedDoctorCheckTests {
             let fileCheck = check as? FileExistsCheck
             #expect(fileCheck?.path.path == expectedPath, "Expected \(expectedPath) for \(fileType.rawValue)")
         }
+    }
+
+    // MARK: - FileExistsCheck fallback behavior
+
+    @Test("FileExistsCheck passes when primary path exists")
+    func fileExistsCheckPrimaryPath() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("test.md")
+        try "content".write(to: file, atomically: true, encoding: .utf8)
+
+        let check = FileExistsCheck(
+            name: "test", section: "Skills", path: file,
+            fallbackPath: URL(fileURLWithPath: "/nonexistent/fallback.md")
+        )
+        if case .pass(let msg) = check.check() {
+            #expect(msg == "present")
+        } else {
+            Issue.record("Expected pass")
+        }
+    }
+
+    @Test("FileExistsCheck falls back to global path when primary missing")
+    func fileExistsCheckFallback() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcs-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let globalFile = tmpDir.appendingPathComponent("global.md")
+        try "content".write(to: globalFile, atomically: true, encoding: .utf8)
+
+        let check = FileExistsCheck(
+            name: "test", section: "Skills",
+            path: URL(fileURLWithPath: "/nonexistent/project.md"),
+            fallbackPath: globalFile
+        )
+        if case .pass(let msg) = check.check() {
+            #expect(msg == "present (global)")
+        } else {
+            Issue.record("Expected pass with global fallback")
+        }
+    }
+
+    @Test("FileExistsCheck fails when neither primary nor fallback exist")
+    func fileExistsCheckBothMissing() {
+        let check = FileExistsCheck(
+            name: "test", section: "Skills",
+            path: URL(fileURLWithPath: "/nonexistent/project.md"),
+            fallbackPath: URL(fileURLWithPath: "/nonexistent/global.md")
+        )
+        if case .fail = check.check() {
+            // expected
+        } else {
+            Issue.record("Expected fail")
+        }
+    }
+
+    // MARK: - MCPServerCheck project root
+
+    @Test("mcpServer action passes projectRoot to MCPServerCheck")
+    func mcpServerDerivationWithProjectRoot() {
+        let projectRoot = URL(fileURLWithPath: "/tmp/my-project")
+        let component = ComponentDefinition(
+            id: "test.mcp",
+            displayName: "TestServer",
+            description: "test",
+            type: .mcpServer,
+            packIdentifier: nil,
+            dependencies: [],
+            isRequired: false,
+            installAction: .mcpServer(MCPServerConfig(
+                name: "test-server", command: "cmd", args: [], env: [:]
+            ))
+        )
+        let check = component.deriveDoctorCheck(projectRoot: projectRoot)
+        #expect(check != nil)
+        let mcpCheck = check as? MCPServerCheck
+        #expect(mcpCheck != nil)
+        #expect(mcpCheck!.projectRoot?.path == "/tmp/my-project")
+    }
+
+    @Test("mcpServer action without projectRoot has nil projectRoot")
+    func mcpServerDerivationWithoutProjectRoot() {
+        let component = ComponentDefinition(
+            id: "test.mcp",
+            displayName: "TestServer",
+            description: "test",
+            type: .mcpServer,
+            packIdentifier: nil,
+            dependencies: [],
+            isRequired: false,
+            installAction: .mcpServer(MCPServerConfig(
+                name: "test-server", command: "cmd", args: [], env: [:]
+            ))
+        )
+        let check = component.deriveDoctorCheck()
+        let mcpCheck = check as? MCPServerCheck
+        #expect(mcpCheck?.projectRoot == nil)
     }
 
     // MARK: - allDoctorChecks combines derived + supplementary

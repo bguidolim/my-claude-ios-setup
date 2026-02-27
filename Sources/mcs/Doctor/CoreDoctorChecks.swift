@@ -41,6 +41,13 @@ struct MCPServerCheck: DoctorCheck, Sendable {
     let name: String
     let section = "MCP Servers"
     let serverName: String
+    let projectRoot: URL?
+
+    init(name: String, serverName: String, projectRoot: URL? = nil) {
+        self.name = name
+        self.serverName = serverName
+        self.projectRoot = projectRoot
+    }
 
     func check() -> CheckResult {
         let claudeJSONPath = Environment().claudeJSON
@@ -56,12 +63,22 @@ struct MCPServerCheck: DoctorCheck, Sendable {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .fail("~/.claude.json contains invalid JSON")
         }
-        guard let mcpServers = json[Constants.JSONKeys.mcpServers] as? [String: Any],
-              mcpServers[serverName] != nil
-        else {
-            return .fail("not registered")
+        // Check project-scoped servers first (stored under projects[path].mcpServers)
+        if let root = projectRoot,
+           let projects = json["projects"] as? [String: Any],
+           let projectEntry = projects[root.path] as? [String: Any],
+           let projectMCP = projectEntry[Constants.JSONKeys.mcpServers] as? [String: Any],
+           projectMCP[serverName] != nil
+        {
+            return .pass("registered")
         }
-        return .pass("registered")
+        // Fall back to global/user-scoped servers
+        if let mcpServers = json[Constants.JSONKeys.mcpServers] as? [String: Any],
+           mcpServers[serverName] != nil
+        {
+            return .pass("registered")
+        }
+        return .fail("not registered")
     }
 
     func fix() -> FixResult {
@@ -100,9 +117,23 @@ struct FileExistsCheck: DoctorCheck, Sendable {
     let name: String
     let section: String
     let path: URL
+    let fallbackPath: URL?
+
+    init(name: String, section: String, path: URL, fallbackPath: URL? = nil) {
+        self.name = name
+        self.section = section
+        self.path = path
+        self.fallbackPath = fallbackPath
+    }
 
     func check() -> CheckResult {
-        FileManager.default.fileExists(atPath: path.path) ? .pass("present") : .fail("missing")
+        if FileManager.default.fileExists(atPath: path.path) {
+            return .pass("present")
+        }
+        if let fallback = fallbackPath, FileManager.default.fileExists(atPath: fallback.path) {
+            return .pass("present (global)")
+        }
+        return .fail("missing")
     }
 
     func fix() -> FixResult {

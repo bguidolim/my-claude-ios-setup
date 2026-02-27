@@ -9,7 +9,7 @@ extension ComponentDefinition {
     func deriveDoctorCheck(projectRoot: URL? = nil) -> (any DoctorCheck)? {
         switch installAction {
         case .mcpServer(let config):
-            return MCPServerCheck(name: displayName, serverName: config.name)
+            return MCPServerCheck(name: displayName, serverName: config.name, projectRoot: projectRoot)
 
         case .plugin(let pluginName):
             return PluginCheck(pluginRef: PluginRef(pluginName))
@@ -24,16 +24,21 @@ extension ComponentDefinition {
 
         case .copyPackFile(_, let destination, let fileType):
             let destURL: URL
+            let fallbackURL: URL?
             if let projectRoot {
                 destURL = fileType.projectBaseDirectory(projectPath: projectRoot)
                     .appendingPathComponent(destination)
+                // Fall back to global path if not found in project
+                fallbackURL = fileType.destinationURL(in: Environment(), destination: destination)
             } else {
                 destURL = fileType.destinationURL(in: Environment(), destination: destination)
+                fallbackURL = nil
             }
             return FileExistsCheck(
                 name: displayName,
                 section: type.doctorSection,
-                path: destURL
+                path: destURL,
+                fallbackPath: fallbackURL
             )
 
         case .shellCommand, .settingsMerge, .gitignoreEntries:
