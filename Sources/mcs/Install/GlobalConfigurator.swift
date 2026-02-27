@@ -233,19 +233,14 @@ struct GlobalConfigurator {
 
         // 0. Validate peer dependencies
         let peerIssues = validatePeerDependencies(packs: packs)
-        if !peerIssues.isEmpty {
-            for issue in peerIssues {
-                switch issue.status {
-                case .missing:
-                    output.error("Pack '\(issue.packIdentifier)' requires peer pack '\(issue.peerPack)' (>= \(issue.minVersion)) which is not selected.")
-                    output.dimmed("  Either select '\(issue.peerPack)' or deselect '\(issue.packIdentifier)'.")
-                case .versionTooLow(let actual):
-                    output.error("Pack '\(issue.packIdentifier)' requires peer pack '\(issue.peerPack)' >= \(issue.minVersion), but v\(actual) is registered.")
-                    output.dimmed("  Update it with: mcs pack update \(issue.peerPack)")
-                case .satisfied:
-                    break
-                }
+        if ConfiguratorSupport.reportPeerDependencyIssues(
+            peerIssues,
+            output: output,
+            severity: .error,
+            missingSuggestion: { packID, peerPack in
+                "Either select '\(peerPack)' or deselect '\(packID)'."
             }
+        ) {
             throw MCSError.configurationFailed(
                 reason: "Unresolved peer dependencies. Fix the issues above and re-run mcs sync --global."
             )

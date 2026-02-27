@@ -46,6 +46,57 @@ enum ConfiguratorSupport {
         )
     }
 
+    /// Severity level for peer dependency issue reporting.
+    enum PeerIssueSeverity: Sendable {
+        case error
+        case warning
+    }
+
+    /// Report peer dependency issues to the console.
+    ///
+    /// - Parameters:
+    ///   - issues: The results to report (`.satisfied` entries are skipped).
+    ///   - output: CLIOutput for printing.
+    ///   - severity: Whether to use `.error()` or `.warn()` for the main message.
+    ///   - missingVerb: Verb describing the missing state ("selected" or "registered").
+    ///   - missingSuggestion: Closure returning the suggestion string for `.missing` peers.
+    /// - Returns: `true` if any non-satisfied issues were reported.
+    @discardableResult
+    static func reportPeerDependencyIssues(
+        _ issues: [PeerDependencyResult],
+        output: CLIOutput,
+        severity: PeerIssueSeverity,
+        missingVerb: String = "selected",
+        missingSuggestion: (_ packIdentifier: String, _ peerPack: String) -> String
+    ) -> Bool {
+        let unsatisfied = issues.filter { $0.status != .satisfied }
+        guard !unsatisfied.isEmpty else { return false }
+
+        for issue in unsatisfied {
+            let header: String
+            let suggestion: String
+
+            switch issue.status {
+            case .missing:
+                header = "Pack '\(issue.packIdentifier)' requires peer pack '\(issue.peerPack)' (>= \(issue.minVersion)) which is not \(missingVerb)."
+                suggestion = missingSuggestion(issue.packIdentifier, issue.peerPack)
+            case .versionTooLow(let actual):
+                header = "Pack '\(issue.packIdentifier)' requires peer pack '\(issue.peerPack)' >= \(issue.minVersion), but v\(actual) is registered."
+                suggestion = "Update it with: mcs pack update \(issue.peerPack)"
+            case .satisfied:
+                continue
+            }
+
+            switch severity {
+            case .error:   output.error(header)
+            case .warning: output.warn(header)
+            }
+            output.dimmed("  \(suggestion)")
+        }
+
+        return true
+    }
+
     /// Present per-pack component multi-select and return excluded component IDs.
     ///
     /// - Parameter componentsProvider: Extracts the relevant components from a pack.
