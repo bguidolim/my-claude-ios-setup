@@ -104,8 +104,8 @@ struct ProjectConfigurator {
             state: projectState,
             header: "Plan",
             output: output,
-            artifactSummary: { printPackArtifactSummary($0) },
-            removalSummary: { _, artifacts in printRemovalSummary(artifacts) }
+            artifactSummary: printPackArtifactSummary,
+            removalSummary: printRemovalSummary
         )
     }
 

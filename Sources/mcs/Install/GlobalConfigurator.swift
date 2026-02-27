@@ -100,8 +100,8 @@ struct GlobalConfigurator {
             state: state,
             header: "Plan (Global)",
             output: output,
-            artifactSummary: { printGlobalArtifactSummary($0) },
-            removalSummary: { _, artifacts in printRemovalSummary(artifacts) }
+            artifactSummary: printGlobalArtifactSummary,
+            removalSummary: printRemovalSummary
         )
     }
 

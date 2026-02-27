@@ -107,7 +107,7 @@ enum ConfiguratorSupport {
         header: String,
         output: CLIOutput,
         artifactSummary: (_ pack: any TechPack) -> Void,
-        removalSummary: (_ packID: String, _ artifacts: PackArtifactRecord) -> Void
+        removalSummary: (_ artifacts: PackArtifactRecord) -> Void
     ) {
         let selectedIDs = Set(packs.map(\.identifier))
         let previousIDs = state.configuredPacks
@@ -138,7 +138,7 @@ enum ConfiguratorSupport {
             output.plain("")
             output.warn("- \(packID) (remove)")
             if let artifacts = state.artifacts(for: packID) {
-                removalSummary(packID, artifacts)
+                removalSummary(artifacts)
             } else {
                 output.dimmed("  No artifact record available")
             }
