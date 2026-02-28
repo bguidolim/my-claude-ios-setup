@@ -3,8 +3,8 @@ import Testing
 
 @testable import mcs
 
-@Suite("CLAUDELocalFreshnessCheck")
-struct CLAUDELocalFreshnessCheckTests {
+@Suite("CLAUDEMDFreshnessCheck")
+struct CLAUDEMDFreshnessCheckTests {
     private func makeTmpDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("mcs-freshness-test-\(UUID().uuidString)")
@@ -53,6 +53,17 @@ struct CLAUDELocalFreshnessCheckTests {
         return TechPackRegistry(packs: fakePacks)
     }
 
+    /// Build a CLAUDEMDFreshnessCheck configured for project-scoped CLAUDE.local.md.
+    private func makeProjectCheck(projectRoot: URL, registry: TechPackRegistry) -> CLAUDEMDFreshnessCheck {
+        CLAUDEMDFreshnessCheck(
+            fileURL: projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD),
+            stateLoader: { try ProjectState(projectRoot: projectRoot) },
+            registry: registry,
+            displayName: "CLAUDE.local.md freshness",
+            syncHint: "mcs sync"
+        )
+    }
+
     // MARK: - Content matches (pass)
 
     @Test("Content matches stored values — pass")
@@ -74,8 +85,7 @@ struct CLAUDELocalFreshnessCheckTests {
                 TemplateContribution(sectionIdentifier: "test-pack", templateContent: templateContent, placeholders: ["__NAME__"]),
             ]),
         ])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .pass(let msg) = result {
@@ -106,8 +116,7 @@ struct CLAUDELocalFreshnessCheckTests {
                 TemplateContribution(sectionIdentifier: "test-pack", templateContent: templateContent, placeholders: ["__NAME__"]),
             ]),
         ])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .fail(let msg) = result {
@@ -135,8 +144,7 @@ struct CLAUDELocalFreshnessCheckTests {
                 TemplateContribution(sectionIdentifier: "test-pack", templateContent: "Different template", placeholders: []),
             ]),
         ])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .warn(let msg) = result {
@@ -154,8 +162,7 @@ struct CLAUDELocalFreshnessCheckTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let registry = makeRegistry(packs: [])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .skip(let msg) = result {
@@ -186,8 +193,7 @@ struct CLAUDELocalFreshnessCheckTests {
                 TemplateContribution(sectionIdentifier: "test-pack", templateContent: templateContent, placeholders: ["__NAME__"]),
             ]),
         ])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let fixResult = check.fix()
         if case .fixed(let msg) = fixResult {
@@ -221,8 +227,7 @@ struct CLAUDELocalFreshnessCheckTests {
 
         // Empty registry — pack no longer exists
         let registry = makeRegistry(packs: [])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         // With no expected sections, SectionValidator marks them as unmanaged (not outdated) → passes
@@ -270,8 +275,7 @@ struct CLAUDELocalFreshnessCheckTests {
                 TemplateContribution(sectionIdentifier: "test-pack", templateContent: "New template", placeholders: []),
             ]),
         ])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .warn(let msg) = result {
@@ -294,8 +298,7 @@ struct CLAUDELocalFreshnessCheckTests {
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: nil)
 
         let registry = makeRegistry(packs: [])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let fixResult = check.fix()
         if case .notFixable(let msg) = fixResult {
@@ -329,8 +332,7 @@ struct CLAUDELocalFreshnessCheckTests {
                 TemplateContribution(sectionIdentifier: "pack-b", templateContent: "Original content", placeholders: []),
             ]),
         ])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .fail(let msg) = result {
@@ -364,8 +366,13 @@ struct CLAUDELocalFreshnessCheckTests {
         let badPack = ThrowingTechPack(identifier: "bad-pack")
         let registry = TechPackRegistry(packs: [goodPack, badPack])
 
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = CLAUDEMDFreshnessCheck(
+            fileURL: tmpDir.appendingPathComponent(Constants.FileNames.claudeLocalMD),
+            stateLoader: { try ProjectState(projectRoot: tmpDir) },
+            registry: registry,
+            displayName: "CLAUDE.local.md freshness",
+            syncHint: "mcs sync"
+        )
 
         let result = check.check()
         if case .warn(let msg) = result {
@@ -376,9 +383,98 @@ struct CLAUDELocalFreshnessCheckTests {
         }
     }
 
+    // MARK: - Outdated sections multi-line format
+
+    @Test("Outdated sections message uses multi-line format with indentation")
+    func outdatedSectionsFormat() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let resolvedValues = ["NAME": "World"]
+
+        try writeClaudeLocal(at: tmpDir, sections: [
+            (id: "pack-a", version: MCSVersion.current, content: "Tampered A"),
+            (id: "pack-b", version: MCSVersion.current, content: "Tampered B"),
+        ])
+        try writeProjectState(at: tmpDir, packs: ["pack-a", "pack-b"], resolvedValues: resolvedValues)
+
+        let registry = makeRegistry(packs: [
+            (id: "pack-a", templates: [
+                TemplateContribution(sectionIdentifier: "pack-a", templateContent: "Original A", placeholders: []),
+            ]),
+            (id: "pack-b", templates: [
+                TemplateContribution(sectionIdentifier: "pack-b", templateContent: "Original B", placeholders: []),
+            ]),
+        ])
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
+
+        let result = check.check()
+        if case .fail(let msg) = result {
+            // Each section appears on its own indented line
+            #expect(msg.contains("↳ pack-a"))
+            #expect(msg.contains("↳ pack-b"))
+            // Hint appears on its own line
+            #expect(msg.contains("run 'mcs sync' or 'mcs doctor --fix'"))
+            // Multi-line format uses newlines
+            #expect(msg.contains("\n"))
+        } else {
+            Issue.record("Expected fail but got \(result)")
+        }
+    }
+
+    // MARK: - fixCommandPreview
+
+    @Test("fixCommandPreview returns a descriptive string")
+    func fixCommandPreviewIsSet() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let registry = makeRegistry(packs: [])
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
+        #expect(check.fixCommandPreview != nil)
+    }
+
+    // MARK: - Unreplaced placeholders warn
+
+    @Test("Sections up to date but with unreplaced placeholders — warns")
+    func unreplacedPlaceholdersWarn() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Template has __REPO_NAME__ with no value provided
+        let templateContent = "Project: __REPO_NAME__"
+        let resolvedValues: [String: String] = [:]
+        let rendered = TemplateEngine.substitute(
+            template: templateContent,
+            values: resolvedValues,
+            emitWarnings: false
+        )
+        // rendered = "Project: __REPO_NAME__" (unreplaced)
+
+        try writeClaudeLocal(at: tmpDir, sections: [
+            (id: "test-pack", version: MCSVersion.current, content: rendered),
+        ])
+        try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: resolvedValues)
+
+        let registry = makeRegistry(packs: [
+            (id: "test-pack", templates: [
+                TemplateContribution(sectionIdentifier: "test-pack", templateContent: templateContent, placeholders: ["__REPO_NAME__"]),
+            ]),
+        ])
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
+
+        let result = check.check()
+        if case .warn(let msg) = result {
+            #expect(msg.contains("unresolved placeholders"))
+            #expect(msg.contains("__REPO_NAME__"))
+        } else {
+            Issue.record("Expected warn but got \(result)")
+        }
+    }
+
     // MARK: - Corrupt state file
 
-    @Test("Corrupt .mcs-project — check warns with descriptive message")
+    @Test("Corrupt state — check warns with descriptive message")
     func corruptStateFileCheck() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -394,18 +490,17 @@ struct CLAUDELocalFreshnessCheckTests {
         try "{corrupt json!!!}".write(to: stateFile, atomically: true, encoding: .utf8)
 
         let registry = makeRegistry(packs: [])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let result = check.check()
         if case .warn(let msg) = result {
-            #expect(msg.contains("could not read .mcs-project"))
+            #expect(msg.contains("could not read state"))
         } else {
             Issue.record("Expected warn but got \(result)")
         }
     }
 
-    @Test("Corrupt .mcs-project — fix fails instead of misdiagnosing as 'never synced'")
+    @Test("Corrupt state — fix fails instead of misdiagnosing as 'never synced'")
     func corruptStateFileFix() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -420,12 +515,11 @@ struct CLAUDELocalFreshnessCheckTests {
         try "{corrupt json!!!}".write(to: stateFile, atomically: true, encoding: .utf8)
 
         let registry = makeRegistry(packs: [])
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: registry)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = makeProjectCheck(projectRoot: tmpDir, registry: registry)
 
         let fixResult = check.fix()
         if case .failed(let msg) = fixResult {
-            #expect(msg.contains("could not read .mcs-project"))
+            #expect(msg.contains("could not read state"))
         } else {
             Issue.record("Expected failed but got \(fixResult)")
         }

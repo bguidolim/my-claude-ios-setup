@@ -9,137 +9,19 @@ struct ProjectDoctorContext: Sendable {
 /// Doctor checks that only run when inside a detected project root.
 enum ProjectDoctorChecks {
     static func checks(context: ProjectDoctorContext) -> [any DoctorCheck] {
-        [
-            CLAUDELocalFreshnessCheck(context: context),
+        let claudeLocalURL = context.projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
+        let projectRoot = context.projectRoot
+        let registry = context.registry
+        return [
+            CLAUDEMDFreshnessCheck(
+                fileURL: claudeLocalURL,
+                stateLoader: { try ProjectState(projectRoot: projectRoot) },
+                registry: registry,
+                displayName: "CLAUDE.local.md freshness",
+                syncHint: "mcs sync"
+            ),
             ProjectStateFileCheck(projectRoot: context.projectRoot),
         ]
-    }
-}
-
-// MARK: - CLAUDE.local.md freshness check
-
-/// Verifies CLAUDE.local.md sections via content-hash comparison against stored values.
-struct CLAUDELocalFreshnessCheck: DoctorCheck, Sendable {
-    let context: ProjectDoctorContext
-
-    var name: String { "CLAUDE.local.md freshness" }
-    var section: String { "Project" }
-
-    func check() -> CheckResult {
-        let claudeLocal = context.projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
-        guard FileManager.default.fileExists(atPath: claudeLocal.path) else {
-            return .skip("CLAUDE.local.md not found")
-        }
-        let content: String
-        do {
-            content = try String(contentsOf: claudeLocal, encoding: .utf8)
-        } catch {
-            return .fail("CLAUDE.local.md exists but could not be read: \(error.localizedDescription)")
-        }
-
-        let sections = TemplateComposer.parseSections(from: content)
-        guard !sections.isEmpty else {
-            return .warn("CLAUDE.local.md has no mcs section markers — run 'mcs sync'")
-        }
-
-        let state: ProjectState
-        do {
-            state = try ProjectState(projectRoot: context.projectRoot)
-        } catch {
-            return .warn("could not read .mcs-project: \(error.localizedDescription) — run 'mcs sync' to regenerate")
-        }
-
-        guard let storedValues = state.resolvedValues else {
-            return .warn("no stored values for verification — run 'mcs sync'")
-        }
-
-        let (expectedSections, buildErrors) = buildExpectedSections(state: state, values: storedValues)
-
-        if !buildErrors.isEmpty {
-            return .warn("could not fully verify: \(buildErrors.joined(separator: "; "))")
-        }
-
-        let result = SectionValidator.validate(fileURL: claudeLocal, expectedSections: expectedSections)
-
-        if result.sections.isEmpty && !expectedSections.isEmpty {
-            return .fail("could not validate sections — file may have changed during check")
-        }
-
-        if result.hasOutdated {
-            let outdated = result.outdatedSections.map { "\($0.identifier) (\($0.detail))" }
-            return .fail("outdated sections: \(outdated.joined(separator: ", ")) — run 'mcs sync' or 'mcs doctor --fix'")
-        }
-        return .pass("all sections up to date (content verified)")
-    }
-
-    func fix() -> FixResult {
-        let state: ProjectState
-        do {
-            state = try ProjectState(projectRoot: context.projectRoot)
-        } catch {
-            return .failed("could not read .mcs-project: \(error.localizedDescription)")
-        }
-
-        guard let storedValues = state.resolvedValues else {
-            return .notFixable("Run 'mcs sync' to update CLAUDE.local.md (no stored values for auto-fix)")
-        }
-
-        let claudeLocal = context.projectRoot.appendingPathComponent(Constants.FileNames.claudeLocalMD)
-        let (expectedSections, buildErrors) = buildExpectedSections(state: state, values: storedValues)
-
-        if !buildErrors.isEmpty {
-            return .failed("could not build expected sections: \(buildErrors.joined(separator: "; "))")
-        }
-
-        do {
-            let updated = try SectionValidator.fix(fileURL: claudeLocal, expectedSections: expectedSections)
-            if updated {
-                return .fixed("re-rendered outdated sections from stored values")
-            }
-            // Verify the file is readable — SectionValidator.fix returns false both when
-            // nothing needs fixing AND when it can't read the file
-            guard FileManager.default.isReadableFile(atPath: claudeLocal.path) else {
-                return .failed("CLAUDE.local.md became unreadable during fix")
-            }
-            return .fixed("no changes needed")
-        } catch {
-            return .failed("could not fix CLAUDE.local.md: \(error.localizedDescription)")
-        }
-    }
-
-    // MARK: - Helpers
-
-    /// Build expected sections by re-rendering current pack templates with stored values.
-    /// Returns both the expected sections and any errors encountered during template loading.
-    private func buildExpectedSections(
-        state: ProjectState,
-        values: [String: String]
-    ) -> (sections: [String: (version: String, content: String)], errors: [String]) {
-        var expected: [String: (version: String, content: String)] = [:]
-        var errors: [String] = []
-
-        for packID in state.configuredPacks {
-            guard let pack = context.registry.pack(for: packID) else { continue }
-            let templates: [TemplateContribution]
-            do {
-                templates = try pack.templates
-            } catch {
-                errors.append("\(packID): failed to load templates — \(error.localizedDescription)")
-                continue
-            }
-            for contribution in templates {
-                let rendered = TemplateEngine.substitute(
-                    template: contribution.templateContent,
-                    values: values
-                )
-                expected[contribution.sectionIdentifier] = (
-                    version: MCSVersion.current,
-                    content: rendered
-                )
-            }
-        }
-
-        return (expected, errors)
     }
 }
 
@@ -182,9 +64,7 @@ struct ProjectStateFileCheck: DoctorCheck, Sendable {
 
         // Infer packs from section markers
         let sections = TemplateComposer.parseSections(from: content)
-        let packIdentifiers = sections
-            .map(\.identifier)
-            .filter { $0 != "core" }
+        let packIdentifiers = sections.map(\.identifier)
 
         // Delete corrupt state file if present so we can rebuild cleanly
         let stateFile = projectRoot

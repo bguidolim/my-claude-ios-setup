@@ -22,19 +22,19 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core instructions
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS instructions
+            <!-- mcs:end ios -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let result = SectionValidator.validate(
             fileURL: file,
-            expectedSections: ["core": (version: "1.0.0", content: "Core instructions")]
+            expectedSections: ["ios": (version: "1.0.0", content: "iOS instructions")]
         )
 
         #expect(result.sections.count == 1)
-        #expect(result.sections[0].identifier == "core")
+        #expect(result.sections[0].identifier == "ios")
         #expect(result.sections[0].isOutdated == false)
         #expect(!result.hasOutdated)
     }
@@ -48,15 +48,15 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
+            <!-- mcs:begin ios v1.0.0 -->
             Old content
-            <!-- mcs:end core -->
+            <!-- mcs:end ios -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let result = SectionValidator.validate(
             fileURL: file,
-            expectedSections: ["core": (version: "2.0.0", content: "New content")]
+            expectedSections: ["ios": (version: "2.0.0", content: "New content")]
         )
 
         #expect(result.sections.count == 1)
@@ -72,24 +72,24 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core only
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS only
+            <!-- mcs:end ios -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let result = SectionValidator.validate(
             fileURL: file,
             expectedSections: [
-                "core": (version: "1.0.0", content: "Core only"),
-                "ios": (version: "1.0.0", content: "iOS stuff"),
+                "ios": (version: "1.0.0", content: "iOS only"),
+                "web": (version: "1.0.0", content: "Web stuff"),
             ]
         )
 
-        let iosStatus = result.sections.first { $0.identifier == "ios" }
-        #expect(iosStatus != nil)
-        #expect(iosStatus?.isOutdated == true)
-        #expect(iosStatus?.installedVersion == "(missing)")
+        let webStatus = result.sections.first { $0.identifier == "web" }
+        #expect(webStatus != nil)
+        #expect(webStatus?.isOutdated == true)
+        #expect(webStatus?.installedVersion == "(missing)")
     }
 
     // MARK: - Preserve user content outside markers
@@ -102,16 +102,16 @@ struct SectionValidatorTests {
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
             My custom notes
-            <!-- mcs:begin core v1.0.0 -->
-            Old core content
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            Old iOS content
+            <!-- mcs:end ios -->
             More custom notes
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let updated = try SectionValidator.fix(
             fileURL: file,
-            expectedSections: ["core": (version: "2.0.0", content: "Updated core content")]
+            expectedSections: ["ios": (version: "2.0.0", content: "Updated iOS content")]
         )
 
         #expect(updated == true)
@@ -119,8 +119,8 @@ struct SectionValidatorTests {
         let result = try String(contentsOf: file, encoding: .utf8)
         #expect(result.contains("My custom notes"))
         #expect(result.contains("More custom notes"))
-        #expect(result.contains("Updated core content"))
-        #expect(!result.contains("Old core content"))
+        #expect(result.contains("Updated iOS content"))
+        #expect(!result.contains("Old iOS content"))
     }
 
     // MARK: - Re-render section preserving surrounding content
@@ -132,23 +132,23 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
+            <!-- mcs:begin ios v1.0.0 -->
             Stale content
-            <!-- mcs:end core -->
+            <!-- mcs:end ios -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let updated = try SectionValidator.fix(
             fileURL: file,
-            expectedSections: ["core": (version: "2.0.0", content: "Fresh content")]
+            expectedSections: ["ios": (version: "2.0.0", content: "Fresh content")]
         )
 
         #expect(updated == true)
 
         let result = try String(contentsOf: file, encoding: .utf8)
-        #expect(result.contains("<!-- mcs:begin core v2.0.0 -->"))
+        #expect(result.contains("<!-- mcs:begin ios v2.0.0 -->"))
         #expect(result.contains("Fresh content"))
-        #expect(result.contains("<!-- mcs:end core -->"))
+        #expect(result.contains("<!-- mcs:end ios -->"))
         #expect(!result.contains("Stale content"))
         #expect(!result.contains("v1.0.0"))
     }
@@ -160,15 +160,15 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
+            <!-- mcs:begin ios v1.0.0 -->
             Current content
-            <!-- mcs:end core -->
+            <!-- mcs:end ios -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let updated = try SectionValidator.fix(
             fileURL: file,
-            expectedSections: ["core": (version: "1.0.0", content: "Current content")]
+            expectedSections: ["ios": (version: "1.0.0", content: "Current content")]
         )
 
         #expect(updated == false)
@@ -200,46 +200,46 @@ struct SectionValidatorTests {
 
         let result = SectionValidator.validate(
             fileURL: missing,
-            expectedSections: ["core": (version: "1.0.0", content: "stuff")]
+            expectedSections: ["ios": (version: "1.0.0", content: "stuff")]
         )
 
         #expect(result.sections.isEmpty)
     }
 
-    // MARK: - Multiple sections (core + ios)
+    // MARK: - Multiple sections
 
-    @Test("Validate file with multiple sections (core + ios)")
+    @Test("Validate file with multiple sections")
     func multipleSections() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
-
             <!-- mcs:begin ios v1.0.0 -->
             iOS content
             <!-- mcs:end ios -->
+
+            <!-- mcs:begin web v1.0.0 -->
+            Web content
+            <!-- mcs:end web -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let result = SectionValidator.validate(
             fileURL: file,
             expectedSections: [
-                "core": (version: "1.0.0", content: "Core content"),
                 "ios": (version: "1.0.0", content: "iOS content"),
+                "web": (version: "1.0.0", content: "Web content"),
             ]
         )
 
         #expect(result.sections.count == 2)
         #expect(!result.hasOutdated)
 
-        let coreStatus = result.sections.first { $0.identifier == "core" }
         let iosStatus = result.sections.first { $0.identifier == "ios" }
-        #expect(coreStatus?.isOutdated == false)
+        let webStatus = result.sections.first { $0.identifier == "web" }
         #expect(iosStatus?.isOutdated == false)
+        #expect(webStatus?.isOutdated == false)
     }
 
     @Test("Fix updates only outdated section among multiple")
@@ -249,34 +249,34 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
-
             <!-- mcs:begin ios v1.0.0 -->
-            Old iOS
+            iOS content
             <!-- mcs:end ios -->
+
+            <!-- mcs:begin web v1.0.0 -->
+            Old Web
+            <!-- mcs:end web -->
             """
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let updated = try SectionValidator.fix(
             fileURL: file,
             expectedSections: [
-                "core": (version: "1.0.0", content: "Core content"),
-                "ios": (version: "2.0.0", content: "New iOS"),
+                "ios": (version: "1.0.0", content: "iOS content"),
+                "web": (version: "2.0.0", content: "New Web"),
             ]
         )
 
         #expect(updated == true)
 
         let result = try String(contentsOf: file, encoding: .utf8)
-        // Core unchanged
-        #expect(result.contains("<!-- mcs:begin core v1.0.0 -->"))
-        #expect(result.contains("Core content"))
-        // iOS updated
-        #expect(result.contains("<!-- mcs:begin ios v2.0.0 -->"))
-        #expect(result.contains("New iOS"))
-        #expect(!result.contains("Old iOS"))
+        // iOS unchanged
+        #expect(result.contains("<!-- mcs:begin ios v1.0.0 -->"))
+        #expect(result.contains("iOS content"))
+        // Web updated
+        #expect(result.contains("<!-- mcs:begin web v2.0.0 -->"))
+        #expect(result.contains("New Web"))
+        #expect(!result.contains("Old Web"))
     }
 
     // MARK: - Unmanaged sections
@@ -288,9 +288,9 @@ struct SectionValidatorTests {
 
         let file = tmpDir.appendingPathComponent("CLAUDE.local.md")
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS
+            <!-- mcs:end ios -->
 
             <!-- mcs:begin custom-pack v0.1.0 -->
             Custom stuff
@@ -300,7 +300,7 @@ struct SectionValidatorTests {
 
         let result = SectionValidator.validate(
             fileURL: file,
-            expectedSections: ["core": (version: "1.0.0", content: "Core")]
+            expectedSections: ["ios": (version: "1.0.0", content: "iOS")]
         )
 
         #expect(result.sections.count == 2)

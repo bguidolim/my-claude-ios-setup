@@ -62,6 +62,11 @@ struct Environment: Sendable {
         mcsDirectory.appendingPathComponent("global-state.json")
     }
 
+    /// Global Claude instructions file (`~/.claude/CLAUDE.md`).
+    var globalClaudeMD: URL {
+        claudeDirectory.appendingPathComponent(Constants.FileNames.claudeMD)
+    }
+
     /// Cross-project index mapping project paths to installed packs (`~/.mcs/projects.yaml`).
     var projectsIndexFile: URL {
         mcsDirectory.appendingPathComponent(Constants.ExternalPacks.projectsIndexFilename)

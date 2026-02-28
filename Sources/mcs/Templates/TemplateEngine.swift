@@ -5,7 +5,8 @@ enum TemplateEngine {
     /// Placeholders are in the format `__PLACEHOLDER_NAME__`.
     static func substitute(
         template: String,
-        values: [String: String]
+        values: [String: String],
+        emitWarnings: Bool = true
     ) -> String {
         var result = template
 
@@ -25,7 +26,7 @@ enum TemplateEngine {
 
         // Warn about unreplaced placeholders
         let unreplaced = findUnreplacedPlaceholders(in: result)
-        if !unreplaced.isEmpty {
+        if emitWarnings, !unreplaced.isEmpty {
             let message = "Unreplaced placeholders found: \(unreplaced.joined(separator: ", "))"
             FileHandle.standardError.write(Data("[WARN] \(message)\n".utf8))
         }

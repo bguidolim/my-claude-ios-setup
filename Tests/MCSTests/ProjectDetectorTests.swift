@@ -431,15 +431,20 @@ struct ProjectDoctorCheckTests {
         return dir
     }
 
-    // MARK: - CLAUDELocalFreshnessCheck
+    // MARK: - CLAUDEMDFreshnessCheck (project-scoped)
 
-    @Test("CLAUDELocalFreshnessCheck skips when no CLAUDE.local.md")
+    @Test("CLAUDEMDFreshnessCheck skips when no CLAUDE.local.md")
     func freshnessCheckSkipsWhenMissing() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = CLAUDEMDFreshnessCheck(
+            fileURL: tmpDir.appendingPathComponent(Constants.FileNames.claudeLocalMD),
+            stateLoader: { try ProjectState(projectRoot: tmpDir) },
+            registry: .shared,
+            displayName: "CLAUDE.local.md freshness",
+            syncHint: "mcs sync"
+        )
         if case .skip = check.check() {
             // expected
         } else {
@@ -447,7 +452,7 @@ struct ProjectDoctorCheckTests {
         }
     }
 
-    @Test("CLAUDELocalFreshnessCheck warns when no section markers")
+    @Test("CLAUDEMDFreshnessCheck warns when no section markers")
     func freshnessCheckWarnsNoMarkers() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -457,8 +462,13 @@ struct ProjectDoctorCheckTests {
             atomically: true, encoding: .utf8
         )
 
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = CLAUDEMDFreshnessCheck(
+            fileURL: tmpDir.appendingPathComponent(Constants.FileNames.claudeLocalMD),
+            stateLoader: { try ProjectState(projectRoot: tmpDir) },
+            registry: .shared,
+            displayName: "CLAUDE.local.md freshness",
+            syncHint: "mcs sync"
+        )
         if case .warn = check.check() {
             // expected
         } else {
@@ -466,7 +476,7 @@ struct ProjectDoctorCheckTests {
         }
     }
 
-    @Test("CLAUDELocalFreshnessCheck warns when no stored values")
+    @Test("CLAUDEMDFreshnessCheck warns when no stored values")
     func freshnessCheckWarnsNoStoredValues() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -482,8 +492,13 @@ struct ProjectDoctorCheckTests {
             atomically: true, encoding: .utf8
         )
 
-        let context = ProjectDoctorContext(projectRoot: tmpDir, registry: .shared)
-        let check = CLAUDELocalFreshnessCheck(context: context)
+        let check = CLAUDEMDFreshnessCheck(
+            fileURL: tmpDir.appendingPathComponent(Constants.FileNames.claudeLocalMD),
+            stateLoader: { try ProjectState(projectRoot: tmpDir) },
+            registry: .shared,
+            displayName: "CLAUDE.local.md freshness",
+            syncHint: "mcs sync"
+        )
         if case .warn = check.check() {
             // expected — no .mcs-project means no stored values
         } else {

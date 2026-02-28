@@ -11,6 +11,9 @@ enum Constants {
         /// The per-project instructions file managed by `mcs sync`.
         static let claudeLocalMD = "CLAUDE.local.md"
 
+        /// The global instructions file managed by `mcs sync --global`.
+        static let claudeMD = "CLAUDE.md"
+
         /// The per-project state file tracking configured packs.
         static let mcsProject = ".mcs-project"
 

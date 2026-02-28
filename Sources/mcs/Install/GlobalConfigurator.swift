@@ -4,9 +4,8 @@ import Foundation
 ///
 /// Installs brew packages, MCP servers (scope "user"), plugins, and files
 /// into `~/.claude/` directories. Composes `~/.claude/settings.json` from
-/// pack hook entries, plugins, and settings files. Does not compose
-/// CLAUDE.local.md or `settings.local.json` — those are project-scoped.
-/// State is tracked at `~/.mcs/global-state.json`.
+/// pack hook entries, plugins, and settings files. Composes `~/.claude/CLAUDE.md`
+/// from pack template contributions. State is tracked at `~/.mcs/global-state.json`.
 struct GlobalConfigurator {
     let environment: Environment
     let output: CLIOutput
@@ -152,6 +151,11 @@ struct GlobalConfigurator {
         if !plugins.isEmpty {
             output.dimmed("  Plugins:      \(plugins.joined(separator: ", "))")
         }
+
+        let templateSections = pack.templateSectionIdentifiers.map { "+\($0) section" }
+        if !templateSections.isEmpty {
+            output.dimmed("  Templates:    \(templateSections.joined(separator: ", ")) in CLAUDE.md")
+        }
     }
 
     private func printRemovalSummary(_ artifacts: PackArtifactRecord) {
@@ -166,6 +170,9 @@ struct GlobalConfigurator {
         }
         for plugin in artifacts.plugins {
             output.dimmed("      Plugin: \(PluginRef(plugin).bareName)")
+        }
+        for section in artifacts.templateSections {
+            output.dimmed("      CLAUDE.md section: \(section)")
         }
     }
 
@@ -232,6 +239,19 @@ struct GlobalConfigurator {
             allValues[key] = value
         }
 
+        // 2c. Pre-load templates (single disk read per pack)
+        var preloadedTemplates: [String: [TemplateContribution]] = [:]
+        for pack in packs {
+            do {
+                preloadedTemplates[pack.identifier] = try pack.templates
+            } catch {
+                output.warn("Could not load templates for \(pack.displayName): \(error.localizedDescription)")
+            }
+        }
+
+        // 2d. Persist resolved values for doctor freshness checks
+        state.setResolvedValues(allValues)
+
         // 3. Install global artifacts for each pack
         for pack in packs {
             let excluded = excludedComponents[pack.identifier] ?? []
@@ -243,7 +263,8 @@ struct GlobalConfigurator {
                 pack,
                 previousArtifacts: previousArtifacts,
                 excludedIDs: excluded,
-                resolvedValues: allValues
+                resolvedValues: allValues,
+                preloadedTemplates: preloadedTemplates[pack.identifier]
             )
             state.setArtifacts(artifacts, for: pack.identifier)
             state.setExcludedComponents(excluded, for: pack.identifier)
@@ -258,6 +279,22 @@ struct GlobalConfigurator {
             if var artifacts = state.artifacts(for: packID) {
                 artifacts.settingsKeys = keys
                 state.setArtifacts(artifacts, for: packID)
+            }
+        }
+
+        // 4c. Compose ~/.claude/CLAUDE.md from ALL selected packs' templates
+        let writtenSections = try composeGlobalClaudeMD(packs: packs, preloadedTemplates: preloadedTemplates, values: allValues)
+
+        // 4d. Reconcile artifact records — remove template sections skipped by placeholder prompt
+        if let writtenSections {
+            for pack in packs {
+                if var artifacts = state.artifacts(for: pack.identifier) {
+                    let before = artifacts.templateSections.count
+                    artifacts.templateSections = artifacts.templateSections.filter { writtenSections.contains($0) }
+                    if artifacts.templateSections.count != before {
+                        state.setArtifacts(artifacts, for: pack.identifier)
+                    }
+                }
             }
         }
 
@@ -296,8 +333,6 @@ struct GlobalConfigurator {
             output.error("Cross-project resource tracking may be inaccurate. Re-run 'mcs sync --global' to retry.")
         }
 
-        // 8. Inform user about project-scoped features that were skipped
-        printProjectScopedSkips(packs: packs)
     }
 
     // MARK: - Pack Unconfiguration
@@ -443,6 +478,34 @@ struct GlobalConfigurator {
             }
         }
 
+        // Remove template sections from ~/.claude/CLAUDE.md
+        if !artifacts.templateSections.isEmpty {
+            let claudeMDPath = environment.globalClaudeMD
+            if !FileManager.default.fileExists(atPath: claudeMDPath.path) {
+                remaining.templateSections = []
+                output.dimmed("  CLAUDE.md not found — clearing template section records")
+            } else {
+                do {
+                    let content = try String(contentsOf: claudeMDPath, encoding: .utf8)
+                    var updated = content
+                    for sectionID in artifacts.templateSections {
+                        updated = TemplateComposer.removeSection(in: updated, sectionIdentifier: sectionID)
+                    }
+                    if updated != content {
+                        try updated.write(to: claudeMDPath, atomically: true, encoding: .utf8)
+                        for sectionID in artifacts.templateSections {
+                            output.dimmed("  Removed template section: \(sectionID)")
+                        }
+                    } else {
+                        output.dimmed("  Template sections already absent from CLAUDE.md")
+                    }
+                    remaining.templateSections = []
+                } catch {
+                    output.warn("Could not update CLAUDE.md: \(error.localizedDescription)")
+                }
+            }
+        }
+
         if remaining.isEmpty {
             state.removePack(packID)
         } else {
@@ -464,7 +527,8 @@ struct GlobalConfigurator {
         _ pack: any TechPack,
         previousArtifacts: PackArtifactRecord? = nil,
         excludedIDs: Set<String> = [],
-        resolvedValues: [String: String] = [:]
+        resolvedValues: [String: String] = [:],
+        preloadedTemplates: [TemplateContribution]? = nil
     ) -> PackArtifactRecord {
         var artifacts = PackArtifactRecord()
         // Carry forward ownership records from previous sync
@@ -567,6 +631,12 @@ struct GlobalConfigurator {
                 // Handled by composeGlobalSettings at the configure level.
                 break
             }
+        }
+
+        // Track template sections from pre-loaded cache only — if loading failed
+        // earlier, we must not record sections that were never written.
+        if let templates = preloadedTemplates {
+            artifacts.templateSections = templates.map(\.sectionIdentifier)
         }
 
         return artifacts
@@ -703,6 +773,124 @@ struct GlobalConfigurator {
         return allValues
     }
 
+    // MARK: - CLAUDE.md Composition
+
+    /// Compose `~/.claude/CLAUDE.md` from all selected packs' pre-loaded template contributions.
+    ///
+    /// Before writing, checks for unreplaced placeholders (e.g. `__REPO_NAME__`) that
+    /// cannot be resolved in global scope. If found, presents a three-way prompt:
+    /// proceed (keep literal placeholders), skip (omit affected sections), or stop.
+    ///
+    /// - Returns: The set of section identifiers actually written, or `nil` if no
+    ///   contributions existed (nothing to reconcile).
+    @discardableResult
+    private func composeGlobalClaudeMD(
+        packs: [any TechPack],
+        preloadedTemplates: [String: [TemplateContribution]],
+        values: [String: String]
+    ) throws -> Set<String>? {
+        var allContributions: [TemplateContribution] = []
+        for pack in packs {
+            if let templates = preloadedTemplates[pack.identifier] {
+                allContributions.append(contentsOf: templates)
+            } else if !pack.templateSectionIdentifiers.isEmpty {
+                output.warn("Skipping templates for \(pack.displayName) (failed to load earlier)")
+            }
+        }
+
+        guard !allContributions.isEmpty else { return nil }
+
+        // Check for unreplaced placeholders before writing
+        var placeholdersBySectionID: [String: [String]] = [:]
+        for contribution in allContributions {
+            let rendered = TemplateEngine.substitute(
+                template: contribution.templateContent,
+                values: values,
+                emitWarnings: false
+            )
+            let unreplaced = TemplateEngine.findUnreplacedPlaceholders(in: rendered)
+            if !unreplaced.isEmpty {
+                placeholdersBySectionID[contribution.sectionIdentifier] = unreplaced
+            }
+        }
+
+        if !placeholdersBySectionID.isEmpty {
+            output.warn("Global templates contain placeholders that cannot be resolved:")
+            for (sectionID, placeholders) in placeholdersBySectionID.sorted(by: { $0.key < $1.key }) {
+                output.warn("  \(placeholders.joined(separator: ", ")) in: \(sectionID)")
+            }
+            output.plain("")
+
+            let choice = promptPlaceholderAction()
+            switch choice {
+            case .proceed:
+                break
+            case .skip:
+                allContributions.removeAll { placeholdersBySectionID.keys.contains($0.sectionIdentifier) }
+                if allContributions.isEmpty {
+                    output.info("All template sections contained unresolved placeholders — skipping CLAUDE.md composition.")
+                    return Set()
+                }
+            case .stop:
+                throw MCSError.configurationFailed(
+                    reason: "Aborted: templates contain unresolved placeholders. "
+                        + "Remove project-scoped placeholders from global templates or provide values via pack prompts."
+                )
+            }
+        }
+
+        try writeGlobalClaudeMD(contributions: allContributions, values: values)
+        return Set(allContributions.map(\.sectionIdentifier))
+    }
+
+    /// Three-way prompt for handling unreplaced template placeholders.
+    private enum PlaceholderAction {
+        case proceed, skip, stop
+    }
+
+    private func promptPlaceholderAction() -> PlaceholderAction {
+        output.plain("  [p]roceed — include sections with unresolved placeholders")
+        output.plain("  [s]kip    — omit sections containing unresolved placeholders")
+        output.plain("  s[t]op    — abort global sync")
+        while true {
+            let answer = output.promptInline("Choose", default: "p").lowercased()
+            switch answer.first {
+            case "p": return .proceed
+            case "s": return .skip
+            case "t": return .stop
+            default:
+                output.plain("  Please enter p, s, or t.")
+            }
+        }
+    }
+
+    /// Compose and write `~/.claude/CLAUDE.md` from template contributions.
+    private func writeGlobalClaudeMD(
+        contributions: [TemplateContribution],
+        values: [String: String]
+    ) throws {
+        let claudeMDPath = environment.globalClaudeMD
+        let existingContent = try? String(contentsOf: claudeMDPath, encoding: .utf8)
+
+        let result = TemplateComposer.composeOrUpdate(
+            existingContent: existingContent,
+            contributions: contributions,
+            values: values,
+            emitWarnings: false
+        )
+
+        for warning in result.warnings {
+            output.warn(warning)
+        }
+
+        if existingContent != nil {
+            var backup = Backup()
+            try backup.backupFile(at: claudeMDPath)
+        }
+        try result.content.write(to: claudeMDPath, atomically: true, encoding: .utf8)
+        output.success("Generated CLAUDE.md (global)")
+    }
+
     // MARK: - Helpers
 
     /// Return a path relative to `~/.claude/` for artifact tracking.
@@ -722,19 +910,4 @@ struct GlobalConfigurator {
         try ConfiguratorSupport.ensureGitignoreEntries(shell: shell)
     }
 
-    /// Print a summary of project-scoped features that were skipped during global sync.
-    private func printProjectScopedSkips(packs: [any TechPack]) {
-        var skipped: [String] = []
-
-        let templateCount = packs.reduce(0) { $0 + $1.templateSectionIdentifiers.count }
-        if templateCount > 0 {
-            skipped.append("CLAUDE.local.md templates (\(templateCount))")
-        }
-
-        if !skipped.isEmpty {
-            output.plain("")
-            output.dimmed("Skipped (project-scoped): \(skipped.joined(separator: ", "))")
-            output.dimmed("Run 'mcs sync' inside a project to apply these.")
-        }
-    }
 }

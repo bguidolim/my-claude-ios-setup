@@ -7,45 +7,59 @@ import Testing
 struct TemplateComposerTests {
     // MARK: - Composition
 
-    @Test("Compose core-only content with no pack contributions")
-    func composeCoreOnly() {
-        let result = TemplateComposer.compose(
-            coreContent: "Core instructions here"
-        )
-
-        let version = MCSVersion.current
-        #expect(result.contains("<!-- mcs:begin core v\(version) -->"))
-        #expect(result.contains("Core instructions here"))
-        #expect(result.contains("<!-- mcs:end core -->"))
-    }
-
-    @Test("Compose core + one pack contribution")
-    func composeCoreAndPack() {
+    @Test("Compose single contribution")
+    func composeSingleContribution() {
         let contribution = TemplateContribution(
             sectionIdentifier: "ios",
-            templateContent: "iOS-specific content for __PROJECT__",
+            templateContent: "iOS instructions here",
+            placeholders: []
+        )
+
+        let result = TemplateComposer.compose(contributions: [contribution])
+
+        let version = MCSVersion.current
+        #expect(result.contains("<!-- mcs:begin ios v\(version) -->"))
+        #expect(result.contains("iOS instructions here"))
+        #expect(result.contains("<!-- mcs:end ios -->"))
+    }
+
+    @Test("Compose multiple contributions")
+    func composeMultipleContributions() {
+        let ios = TemplateContribution(
+            sectionIdentifier: "ios",
+            templateContent: "iOS content",
+            placeholders: []
+        )
+        let web = TemplateContribution(
+            sectionIdentifier: "web",
+            templateContent: "Web-specific content for __PROJECT__",
             placeholders: ["__PROJECT__"]
         )
 
         let result = TemplateComposer.compose(
-            coreContent: "Core content",
-            packContributions: [contribution],
+            contributions: [ios, web],
             values: ["PROJECT": "MyApp"]
         )
 
         let version = MCSVersion.current
-        #expect(result.contains("<!-- mcs:begin core v\(version) -->"))
-        #expect(result.contains("Core content"))
-        #expect(result.contains("<!-- mcs:end core -->"))
         #expect(result.contains("<!-- mcs:begin ios v\(version) -->"))
-        #expect(result.contains("iOS-specific content for MyApp"))
+        #expect(result.contains("iOS content"))
         #expect(result.contains("<!-- mcs:end ios -->"))
+        #expect(result.contains("<!-- mcs:begin web v\(version) -->"))
+        #expect(result.contains("Web-specific content for MyApp"))
+        #expect(result.contains("<!-- mcs:end web -->"))
     }
 
-    @Test("Compose applies template substitution to core content")
-    func composeSubstitutesCore() {
+    @Test("Compose applies template substitution")
+    func composeSubstitutes() {
+        let contribution = TemplateContribution(
+            sectionIdentifier: "ios",
+            templateContent: "Repo: __REPO_NAME__",
+            placeholders: ["__REPO_NAME__"]
+        )
+
         let result = TemplateComposer.compose(
-            coreContent: "Repo: __REPO_NAME__",
+            contributions: [contribution],
             values: ["REPO_NAME": "my-repo"]
         )
 
@@ -57,32 +71,32 @@ struct TemplateComposerTests {
     @Test("Parse sections from composed file")
     func parseSections() {
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core stuff
-            <!-- mcs:end core -->
-
-            <!-- mcs:begin ios v2.0.0 -->
+            <!-- mcs:begin ios v1.0.0 -->
             iOS stuff
             <!-- mcs:end ios -->
+
+            <!-- mcs:begin web v2.0.0 -->
+            Web stuff
+            <!-- mcs:end web -->
             """
 
         let sections = TemplateComposer.parseSections(from: content)
 
         #expect(sections.count == 2)
-        #expect(sections[0].identifier == "core")
+        #expect(sections[0].identifier == "ios")
         #expect(sections[0].version == "1.0.0")
-        #expect(sections[0].content == "Core stuff")
-        #expect(sections[1].identifier == "ios")
+        #expect(sections[0].content == "iOS stuff")
+        #expect(sections[1].identifier == "web")
         #expect(sections[1].version == "2.0.0")
-        #expect(sections[1].content == "iOS stuff")
+        #expect(sections[1].content == "Web stuff")
     }
 
     @Test("Section version parsing extracts version without v prefix")
     func sectionVersionParsing() {
         let content = """
-            <!-- mcs:begin core v3.2.1 -->
+            <!-- mcs:begin ios v3.2.1 -->
             Content
-            <!-- mcs:end core -->
+            <!-- mcs:end ios -->
             """
         let sections = TemplateComposer.parseSections(from: content)
         #expect(sections.first?.version == "3.2.1")
@@ -94,9 +108,9 @@ struct TemplateComposerTests {
     func extractUserContent() {
         let content = """
             User notes at top
-            <!-- mcs:begin core v1.0.0 -->
+            <!-- mcs:begin ios v1.0.0 -->
             Managed content
-            <!-- mcs:end core -->
+            <!-- mcs:end ios -->
             User notes at bottom
             """
 
@@ -126,39 +140,39 @@ struct TemplateComposerTests {
     @Test("Replace specific section preserving others")
     func replaceSection() {
         let original = """
-            <!-- mcs:begin core v1.0.0 -->
-            Old core
-            <!-- mcs:end core -->
-
             <!-- mcs:begin ios v1.0.0 -->
             Old iOS
             <!-- mcs:end ios -->
+
+            <!-- mcs:begin web v1.0.0 -->
+            Old Web
+            <!-- mcs:end web -->
             """
 
         let result = TemplateComposer.replaceSection(
             in: original,
-            sectionIdentifier: "core",
-            newContent: "New core",
+            sectionIdentifier: "ios",
+            newContent: "New iOS",
             newVersion: "2.0.0"
         )
 
-        #expect(result.contains("<!-- mcs:begin core v2.0.0 -->"))
-        #expect(result.contains("New core"))
-        #expect(result.contains("<!-- mcs:end core -->"))
-        // iOS section preserved
-        #expect(result.contains("<!-- mcs:begin ios v1.0.0 -->"))
-        #expect(result.contains("Old iOS"))
+        #expect(result.contains("<!-- mcs:begin ios v2.0.0 -->"))
+        #expect(result.contains("New iOS"))
         #expect(result.contains("<!-- mcs:end ios -->"))
-        // Old core replaced
-        #expect(!result.contains("Old core"))
+        // Web section preserved
+        #expect(result.contains("<!-- mcs:begin web v1.0.0 -->"))
+        #expect(result.contains("Old Web"))
+        #expect(result.contains("<!-- mcs:end web -->"))
+        // Old iOS replaced
+        #expect(!result.contains("Old iOS"))
     }
 
     @Test("Replace appends section if not found")
     func replaceSectionAppends() {
         let original = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS content
+            <!-- mcs:end ios -->
             """
 
         let result = TemplateComposer.replaceSection(
@@ -172,7 +186,7 @@ struct TemplateComposerTests {
         #expect(result.contains("Android content"))
         #expect(result.contains("<!-- mcs:end android -->"))
         // Original preserved
-        #expect(result.contains("Core content"))
+        #expect(result.contains("iOS content"))
     }
 
     // MARK: - Unpaired marker detection
@@ -180,19 +194,19 @@ struct TemplateComposerTests {
     @Test("Detect unpaired begin marker with missing end marker")
     func unpairedBeginMarker() {
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core stuff
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS stuff
             """
         let unpaired = TemplateComposer.unpairedSections(in: content)
-        #expect(unpaired == ["core"])
+        #expect(unpaired == ["ios"])
     }
 
     @Test("No unpaired markers in well-formed content")
     func noPairedMarkers() {
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core stuff
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS stuff
+            <!-- mcs:end ios -->
             """
         let unpaired = TemplateComposer.unpairedSections(in: content)
         #expect(unpaired.isEmpty)
@@ -201,14 +215,14 @@ struct TemplateComposerTests {
     @Test("replaceSection preserves content when target section has unpaired marker")
     func replaceSectionUnpairedSafety() {
         let original = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core stuff
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS stuff
             User content below
             """
         let result = TemplateComposer.replaceSection(
             in: original,
-            sectionIdentifier: "core",
-            newContent: "New core",
+            sectionIdentifier: "ios",
+            newContent: "New iOS",
             newVersion: "2.0.0"
         )
         // Should return original unchanged to prevent data loss
@@ -218,23 +232,23 @@ struct TemplateComposerTests {
     @Test("replaceSection works normally when a different section is unpaired")
     func replaceSectionOtherUnpaired() {
         let original = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core stuff
-            <!-- mcs:end core -->
             <!-- mcs:begin ios v1.0.0 -->
-            iOS stuff without end marker
+            iOS stuff
+            <!-- mcs:end ios -->
+            <!-- mcs:begin web v1.0.0 -->
+            Web stuff without end marker
             """
         let result = TemplateComposer.replaceSection(
             in: original,
-            sectionIdentifier: "core",
-            newContent: "New core",
+            sectionIdentifier: "ios",
+            newContent: "New iOS",
             newVersion: "2.0.0"
         )
-        // Core section should be replaced (it's well-formed)
-        #expect(result.contains("New core"))
-        #expect(!result.contains("Core stuff"))
-        // iOS section preserved as-is (not the target)
-        #expect(result.contains("iOS stuff without end marker"))
+        // iOS section should be replaced (it's well-formed)
+        #expect(result.contains("New iOS"))
+        #expect(!result.contains("iOS stuff"))
+        // Web section preserved as-is (not the target)
+        #expect(result.contains("Web stuff without end marker"))
     }
 
     // MARK: - Section removal
@@ -242,10 +256,6 @@ struct TemplateComposerTests {
     @Test("Remove a section from composed content")
     func removeSection() {
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
-
             <!-- mcs:begin ios v1.0.0 -->
             iOS content
             <!-- mcs:end ios -->
@@ -253,27 +263,31 @@ struct TemplateComposerTests {
             <!-- mcs:begin web v1.0.0 -->
             Web content
             <!-- mcs:end web -->
+
+            <!-- mcs:begin android v1.0.0 -->
+            Android content
+            <!-- mcs:end android -->
             """
 
         let result = TemplateComposer.removeSection(
             in: content,
-            sectionIdentifier: "ios"
+            sectionIdentifier: "web"
         )
 
-        #expect(!result.contains("iOS content"))
-        #expect(!result.contains("mcs:begin ios"))
-        #expect(!result.contains("mcs:end ios"))
+        #expect(!result.contains("Web content"))
+        #expect(!result.contains("mcs:begin web"))
+        #expect(!result.contains("mcs:end web"))
         // Others preserved
-        #expect(result.contains("Core content"))
-        #expect(result.contains("Web content"))
+        #expect(result.contains("iOS content"))
+        #expect(result.contains("Android content"))
     }
 
     @Test("Remove nonexistent section returns original")
     func removeSectionNotFound() {
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS content
+            <!-- mcs:end ios -->
             """
 
         let result = TemplateComposer.removeSection(
@@ -287,14 +301,14 @@ struct TemplateComposerTests {
     @Test("Remove last section returns clean content")
     func removeLastSection() {
         let content = """
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
+            <!-- mcs:begin ios v1.0.0 -->
+            iOS content
+            <!-- mcs:end ios -->
             """
 
         let result = TemplateComposer.removeSection(
             in: content,
-            sectionIdentifier: "core"
+            sectionIdentifier: "ios"
         )
 
         #expect(result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -304,48 +318,50 @@ struct TemplateComposerTests {
     func removeSectionPreservesUserContent() {
         let content = """
             User notes at top
-            <!-- mcs:begin core v1.0.0 -->
-            Core content
-            <!-- mcs:end core -->
-
             <!-- mcs:begin ios v1.0.0 -->
             iOS content
             <!-- mcs:end ios -->
+
+            <!-- mcs:begin web v1.0.0 -->
+            Web content
+            <!-- mcs:end web -->
             User notes at bottom
             """
 
         let result = TemplateComposer.removeSection(
             in: content,
-            sectionIdentifier: "ios"
+            sectionIdentifier: "web"
         )
 
         #expect(result.contains("User notes at top"))
-        #expect(result.contains("Core content"))
+        #expect(result.contains("iOS content"))
         #expect(result.contains("User notes at bottom"))
-        #expect(!result.contains("iOS content"))
+        #expect(!result.contains("Web content"))
     }
 
     // MARK: - Round-trip
 
     @Test("Compose then parse round-trip preserves content")
     func composeParseRoundTrip() {
-        let contribution = TemplateContribution(
+        let ios = TemplateContribution(
             sectionIdentifier: "ios",
             templateContent: "iOS rules",
             placeholders: []
         )
-
-        let composed = TemplateComposer.compose(
-            coreContent: "Core rules",
-            packContributions: [contribution]
+        let web = TemplateContribution(
+            sectionIdentifier: "web",
+            templateContent: "Web rules",
+            placeholders: []
         )
+
+        let composed = TemplateComposer.compose(contributions: [ios, web])
 
         let sections = TemplateComposer.parseSections(from: composed)
         #expect(sections.count == 2)
-        #expect(sections[0].identifier == "core")
-        #expect(sections[0].content == "Core rules")
-        #expect(sections[1].identifier == "ios")
-        #expect(sections[1].content == "iOS rules")
+        #expect(sections[0].identifier == "ios")
+        #expect(sections[0].content == "iOS rules")
+        #expect(sections[1].identifier == "web")
+        #expect(sections[1].content == "Web rules")
     }
 }
 
@@ -353,14 +369,6 @@ struct TemplateComposerTests {
 
 @Suite("TemplateComposer — composeOrUpdate")
 struct ComposeOrUpdateTests {
-    private func coreContribution(_ content: String = "Core rules") -> TemplateContribution {
-        TemplateContribution(
-            sectionIdentifier: "core",
-            templateContent: content,
-            placeholders: []
-        )
-    }
-
     private func packContribution(
         _ id: String,
         _ content: String,
@@ -377,14 +385,14 @@ struct ComposeOrUpdateTests {
     func freshCompose() {
         let result = TemplateComposer.composeOrUpdate(
             existingContent: nil,
-            contributions: [coreContribution()],
+            contributions: [packContribution("ios", "iOS rules")],
             values: [:]
         )
 
         let sections = TemplateComposer.parseSections(from: result.content)
         #expect(sections.count == 1)
-        #expect(sections[0].identifier == "core")
-        #expect(sections[0].content == "Core rules")
+        #expect(sections[0].identifier == "ios")
+        #expect(sections[0].content == "iOS rules")
         #expect(result.warnings.isEmpty)
     }
 
@@ -392,47 +400,50 @@ struct ComposeOrUpdateTests {
     func v1MigrationCompose() {
         let result = TemplateComposer.composeOrUpdate(
             existingContent: "Old v1 content without any markers",
-            contributions: [coreContribution("New core")],
+            contributions: [packContribution("ios", "New iOS")],
             values: [:]
         )
 
         let sections = TemplateComposer.parseSections(from: result.content)
         #expect(sections.count == 1)
-        #expect(sections[0].identifier == "core")
-        #expect(sections[0].content == "New core")
+        #expect(sections[0].identifier == "ios")
+        #expect(sections[0].content == "New iOS")
         #expect(!result.content.contains("Old v1 content"))
         #expect(result.warnings.isEmpty)
     }
 
     @Test("v2 content with markers is updated in place")
     func v2Update() {
-        let existing = TemplateComposer.compose(coreContent: "Old core")
+        let existing = TemplateComposer.compose(
+            contributions: [packContribution("ios", "Old iOS")]
+        )
 
         let result = TemplateComposer.composeOrUpdate(
             existingContent: existing,
-            contributions: [coreContribution("Updated core")],
+            contributions: [packContribution("ios", "Updated iOS")],
             values: [:]
         )
 
         let sections = TemplateComposer.parseSections(from: result.content)
         #expect(sections.count == 1)
-        #expect(sections[0].content == "Updated core")
-        #expect(!result.content.contains("Old core"))
+        #expect(sections[0].content == "Updated iOS")
+        #expect(!result.content.contains("Old iOS"))
         #expect(result.warnings.isEmpty)
     }
 
     @Test("v2 update preserves user content outside markers")
     func v2UpdatePreservesUserContent() {
-        let existing = TemplateComposer.compose(coreContent: "Core")
-            + "\n\nMy custom notes\n"
+        let existing = TemplateComposer.compose(
+            contributions: [packContribution("ios", "iOS")]
+        ) + "\n\nMy custom notes\n"
 
         let result = TemplateComposer.composeOrUpdate(
             existingContent: existing,
-            contributions: [coreContribution("New core")],
+            contributions: [packContribution("ios", "New iOS")],
             values: [:]
         )
 
-        #expect(result.content.contains("New core"))
+        #expect(result.content.contains("New iOS"))
         #expect(result.content.contains("My custom notes"))
         #expect(result.warnings.isEmpty)
     }
@@ -443,7 +454,7 @@ struct ComposeOrUpdateTests {
 
         let result = TemplateComposer.composeOrUpdate(
             existingContent: nil,
-            contributions: [coreContribution(), ios],
+            contributions: [ios],
             values: ["PROJECT": "MyApp.xcodeproj"]
         )
 
@@ -454,24 +465,24 @@ struct ComposeOrUpdateTests {
     @Test("Unpaired markers produce warnings and leave damaged section unchanged")
     func unpairedMarkersWarn() {
         let existing = """
-        <!-- mcs:begin core v1.0.0 -->
-        Core rules
-        <!-- mcs:end core -->
-
         <!-- mcs:begin ios v1.0.0 -->
-        iOS rules without end marker
+        iOS rules
+        <!-- mcs:end ios -->
+
+        <!-- mcs:begin web v1.0.0 -->
+        Web rules without end marker
         """
 
-        let ios = packContribution("ios", "Updated iOS")
+        let web = packContribution("web", "Updated Web")
         let result = TemplateComposer.composeOrUpdate(
             existingContent: existing,
-            contributions: [coreContribution("New core"), ios],
+            contributions: [packContribution("ios", "New iOS"), web],
             values: [:]
         )
 
         #expect(result.warnings.count == 3)
         #expect(result.warnings[0].contains("Unpaired section markers"))
-        // The unpaired "ios" section is left unchanged by replaceSection's safety check
-        #expect(result.content.contains("iOS rules without end marker"))
+        // The unpaired "web" section is left unchanged by replaceSection's safety check
+        #expect(result.content.contains("Web rules without end marker"))
     }
 }

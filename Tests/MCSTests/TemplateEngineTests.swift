@@ -114,4 +114,15 @@ struct TemplateEngineTests {
         )
         #expect(result.contains("__UNKNOWN__"))
     }
+
+    @Test("emitWarnings false suppresses stderr but preserves output")
+    func emitWarningsFalse() {
+        let result = TemplateEngine.substitute(
+            template: "Hello __NAME__, welcome to __PLACE__",
+            values: ["NAME": "World"],
+            emitWarnings: false
+        )
+        // Unreplaced placeholder remains in the output
+        #expect(result == "Hello World, welcome to __PLACE__")
+    }
 }
