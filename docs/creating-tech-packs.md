@@ -321,7 +321,8 @@ Users can add their own content outside these markers — `mcs` only manages the
 
 ### Placeholders
 
-- `__REPO_NAME__` — always available (git repository name)
+- `__REPO_NAME__` — always available (repo name from `git remote get-url origin`; falls back to directory name)
+- `__PROJECT_DIR_NAME__` — always available (project directory name)
 - Custom placeholders are resolved from `prompts` (see below)
 
 ---

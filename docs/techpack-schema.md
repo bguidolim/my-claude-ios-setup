@@ -291,9 +291,12 @@ templates:
 | `contentFile` | `String` | Yes | Path to markdown file in the pack repo |
 | `placeholders` | `[String]` | No | `__PLACEHOLDER__` tokens used in the template |
 
-### Built-in Placeholder
+### Built-in Placeholders
 
-`__REPO_NAME__` is always available — it resolves to the git repository name of the project being configured.
+| Placeholder | Description |
+|---|---|
+| `__REPO_NAME__` | Repository name parsed from `git remote get-url origin` (strips path and `.git` suffix). Falls back to directory name if no remote exists. |
+| `__PROJECT_DIR_NAME__` | The project directory name (from `git rev-parse --show-toplevel`, or the sync target path). |
 
 ### Section Markers
 
