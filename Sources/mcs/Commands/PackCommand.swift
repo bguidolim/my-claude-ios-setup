@@ -709,7 +709,6 @@ struct ListPacks: ParsableCommand {
 
         output.header("Tech Packs")
 
-        // External packs
         let registryData: PackRegistryFile.RegistryData
         do {
             registryData = try registry.load()
@@ -720,11 +719,10 @@ struct ListPacks: ParsableCommand {
 
         if registryData.packs.isEmpty {
             output.plain("")
-            output.dimmed("No external packs installed.")
+            output.dimmed("No packs installed.")
             output.dimmed("Add one with: mcs pack add <source>")
         } else {
             output.plain("")
-            output.sectionHeader("External")
             for entry in registryData.packs {
                 let status = packStatus(entry: entry, env: env)
                 let authorLabel = entry.author.map { "  by \($0)" } ?? ""
