@@ -8,6 +8,7 @@ struct PackRegistryFile: Sendable {
     struct PackEntry: Codable, Sendable, Equatable {
         let identifier: String
         let displayName: String
+        let author: String?
         let version: String
         let sourceURL: String           // Git clone URL or original local path
         let ref: String?                // Git tag/branch/commit

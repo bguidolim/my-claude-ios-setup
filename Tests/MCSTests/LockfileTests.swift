@@ -20,6 +20,7 @@ struct LockfileTests {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: identifier,
+            author: nil,
             version: version,
             sourceURL: "https://example.com/\(identifier)",
             ref: nil,
@@ -38,6 +39,7 @@ struct LockfileTests {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: identifier,
+            author: nil,
             version: "1.0.0",
             sourceURL: localPath,
             ref: nil,

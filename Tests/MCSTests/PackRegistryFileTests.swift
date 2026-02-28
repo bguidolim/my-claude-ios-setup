@@ -20,6 +20,7 @@ struct PackRegistryFileTests {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: "Test Pack",
+            author: nil,
             version: version,
             sourceURL: "https://github.com/user/\(identifier).git",
             ref: "v\(version)",
@@ -38,6 +39,7 @@ struct PackRegistryFileTests {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: "Local Pack",
+            author: nil,
             version: "1.0.0",
             sourceURL: localPath,
             ref: nil,
@@ -321,6 +323,63 @@ struct PackRegistryFileTests {
         #expect(data.packs.count == 1)
         #expect(!data.packs[0].isLocalPack)
         #expect(data.packs[0].isLocal == nil)
+    }
+
+    // MARK: - Author field
+
+    @Test("Pack entry with author round-trips through save/load")
+    func authorRoundTrip() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("registry.yaml")
+        let registry = PackRegistryFile(path: file)
+
+        let entry = PackRegistryFile.PackEntry(
+            identifier: "authored-pack",
+            displayName: "Authored Pack",
+            author: "Jane Doe",
+            version: "1.0.0",
+            sourceURL: "https://github.com/user/authored-pack.git",
+            ref: nil,
+            commitSHA: "abc123",
+            localPath: "authored-pack",
+            addedAt: "2026-01-01T00:00:00Z",
+            trustedScriptHashes: [:],
+            isLocal: nil
+        )
+        var data = PackRegistryFile.RegistryData()
+        registry.register(entry, in: &data)
+        try registry.save(data)
+
+        let loaded = try registry.load()
+        #expect(loaded.packs.count == 1)
+        #expect(loaded.packs[0].author == "Jane Doe")
+    }
+
+    @Test("Decoding registry YAML without author field defaults to nil")
+    func decodeWithoutAuthor() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let yaml = """
+            packs:
+              - identifier: old-pack
+                displayName: Old Pack
+                version: "1.0.0"
+                sourceURL: "https://github.com/user/old-pack.git"
+                commitSHA: abc123
+                localPath: old-pack
+                addedAt: "2026-01-01T00:00:00Z"
+                trustedScriptHashes: {}
+            """
+        let file = tmpDir.appendingPathComponent("registry.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+
+        let registry = PackRegistryFile(path: file)
+        let data = try registry.load()
+        #expect(data.packs.count == 1)
+        #expect(data.packs[0].author == nil)
     }
 
     @Test("resolvedPath returns URL for local pack with absolute path")

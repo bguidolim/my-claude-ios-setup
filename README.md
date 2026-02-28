@@ -211,6 +211,7 @@ schemaVersion: 1
 identifier: my-pack
 displayName: My Pack
 version: "1.0.0"
+author: "Your Name"
 
 components:
   - id: my-server

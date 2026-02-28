@@ -11,6 +11,7 @@ Complete field-by-field reference for `techpack.yaml`. For a tutorial-style intr
 | `displayName` | `String` | Yes | Human-readable name shown in CLI output |
 | `description` | `String` | Yes | One-line description of what the pack provides |
 | `version` | `String` | Yes | Semantic version, e.g. `"1.0.0"` |
+| `author` | `String` | No | Pack author name (shown in `mcs pack list` and `mcs pack add`) |
 | `minMCSVersion` | `String` | No | Minimum `mcs` version required, e.g. `"2.1.0"` |
 | `peerDependencies` | `[PeerDependency]` | No | Other packs this pack requires |
 | `components` | `[Component]` | No | Installable components (see below) |
@@ -454,6 +455,7 @@ identifier: web-dev
 displayName: Web Development
 description: Node.js development environment for Claude Code
 version: "1.0.0"
+author: "Your Name"
 
 prompts:
   - key: FRAMEWORK

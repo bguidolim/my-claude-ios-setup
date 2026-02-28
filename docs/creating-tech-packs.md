@@ -25,6 +25,7 @@ identifier: my-first-pack
 displayName: My First Pack
 description: A simple pack that adds an MCP server
 version: "1.0.0"
+author: "Your Name"
 
 components:
   - id: my-server

@@ -54,6 +54,7 @@ struct ExternalPackLoaderTests {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: "Local Pack",
+            author: nil,
             version: "1.0.0",
             sourceURL: localPath,
             ref: nil,
@@ -296,6 +297,7 @@ struct ExternalPackLoaderTests {
             PackRegistryFile.PackEntry(
                 identifier: "my-pack",
                 displayName: "My Pack",
+                author: nil,
                 version: "1.0.0",
                 sourceURL: "https://github.com/user/my-pack.git",
                 ref: "v1.0.0",
@@ -329,6 +331,7 @@ struct ExternalPackLoaderTests {
             PackRegistryFile.PackEntry(
                 identifier: "ghost-pack",
                 displayName: "Ghost",
+                author: nil,
                 version: "1.0.0",
                 sourceURL: "https://github.com/user/ghost.git",
                 ref: nil,
@@ -387,6 +390,7 @@ struct ExternalPackLoaderTests {
                 PackRegistryFile.PackEntry(
                     identifier: id,
                     displayName: id,
+                    author: nil,
                     version: "1.0.0",
                     sourceURL: "https://github.com/user/\(id).git",
                     ref: nil,
@@ -432,6 +436,7 @@ struct ExternalPackLoaderTests {
             PackRegistryFile.PackEntry(
                 identifier: "target-pack",
                 displayName: "Target",
+                author: nil,
                 version: "1.0.0",
                 sourceURL: "https://github.com/user/target.git",
                 ref: nil,
@@ -605,6 +610,7 @@ struct PeerDependencyValidatorTests {
             displayName: identifier,
             description: "Test",
             version: version,
+            author: nil,
             minMCSVersion: nil,
             peerDependencies: peers.isEmpty ? nil : peers,
             components: nil,
@@ -623,6 +629,7 @@ struct PeerDependencyValidatorTests {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: identifier,
+            author: nil,
             version: version,
             sourceURL: "https://example.com/\(identifier)",
             ref: nil,

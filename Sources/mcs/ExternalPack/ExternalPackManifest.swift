@@ -10,6 +10,7 @@ struct ExternalPackManifest: Codable, Sendable {
     let displayName: String
     let description: String
     let version: String
+    let author: String?
     let minMCSVersion: String?
     let peerDependencies: [PeerDependency]?
     let components: [ExternalComponentDefinition]?
@@ -205,6 +206,7 @@ extension ExternalPackManifest {
             displayName: displayName,
             description: description,
             version: version,
+            author: author,
             minMCSVersion: minMCSVersion,
             peerDependencies: peerDependencies,
             components: normalizedComponents,

@@ -165,6 +165,7 @@ struct ExternalPackManifestTests {
 
         #expect(manifest.schemaVersion == 1)
         #expect(manifest.identifier == "minimal")
+        #expect(manifest.author == nil)
         #expect(manifest.minMCSVersion == nil)
         #expect(manifest.peerDependencies == nil)
         #expect(manifest.components == nil)
@@ -173,6 +174,50 @@ struct ExternalPackManifestTests {
         #expect(manifest.prompts == nil)
         #expect(manifest.configureProject == nil)
         #expect(manifest.supplementaryDoctorChecks == nil)
+    }
+
+    // MARK: - Author field
+
+    @Test("Parse manifest with author field")
+    func parseAuthorField() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let yaml = """
+            schemaVersion: 1
+            identifier: authored-pack
+            displayName: Authored Pack
+            description: A pack with author
+            version: "1.0.0"
+            author: "Jane Doe"
+            """
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+        let manifest = try ExternalPackManifest.load(from: file)
+        try manifest.validate()
+
+        #expect(manifest.author == "Jane Doe")
+    }
+
+    @Test("Normalized manifest preserves author")
+    func normalizedPreservesAuthor() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let yaml = """
+            schemaVersion: 1
+            identifier: my-pack
+            displayName: My Pack
+            description: A pack
+            version: "1.0.0"
+            author: "John Smith"
+            """
+        let file = tmpDir.appendingPathComponent("techpack.yaml")
+        try yaml.write(to: file, atomically: true, encoding: .utf8)
+        let manifest = try ExternalPackManifest.load(from: file)
+        let normalized = try manifest.normalized()
+
+        #expect(normalized.author == "John Smith")
     }
 
     // MARK: - Validation errors
@@ -1695,6 +1740,7 @@ struct ExternalPackManifestTests {
             displayName: "Test",
             description: "Test",
             version: "1.0.0",
+            author: nil,
             minMCSVersion: nil,
             peerDependencies: nil,
             components: nil,

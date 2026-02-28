@@ -76,6 +76,7 @@ struct PackUpdater {
         let updatedEntry = PackRegistryFile.PackEntry(
             identifier: entry.identifier,
             displayName: manifest.displayName,
+            author: manifest.author,
             version: manifest.version,
             sourceURL: entry.sourceURL,
             ref: entry.ref,

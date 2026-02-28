@@ -181,6 +181,7 @@ struct AddPack: LockedCommand {
         let entry = PackRegistryFile.PackEntry(
             identifier: manifest.identifier,
             displayName: manifest.displayName,
+            author: manifest.author,
             version: manifest.version,
             sourceURL: gitURL,
             ref: ref,
@@ -279,6 +280,7 @@ struct AddPack: LockedCommand {
         let entry = PackRegistryFile.PackEntry(
             identifier: manifest.identifier,
             displayName: manifest.displayName,
+            author: manifest.author,
             version: manifest.version,
             sourceURL: path.path,
             ref: nil,
@@ -403,6 +405,9 @@ struct AddPack: LockedCommand {
         output.sectionHeader("Pack Summary")
         output.plain("  Identifier: \(manifest.identifier)")
         output.plain("  Version:    \(manifest.version)")
+        if let author = manifest.author {
+            output.plain("  Author:     \(author)")
+        }
         output.plain("  \(manifest.description)")
 
         if let components = manifest.components, !components.isEmpty {
@@ -495,6 +500,9 @@ struct RemovePack: LockedCommand {
 
         // 3. Show removal plan
         output.info("Pack: \(entry.displayName) v\(entry.version)")
+        if let author = entry.author {
+            output.plain("  Author: \(author)")
+        }
         if entry.isLocalPack {
             output.plain("  Source: \(entry.sourceURL) (local)")
         } else {
@@ -701,7 +709,6 @@ struct ListPacks: ParsableCommand {
 
         output.header("Tech Packs")
 
-        // External packs
         let registryData: PackRegistryFile.RegistryData
         do {
             registryData = try registry.load()
@@ -712,14 +719,14 @@ struct ListPacks: ParsableCommand {
 
         if registryData.packs.isEmpty {
             output.plain("")
-            output.dimmed("No external packs installed.")
+            output.dimmed("No packs installed.")
             output.dimmed("Add one with: mcs pack add <source>")
         } else {
             output.plain("")
-            output.sectionHeader("External")
             for entry in registryData.packs {
                 let status = packStatus(entry: entry, env: env)
-                output.plain("  \(entry.identifier)  v\(entry.version)  \(status)")
+                let authorLabel = entry.author.map { "  by \($0)" } ?? ""
+                output.plain("  \(entry.identifier)  v\(entry.version)\(authorLabel)  \(status)")
             }
         }
 
