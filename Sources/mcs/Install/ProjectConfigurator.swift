@@ -871,10 +871,11 @@ struct ProjectConfigurator {
 
     /// Parse the repository name from a git remote URL.
     ///
-    /// Handles HTTPS, SCP-style SSH, and `ssh://` URL formats:
+    /// Handles any URL with a scheme (`://`) and SCP-style SSH formats:
     /// - `https://github.com/user/repo.git` → `repo`
     /// - `git@github.com:user/repo.git` → `repo`
     /// - `ssh://git@github.com/user/repo.git` → `repo`
+    /// - `file:///Users/dev/repos/my-repo.git` → `my-repo`
     /// - `https://github.com/user/repo` (no `.git`) → `repo`
     ///
     /// Returns `nil` if the URL cannot be parsed.

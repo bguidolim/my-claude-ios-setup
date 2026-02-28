@@ -295,7 +295,7 @@ templates:
 
 | Placeholder | Description |
 |---|---|
-| `__REPO_NAME__` | Repository name parsed from `git remote get-url origin` (strips path and `.git` suffix). Falls back to directory name if no remote exists. |
+| `__REPO_NAME__` | Repository name parsed from `git remote get-url origin` (strips path and `.git` suffix). Falls back to directory name if no remote is configured or the URL cannot be parsed. |
 | `__PROJECT_DIR_NAME__` | The project directory name (from `git rev-parse --show-toplevel`, or the sync target path). |
 
 ### Section Markers
