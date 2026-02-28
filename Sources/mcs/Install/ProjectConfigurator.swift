@@ -844,9 +844,14 @@ struct ProjectConfigurator {
             "/usr/bin/git",
             arguments: ["-C", projectPath.path, "remote", "get-url", "origin"]
         )
-        if remoteResult.succeeded, !remoteResult.stdout.isEmpty,
-           let parsed = Self.parseRepoName(from: remoteResult.stdout) {
-            return parsed
+        if remoteResult.succeeded, !remoteResult.stdout.isEmpty {
+            if let parsed = Self.parseRepoName(from: remoteResult.stdout) {
+                return parsed
+            }
+            output.warn(
+                "Could not parse repo name from remote URL '\(remoteResult.stdout)'"
+                + " — falling back to directory name"
+            )
         }
 
         // Fallback: directory name from git toplevel
@@ -880,14 +885,12 @@ struct ProjectConfigurator {
         let lastComponent: String
 
         if trimmed.contains("://") {
-            // HTTPS or ssh:// — use URL parsing
             guard let url = URL(string: trimmed) else { return nil }
             lastComponent = url.lastPathComponent
         } else if let colonIndex = trimmed.firstIndex(of: ":") {
             // SCP-style: git@host:user/repo.git
-            let pathPart = String(trimmed[trimmed.index(after: colonIndex)...])
-            let segments = pathPart.split(separator: "/")
-            guard let last = segments.last else { return nil }
+            let afterColon = trimmed[trimmed.index(after: colonIndex)...]
+            guard let last = afterColon.split(separator: "/").last else { return nil }
             lastComponent = String(last)
         } else {
             return nil
@@ -895,11 +898,9 @@ struct ProjectConfigurator {
 
         guard !lastComponent.isEmpty, lastComponent != "/" else { return nil }
 
-        // Strip .git suffix
-        if lastComponent.hasSuffix(".git") {
-            let name = String(lastComponent.dropLast(4))
-            return name.isEmpty ? nil : name
-        }
-        return lastComponent
+        let name = lastComponent.hasSuffix(".git")
+            ? String(lastComponent.dropLast(4))
+            : lastComponent
+        return name.isEmpty ? nil : name
     }
 }

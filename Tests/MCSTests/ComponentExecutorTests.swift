@@ -79,4 +79,40 @@ struct ComponentExecutorTests {
 
         #expect(FileManager.default.fileExists(atPath: outsideFile.path))
     }
+
+    // MARK: - installProjectFile placeholder substitution
+
+    @Test("installProjectFile substitutes PROJECT_DIR_NAME and REPO_NAME placeholders")
+    func projectDirNameSubstitution() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let projectPath = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
+
+        let packDir = tmpDir.appendingPathComponent("pack/my-skill")
+        try FileManager.default.createDirectory(at: packDir, withIntermediateDirectories: true)
+        try "Dir: __PROJECT_DIR_NAME__, Repo: __REPO_NAME__".write(
+            to: packDir.appendingPathComponent("SKILL.md"),
+            atomically: true, encoding: .utf8
+        )
+
+        var exec = makeExecutor()
+        let paths = exec.installProjectFile(
+            source: packDir,
+            destination: "my-skill",
+            fileType: .skill,
+            projectPath: projectPath,
+            resolvedValues: ["PROJECT_DIR_NAME": "my-folder", "REPO_NAME": "my-app"]
+        )
+
+        #expect(!paths.isEmpty)
+
+        let installed = projectPath.appendingPathComponent(".claude/skills/my-skill/SKILL.md")
+        let content = try String(contentsOf: installed, encoding: .utf8)
+        #expect(content.contains("Dir: my-folder"))
+        #expect(content.contains("Repo: my-app"))
+        #expect(!content.contains("__PROJECT_DIR_NAME__"))
+        #expect(!content.contains("__REPO_NAME__"))
+    }
 }

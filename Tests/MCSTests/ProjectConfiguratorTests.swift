@@ -1053,62 +1053,9 @@ struct ParseRepoNameTests {
     func trailingNewline() {
         #expect(ProjectConfigurator.parseRepoName(from: "https://github.com/user/repo.git\n") == "repo")
     }
-}
 
-// MARK: - PROJECT_DIR_NAME Substitution Tests
-
-@Suite("ComponentExecutor — PROJECT_DIR_NAME substitution")
-struct ProjectDirNameSubstitutionTests {
-    private let output = CLIOutput(colorsEnabled: false)
-
-    private func makeTmpDir() throws -> URL {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mcs-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        return tmp
-    }
-
-    private func makeExecutor() -> ComponentExecutor {
-        let env = Environment()
-        return ComponentExecutor(
-            environment: env,
-            output: output,
-            shell: ShellRunner(environment: env)
-        )
-    }
-
-    @Test("installProjectFile substitutes PROJECT_DIR_NAME placeholder")
-    func projectDirNameSubstitution() throws {
-        let tmpDir = try makeTmpDir()
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
-        let projectPath = tmpDir.appendingPathComponent("project")
-        try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
-
-        let packDir = tmpDir.appendingPathComponent("pack/my-skill")
-        try FileManager.default.createDirectory(at: packDir, withIntermediateDirectories: true)
-        try "Dir: __PROJECT_DIR_NAME__, Repo: __REPO_NAME__".write(
-            to: packDir.appendingPathComponent("SKILL.md"),
-            atomically: true, encoding: .utf8
-        )
-
-        var exec = makeExecutor()
-        let paths = exec.installProjectFile(
-            source: packDir,
-            destination: "my-skill",
-            fileType: .skill,
-            projectPath: projectPath,
-            resolvedValues: ["PROJECT_DIR_NAME": "my-folder", "REPO_NAME": "my-app"]
-        )
-
-        #expect(!paths.isEmpty)
-
-        let installed = projectPath
-            .appendingPathComponent(".claude/skills/my-skill/SKILL.md")
-        let content = try String(contentsOf: installed, encoding: .utf8)
-        #expect(content.contains("Dir: my-folder"))
-        #expect(content.contains("Repo: my-app"))
-        #expect(!content.contains("__PROJECT_DIR_NAME__"))
-        #expect(!content.contains("__REPO_NAME__"))
+    @Test("file:// protocol URL")
+    func fileProtocol() {
+        #expect(ProjectConfigurator.parseRepoName(from: "file:///Users/dev/repos/my-repo.git") == "my-repo")
     }
 }
