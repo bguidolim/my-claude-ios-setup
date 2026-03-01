@@ -16,6 +16,9 @@ struct DoctorCommand: LockedCommand {
     @Option(name: .long, help: "Only check a specific tech pack (e.g. ios)")
     var pack: String?
 
+    @Flag(name: .long, help: "Check globally-configured packs only")
+    var global = false
+
     var skipLock: Bool { !fix }
 
     func perform() throws {
@@ -29,6 +32,7 @@ struct DoctorCommand: LockedCommand {
             fixMode: fix,
             skipConfirmation: yes,
             packFilter: pack,
+            globalOnly: global,
             registry: registry
         )
         try runner.run()
