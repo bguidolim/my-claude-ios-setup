@@ -11,14 +11,58 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-and-test:
-    name: Build and Test
+  resolve:
+    name: Resolve Dependencies
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve packages
+        run: swift package resolve
+
+  test:
+    name: Test
+    needs: resolve
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
       - name: Test
         run: swift test
 
-      - name: Build universal binary (verify)
+  build:
+    name: Release Build
+    needs: resolve
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build universal binary
         run: swift build -c release --arch arm64 --arch x86_64
