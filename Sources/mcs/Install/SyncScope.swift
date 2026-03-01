@@ -65,7 +65,7 @@ extension SyncScope {
         return SyncScope(
             label: "Project",
             targetPath: claudeDir,
-            stateFile: claudeDir.appendingPathComponent(".mcs-project"),
+            stateFile: claudeDir.appendingPathComponent(Constants.FileNames.mcsProject),
             settingsPath: claudeDir.appendingPathComponent("settings.local.json"),
             claudeFilePath: projectPath.appendingPathComponent(Constants.FileNames.claudeLocalMD),
             scopeIdentifier: projectPath.path,
