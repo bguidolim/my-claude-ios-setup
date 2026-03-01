@@ -549,11 +549,38 @@ mcs sync                  # Local packs pick up changes automatically
 
 ---
 
-## What's Next
+## Quick Start with `mcs export`
 
-**Planned: Auto-export.** A future version of `mcs` will be able to inspect your current Claude Code environment — installed MCP servers, plugins, hooks, settings — and generate a `techpack.yaml` automatically. This means you'll be able to set up Claude Code however you like, then run a single command to package it as a shareable tech pack.
+Already have Claude Code configured the way you like it? Export your setup as a tech pack instead of writing one from scratch:
 
-Until then, the manual approach described in this guide is the way to go. The schema is intentionally simple — most packs can be written in under 50 lines of YAML.
+```bash
+# Export your global setup (~/.claude/)
+mcs export ./my-pack --global
+
+# Export a project-specific setup
+cd ~/Developer/my-project
+mcs export ./my-pack
+
+# Preview without writing
+mcs export ./my-pack --global --dry-run
+```
+
+The export wizard discovers your MCP servers, hooks, skills, commands, plugins, CLAUDE.md sections, gitignore entries, and settings — then generates a complete pack directory with `techpack.yaml` and all supporting files.
+
+**What it handles automatically:**
+- Sensitive env vars (API keys, tokens) are replaced with `__PLACEHOLDER__` tokens and corresponding `prompts:` entries are generated
+- Hook files are matched to their Claude Code events via settings cross-reference
+- CLAUDE.md managed sections are extracted as template files
+- Brew dependency hints are added as TODO comments for MCP server commands
+
+**What you should review after export:**
+- Add `dependencies:` between components (e.g., MCP server depends on brew package)
+- Add `brew:` components for runtime dependencies (node, uv, python3)
+- Add `displayName:` where the auto-generated ID isn't descriptive enough
+- Add `supplementaryDoctorChecks:` for health verification
+- Move the `prompts:` section before `components:` for readability
+
+The generated YAML includes a TODO checklist at the bottom to guide your review.
 
 ---
 

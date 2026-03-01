@@ -9,8 +9,9 @@ Package.swift                    # swift-tools-version: 6.0, macOS 13+
 Sources/mcs/
     CLI.swift                    # @main entry, version, subcommand registration
     Core/                        # Shared infrastructure
-    Commands/                    # CLI subcommands (sync, doctor, cleanup, pack)
+    Commands/                    # CLI subcommands (sync, doctor, cleanup, pack, export)
     Install/                     # Installation logic, project configuration, convergence engine
+    Export/                      # Export wizard (ConfigurationDiscovery, ManifestBuilder, PackWriter)
     TechPack/                    # Tech pack protocol, component model, dependency resolver
     Templates/                   # Template engine and section-based file composition
     Doctor/                      # Diagnostic checks and fix logic
@@ -319,6 +320,16 @@ Key operations:
 - `replaceSection()`: update a section in an existing file
 - `extractUserContent()`: preserve content outside markers during updates
 - `parseSections()`: extract section identifiers
+
+## Export System
+
+`mcs export` is the inverse of `mcs sync`: it reads installed artifacts and generates a `techpack.yaml` manifest. The export flow uses three dedicated types:
+
+1. **ConfigurationDiscovery** (`Export/ConfigurationDiscovery.swift`) — reads live config files (`~/.claude.json`, `settings.json`, `.claude/` directories, `CLAUDE.md`, global gitignore) and produces a `DiscoveredConfiguration` model
+2. **ManifestBuilder** (`Export/ManifestBuilder.swift`) — converts selected artifacts into a YAML string using shorthand syntax. Handles sensitive env var replacement (`__PLACEHOLDER__` tokens + `prompts:` entries), brew dependency hints, and section comments
+3. **PackWriter** (`Export/PackWriter.swift`) — writes the output directory (`techpack.yaml` + copied files + config/settings.json + templates/)
+
+The command (`Commands/ExportCommand.swift`) is a read-only `ParsableCommand` (no lock needed). It supports `--global` for global scope, `--dry-run` for preview, and `--non-interactive` for CI use.
 
 ## Concurrency Model
 
