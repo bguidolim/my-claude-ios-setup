@@ -47,7 +47,7 @@ Per-project paths (created by `mcs sync`):
 - `<project>/.claude/commands/` — per-project slash commands
 - `<project>/.claude/.mcs-project` — per-project state (JSON)
 - `<project>/CLAUDE.local.md` — per-project instructions with section markers
-- `<project>/mcs.lock.yaml` — lockfile pinning pack versions
+- `<project>/mcs.lock.yaml` — lockfile pinning pack commits
 
 ### Settings (`Core/Settings.swift`)
 
@@ -107,7 +107,7 @@ Every file write goes through the backup system. Before overwriting a file, a ti
 
 ### Lockfile (`Core/Lockfile.swift`)
 
-`mcs.lock.yaml` pins pack versions for reproducible builds. Created/updated by `mcs sync` after successful project sync. Used with `--lock` to checkout pinned versions or `--update` to fetch latest and refresh the lockfile.
+`mcs.lock.yaml` pins pack commits for reproducible builds. Created/updated by `mcs sync` after successful project sync. Used with `--lock` to checkout pinned commits or `--update` to fetch latest and refresh the lockfile.
 
 ### ClaudeIntegration (`Core/ClaudeIntegration.swift`)
 
@@ -137,7 +137,6 @@ Shorthand syntax (preferred):
 identifier: my-pack
 displayName: My Pack
 description: What this pack provides
-version: "1.0.0"
 
 components:
   - id: my-server
@@ -175,7 +174,7 @@ Verbose form is also supported — see [Tech Pack Schema](../docs/techpack-schem
 10. **Run pack configure hooks**: pack-specific setup (e.g., generate config files)
 11. **Ensure gitignore entries**: add `.claude/` entries to global gitignore
 12. **Save project state**: write `.mcs-project` with artifact records for each pack
-13. **Write lockfile**: save `mcs.lock.yaml` with current pack versions
+13. **Write lockfile**: save `mcs.lock.yaml` with current pack state
 
 The `--pack` flag bypasses multi-select for CI use: `mcs sync --pack ios --pack web`.
 
@@ -304,11 +303,11 @@ Substitution applies to:
 Manages section markers in `CLAUDE.local.md`:
 
 ```html
-<!-- mcs:begin core v2.0.0 -->
+<!-- mcs:begin core -->
 ... managed content ...
 <!-- mcs:end core -->
 
-<!-- mcs:begin ios v2.0.0 -->
+<!-- mcs:begin ios -->
 ... managed content ...
 <!-- mcs:end ios -->
 
@@ -319,7 +318,7 @@ Key operations:
 - `compose()`: create a new file from contributions
 - `replaceSection()`: update a section in an existing file
 - `extractUserContent()`: preserve content outside markers during updates
-- `parseSections()`: extract section identifiers and versions
+- `parseSections()`: extract section identifiers
 
 ## Concurrency Model
 

@@ -9,7 +9,6 @@ struct PackRegistryFile: Sendable {
         let identifier: String
         let displayName: String
         let author: String?
-        let version: String
         let sourceURL: String           // Git clone URL or original local path
         let ref: String?                // Git tag/branch/commit
         let commitSHA: String           // Exact commit (git) or "local" (local packs)

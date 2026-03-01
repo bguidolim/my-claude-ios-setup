@@ -96,7 +96,7 @@ struct AddPack: LockedCommand {
             throw ExitCode.failure
         }
 
-        output.success("Found pack: \(manifest.displayName) v\(manifest.version)")
+        output.success("Found pack: \(manifest.displayName)")
 
         // 3. Check for collisions with existing packs
         let registryData: PackRegistryFile.RegistryData
@@ -114,7 +114,6 @@ struct AddPack: LockedCommand {
             return
         }
 
-        checkPeerDependencies(manifest: manifest, registryData: registryData, output: output)
         let collisions = checkCollisions(
             manifest: manifest,
             registryData: registryData,
@@ -182,7 +181,6 @@ struct AddPack: LockedCommand {
             identifier: manifest.identifier,
             displayName: manifest.displayName,
             author: manifest.author,
-            version: manifest.version,
             sourceURL: gitURL,
             ref: ref,
             commitSHA: fetchResult.commitSHA,
@@ -201,7 +199,7 @@ struct AddPack: LockedCommand {
             throw ExitCode.failure
         }
 
-        output.success("Pack '\(manifest.displayName)' v\(manifest.version) added successfully.")
+        output.success("Pack '\(manifest.displayName)' added successfully.")
         output.plain("")
         output.info("Next step: run 'mcs sync' to apply the pack to your project.")
     }
@@ -222,7 +220,7 @@ struct AddPack: LockedCommand {
             throw ExitCode.failure
         }
 
-        output.success("Found pack: \(manifest.displayName) v\(manifest.version)")
+        output.success("Found pack: \(manifest.displayName)")
 
         // 2. Check for collisions with existing packs
         let registryData: PackRegistryFile.RegistryData
@@ -238,7 +236,6 @@ struct AddPack: LockedCommand {
             return
         }
 
-        checkPeerDependencies(manifest: manifest, registryData: registryData, output: output)
         let collisions = checkCollisions(
             manifest: manifest,
             registryData: registryData,
@@ -281,7 +278,6 @@ struct AddPack: LockedCommand {
             identifier: manifest.identifier,
             displayName: manifest.displayName,
             author: manifest.author,
-            version: manifest.version,
             sourceURL: path.path,
             ref: nil,
             commitSHA: Constants.ExternalPacks.localCommitSentinel,
@@ -300,32 +296,12 @@ struct AddPack: LockedCommand {
             throw ExitCode.failure
         }
 
-        output.success("Pack '\(manifest.displayName)' v\(manifest.version) added as local pack.")
+        output.success("Pack '\(manifest.displayName)' added as local pack.")
         output.plain("")
         output.info("Next step: run 'mcs sync' to apply the pack to your project.")
     }
 
     // MARK: - Shared Helpers
-
-    private func checkPeerDependencies(
-        manifest: ExternalPackManifest,
-        registryData: PackRegistryFile.RegistryData,
-        output: CLIOutput
-    ) {
-        let peerResults = PeerDependencyValidator.validate(
-            manifest: manifest,
-            registeredPacks: registryData.packs
-        )
-        ConfiguratorSupport.reportPeerDependencyIssues(
-            peerResults,
-            output: output,
-            severity: .warning,
-            missingVerb: "registered",
-            missingSuggestion: { _, peerPack in
-                "Install it with: mcs pack add <\(peerPack)-pack-url>"
-            }
-        )
-    }
 
     private func checkCollisions(
         manifest: ExternalPackManifest,
@@ -376,7 +352,7 @@ struct AddPack: LockedCommand {
         }
 
         if existing.sourceURL == sourceURL {
-            output.warn("Pack '\(manifest.identifier)' is already installed (v\(existing.version)).")
+            output.warn("Pack '\(manifest.identifier)' is already installed.")
         } else {
             output.warn("Pack identifier '\(manifest.identifier)' is already registered from a different source:")
             output.plain("  Current: \(existing.sourceURL)")
@@ -404,7 +380,6 @@ struct AddPack: LockedCommand {
         output.plain("")
         output.sectionHeader("Pack Summary")
         output.plain("  Identifier: \(manifest.identifier)")
-        output.plain("  Version:    \(manifest.version)")
         if let author = manifest.author {
             output.plain("  Author:     \(author)")
         }
@@ -479,7 +454,7 @@ struct RemovePack: LockedCommand {
         }
 
         // 2. Show pack info
-        output.info("Pack: \(entry.displayName) v\(entry.version)")
+        output.info("Pack: \(entry.displayName)")
         if let author = entry.author {
             output.plain("  Author: \(author)")
         }
@@ -704,7 +679,7 @@ struct UpdatePack: LockedCommand {
             case .updated(let updatedEntry):
                 registry.register(updatedEntry, in: &updatedData)
                 updatedCount += 1
-                output.success("\(entry.displayName): updated to v\(updatedEntry.version) (\(updatedEntry.commitSHA.prefix(7)))")
+                output.success("\(entry.displayName): updated (\(updatedEntry.commitSHA.prefix(7)))")
             case .skipped(let reason):
                 output.warn("\(entry.identifier): \(reason)")
             }
@@ -757,7 +732,7 @@ struct ListPacks: ParsableCommand {
             for entry in registryData.packs {
                 let status = packStatus(entry: entry, env: env)
                 let authorLabel = entry.author.map { "  by \($0)" } ?? ""
-                output.plain("  \(entry.identifier)  v\(entry.version)\(authorLabel)  \(status)")
+                output.plain("  \(entry.identifier)\(authorLabel)  \(status)")
             }
         }
 

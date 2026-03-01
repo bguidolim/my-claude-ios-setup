@@ -77,7 +77,6 @@ struct PackUpdater {
             identifier: entry.identifier,
             displayName: manifest.displayName,
             author: manifest.author,
-            version: manifest.version,
             sourceURL: entry.sourceURL,
             ref: entry.ref,
             commitSHA: result.commitSHA,

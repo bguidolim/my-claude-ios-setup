@@ -93,13 +93,7 @@ struct ExternalPackManifestTests {
         #expect(manifest.identifier == "my-pack")
         #expect(manifest.displayName == "My Pack")
         #expect(manifest.description == "A test tech pack")
-        #expect(manifest.version == "1.0.0")
         #expect(manifest.minMCSVersion == "2.0.0")
-
-        // Peer dependencies
-        #expect(manifest.peerDependencies?.count == 1)
-        #expect(manifest.peerDependencies?[0].pack == "ios")
-        #expect(manifest.peerDependencies?[0].minVersion == "1.0.0")
 
         // Components
         #expect(manifest.components?.count == 2)
@@ -167,7 +161,6 @@ struct ExternalPackManifestTests {
         #expect(manifest.identifier == "minimal")
         #expect(manifest.author == nil)
         #expect(manifest.minMCSVersion == nil)
-        #expect(manifest.peerDependencies == nil)
         #expect(manifest.components == nil)
         #expect(manifest.templates == nil)
         #expect(manifest.gitignoreEntries == nil)
@@ -1739,10 +1732,8 @@ struct ExternalPackManifestTests {
             identifier: "my-pack",
             displayName: "Test",
             description: "Test",
-            version: "1.0.0",
             author: nil,
             minMCSVersion: nil,
-            peerDependencies: nil,
             components: nil,
             templates: [
                 ExternalTemplateDefinition(

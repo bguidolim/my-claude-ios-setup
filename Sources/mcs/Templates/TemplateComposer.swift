@@ -4,14 +4,13 @@ enum TemplateComposer {
     /// A parsed section from a composed file.
     struct Section {
         let identifier: String  // e.g., "ios", "swift"
-        let version: String     // e.g., "2.0.0"
         let content: String     // Content between markers
     }
 
     // MARK: - Marker generation
 
-    static func beginMarker(identifier: String, version: String) -> String {
-        "<!-- mcs:begin \(identifier) v\(version) -->"
+    static func beginMarker(identifier: String) -> String {
+        "<!-- mcs:begin \(identifier) -->"
     }
 
     static func endMarker(identifier: String) -> String {
@@ -21,13 +20,11 @@ enum TemplateComposer {
     // MARK: - Composition
 
     /// Compose a file from tech pack template contributions.
-    /// Uses `MCSVersion.current` for all section markers.
     static func compose(
         contributions: [TemplateContribution],
         values: [String: String] = [:],
         emitWarnings: Bool = true
     ) -> String {
-        let version = MCSVersion.current
         var parts: [String] = []
 
         for (index, contribution) in contributions.enumerated() {
@@ -37,10 +34,7 @@ enum TemplateComposer {
                 emitWarnings: emitWarnings
             )
             if index > 0 { parts.append("") }
-            parts.append(beginMarker(
-                identifier: contribution.sectionIdentifier,
-                version: version
-            ))
+            parts.append(beginMarker(identifier: contribution.sectionIdentifier))
             parts.append(processedContent)
             parts.append(endMarker(identifier: contribution.sectionIdentifier))
         }
@@ -55,19 +49,18 @@ enum TemplateComposer {
         var sections: [Section] = []
         let lines = content.components(separatedBy: "\n")
 
-        var currentSection: (identifier: String, version: String)?
+        var currentSection: String?
         var currentContent: [String] = []
 
         for line in lines {
-            if let parsed = parseBeginMarker(line) {
-                currentSection = parsed
+            if let identifier = parseBeginMarker(line) {
+                currentSection = identifier
                 currentContent = []
             } else if let identifier = parseEndMarker(line),
                       let section = currentSection,
-                      section.identifier == identifier {
+                      section == identifier {
                 sections.append(Section(
-                    identifier: section.identifier,
-                    version: section.version,
+                    identifier: section,
                     content: currentContent.joined(separator: "\n")
                 ))
                 currentSection = nil
@@ -107,12 +100,12 @@ enum TemplateComposer {
         var unpaired: [String] = []
 
         for line in lines {
-            if let parsed = parseBeginMarker(line) {
+            if let identifier = parseBeginMarker(line) {
                 // If there was already an open section, it's unpaired
                 if let previous = openSections.last {
                     unpaired.append(previous)
                 }
-                openSections.append(parsed.identifier)
+                openSections.append(identifier)
             } else if let identifier = parseEndMarker(line) {
                 if openSections.last == identifier {
                     openSections.removeLast()
@@ -134,8 +127,7 @@ enum TemplateComposer {
     static func replaceSection(
         in existingContent: String,
         sectionIdentifier: String,
-        newContent: String,
-        newVersion: String
+        newContent: String
     ) -> String {
         // Safety check: refuse to modify if the target section has an unpaired marker.
         // Without this, a missing end marker would cause all subsequent content to be dropped.
@@ -151,12 +143,9 @@ enum TemplateComposer {
 
         for line in lines {
             if let parsed = parseBeginMarker(line),
-               parsed.identifier == sectionIdentifier {
+               parsed == sectionIdentifier {
                 // Replace this section
-                result.append(beginMarker(
-                    identifier: sectionIdentifier,
-                    version: newVersion
-                ))
+                result.append(beginMarker(identifier: sectionIdentifier))
                 result.append(newContent)
                 skipUntilEnd = true
                 replaced = true
@@ -172,10 +161,7 @@ enum TemplateComposer {
         // If section wasn't found, append it
         if !replaced {
             result.append("")
-            result.append(beginMarker(
-                identifier: sectionIdentifier,
-                version: newVersion
-            ))
+            result.append(beginMarker(identifier: sectionIdentifier))
             result.append(newContent)
             result.append(endMarker(identifier: sectionIdentifier))
         }
@@ -237,7 +223,6 @@ enum TemplateComposer {
         values: [String: String],
         emitWarnings: Bool = true
     ) -> ComposeResult {
-        let version = MCSVersion.current
         var warnings: [String] = []
 
         let unpaired = unpairedSections(in: existingContent)
@@ -259,8 +244,7 @@ enum TemplateComposer {
             updated = replaceSection(
                 in: updated,
                 sectionIdentifier: contribution.sectionIdentifier,
-                newContent: processedContent,
-                newVersion: version
+                newContent: processedContent
             )
         }
 
@@ -292,7 +276,7 @@ enum TemplateComposer {
 
         for line in lines {
             if let parsed = parseBeginMarker(line),
-               parsed.identifier == sectionIdentifier {
+               parsed == sectionIdentifier {
                 skipUntilEnd = true
                 found = true
                 // Also skip a preceding blank line if we left one
@@ -319,21 +303,19 @@ enum TemplateComposer {
 
     // MARK: - Private helpers
 
-    private static func parseBeginMarker(
-        _ line: String
-    ) -> (identifier: String, version: String)? {
+    /// Parse a begin marker, accepting both new and legacy formats:
+    /// - New: `<!-- mcs:begin identifier -->`
+    /// - Legacy: `<!-- mcs:begin identifier vX.Y.Z -->`
+    private static func parseBeginMarker(_ line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        // Match: <!-- mcs:begin identifier vX.Y.Z -->
         guard trimmed.hasPrefix("<!-- mcs:begin "),
               trimmed.hasSuffix(" -->") else { return nil }
         let inner = trimmed
             .dropFirst("<!-- mcs:begin ".count)
             .dropLast(" -->".count)
         let parts = inner.split(separator: " ", maxSplits: 1)
-        guard parts.count == 2, parts[1].hasPrefix("v") else { return nil }
-        let identifier = String(parts[0])
-        let version = String(parts[1].dropFirst()) // drop "v"
-        return (identifier, version)
+        guard !parts.isEmpty else { return nil }
+        return String(parts[0])
     }
 
     private static func parseEndMarker(_ line: String) -> String? {

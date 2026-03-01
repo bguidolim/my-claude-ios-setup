@@ -17,8 +17,7 @@ struct TemplateComposerTests {
 
         let result = TemplateComposer.compose(contributions: [contribution])
 
-        let version = MCSVersion.current
-        #expect(result.contains("<!-- mcs:begin ios v\(version) -->"))
+        #expect(result.contains("<!-- mcs:begin ios -->"))
         #expect(result.contains("iOS instructions here"))
         #expect(result.contains("<!-- mcs:end ios -->"))
     }
@@ -41,11 +40,10 @@ struct TemplateComposerTests {
             values: ["PROJECT": "MyApp"]
         )
 
-        let version = MCSVersion.current
-        #expect(result.contains("<!-- mcs:begin ios v\(version) -->"))
+        #expect(result.contains("<!-- mcs:begin ios -->"))
         #expect(result.contains("iOS content"))
         #expect(result.contains("<!-- mcs:end ios -->"))
-        #expect(result.contains("<!-- mcs:begin web v\(version) -->"))
+        #expect(result.contains("<!-- mcs:begin web -->"))
         #expect(result.contains("Web-specific content for MyApp"))
         #expect(result.contains("<!-- mcs:end web -->"))
     }
@@ -71,11 +69,11 @@ struct TemplateComposerTests {
     @Test("Parse sections from composed file")
     func parseSections() {
         let content = """
-            <!-- mcs:begin ios v1.0.0 -->
+            <!-- mcs:begin ios -->
             iOS stuff
             <!-- mcs:end ios -->
 
-            <!-- mcs:begin web v2.0.0 -->
+            <!-- mcs:begin web -->
             Web stuff
             <!-- mcs:end web -->
             """
@@ -84,22 +82,22 @@ struct TemplateComposerTests {
 
         #expect(sections.count == 2)
         #expect(sections[0].identifier == "ios")
-        #expect(sections[0].version == "1.0.0")
         #expect(sections[0].content == "iOS stuff")
         #expect(sections[1].identifier == "web")
-        #expect(sections[1].version == "2.0.0")
         #expect(sections[1].content == "Web stuff")
     }
 
-    @Test("Section version parsing extracts version without v prefix")
-    func sectionVersionParsing() {
+    @Test("Parse sections handles legacy markers with version token")
+    func parseSectionsLegacyFormat() {
         let content = """
             <!-- mcs:begin ios v3.2.1 -->
             Content
             <!-- mcs:end ios -->
             """
         let sections = TemplateComposer.parseSections(from: content)
-        #expect(sections.first?.version == "3.2.1")
+        #expect(sections.count == 1)
+        #expect(sections[0].identifier == "ios")
+        #expect(sections[0].content == "Content")
     }
 
     // MARK: - User content extraction
@@ -152,15 +150,13 @@ struct TemplateComposerTests {
         let result = TemplateComposer.replaceSection(
             in: original,
             sectionIdentifier: "ios",
-            newContent: "New iOS",
-            newVersion: "2.0.0"
+            newContent: "New iOS"
         )
 
-        #expect(result.contains("<!-- mcs:begin ios v2.0.0 -->"))
+        #expect(result.contains("<!-- mcs:begin ios -->"))
         #expect(result.contains("New iOS"))
         #expect(result.contains("<!-- mcs:end ios -->"))
-        // Web section preserved
-        #expect(result.contains("<!-- mcs:begin web v1.0.0 -->"))
+        // Web section preserved (legacy markers remain as-is until replaced)
         #expect(result.contains("Old Web"))
         #expect(result.contains("<!-- mcs:end web -->"))
         // Old iOS replaced
@@ -178,11 +174,10 @@ struct TemplateComposerTests {
         let result = TemplateComposer.replaceSection(
             in: original,
             sectionIdentifier: "android",
-            newContent: "Android content",
-            newVersion: "1.0.0"
+            newContent: "Android content"
         )
 
-        #expect(result.contains("<!-- mcs:begin android v1.0.0 -->"))
+        #expect(result.contains("<!-- mcs:begin android -->"))
         #expect(result.contains("Android content"))
         #expect(result.contains("<!-- mcs:end android -->"))
         // Original preserved
@@ -222,8 +217,7 @@ struct TemplateComposerTests {
         let result = TemplateComposer.replaceSection(
             in: original,
             sectionIdentifier: "ios",
-            newContent: "New iOS",
-            newVersion: "2.0.0"
+            newContent: "New iOS"
         )
         // Should return original unchanged to prevent data loss
         #expect(result == original)
@@ -241,8 +235,7 @@ struct TemplateComposerTests {
         let result = TemplateComposer.replaceSection(
             in: original,
             sectionIdentifier: "ios",
-            newContent: "New iOS",
-            newVersion: "2.0.0"
+            newContent: "New iOS"
         )
         // iOS section should be replaced (it's well-formed)
         #expect(result.contains("New iOS"))

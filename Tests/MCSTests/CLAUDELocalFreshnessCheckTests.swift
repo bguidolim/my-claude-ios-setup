@@ -13,10 +13,10 @@ struct CLAUDEMDFreshnessCheckTests {
     }
 
     /// Create a CLAUDE.local.md file with section markers and content.
-    private func writeClaudeLocal(at projectRoot: URL, sections: [(id: String, version: String, content: String)]) throws {
+    private func writeClaudeLocal(at projectRoot: URL, sections: [(id: String, content: String)]) throws {
         var lines: [String] = []
         for section in sections {
-            lines.append("<!-- mcs:begin \(section.id) v\(section.version) -->")
+            lines.append("<!-- mcs:begin \(section.id) -->")
             lines.append(section.content)
             lines.append("<!-- mcs:end \(section.id) -->")
             lines.append("")
@@ -82,7 +82,7 @@ struct CLAUDEMDFreshnessCheckTests {
         let rendered = TemplateEngine.substitute(template: templateContent, values: resolvedValues)
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: rendered),
+            (id: "test-pack", content: rendered),
         ])
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: resolvedValues)
 
@@ -113,7 +113,7 @@ struct CLAUDEMDFreshnessCheckTests {
 
         // Write CLAUDE.local.md with manually-modified content
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: "Hello World — I edited this!"),
+            (id: "test-pack", content: "Hello World — I edited this!"),
         ])
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: resolvedValues)
 
@@ -140,7 +140,7 @@ struct CLAUDEMDFreshnessCheckTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: "Some content"),
+            (id: "test-pack", content: "Some content"),
         ])
         // Save state WITHOUT resolved values
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: nil)
@@ -190,7 +190,7 @@ struct CLAUDEMDFreshnessCheckTests {
 
         // Write drifted content
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: "Hello World — tampered!"),
+            (id: "test-pack", content: "Hello World — tampered!"),
         ])
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: resolvedValues)
 
@@ -227,7 +227,7 @@ struct CLAUDEMDFreshnessCheckTests {
         let resolvedValues = ["NAME": "World"]
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "removed-pack", version: MCSVersion.current, content: "Hello World"),
+            (id: "removed-pack", content: "Hello World"),
         ])
         try writeProjectState(at: tmpDir, packs: ["removed-pack"], resolvedValues: resolvedValues)
 
@@ -272,7 +272,7 @@ struct CLAUDEMDFreshnessCheckTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: "1.0.0", content: "Old content"),
+            (id: "test-pack", content: "Old content"),
         ])
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: nil)
 
@@ -299,7 +299,7 @@ struct CLAUDEMDFreshnessCheckTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: "1.0.0", content: "Old content"),
+            (id: "test-pack", content: "Old content"),
         ])
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: nil)
 
@@ -325,8 +325,8 @@ struct CLAUDEMDFreshnessCheckTests {
         let goodRendered = TemplateEngine.substitute(template: "Hello __NAME__", values: resolvedValues)
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "pack-a", version: MCSVersion.current, content: goodRendered),
-            (id: "pack-b", version: MCSVersion.current, content: "This was tampered"),
+            (id: "pack-a", content: goodRendered),
+            (id: "pack-b", content: "This was tampered"),
         ])
         try writeProjectState(at: tmpDir, packs: ["pack-a", "pack-b"], resolvedValues: resolvedValues)
 
@@ -360,8 +360,8 @@ struct CLAUDEMDFreshnessCheckTests {
         let rendered = TemplateEngine.substitute(template: "Hello __NAME__", values: resolvedValues)
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "good-pack", version: MCSVersion.current, content: rendered),
-            (id: "bad-pack", version: MCSVersion.current, content: "Some content"),
+            (id: "good-pack", content: rendered),
+            (id: "bad-pack", content: "Some content"),
         ])
         try writeProjectState(at: tmpDir, packs: ["good-pack", "bad-pack"], resolvedValues: resolvedValues)
 
@@ -399,8 +399,8 @@ struct CLAUDEMDFreshnessCheckTests {
         let resolvedValues = ["NAME": "World"]
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "pack-a", version: MCSVersion.current, content: "Tampered A"),
-            (id: "pack-b", version: MCSVersion.current, content: "Tampered B"),
+            (id: "pack-a", content: "Tampered A"),
+            (id: "pack-b", content: "Tampered B"),
         ])
         try writeProjectState(at: tmpDir, packs: ["pack-a", "pack-b"], resolvedValues: resolvedValues)
 
@@ -458,7 +458,7 @@ struct CLAUDEMDFreshnessCheckTests {
         // rendered = "Project: __REPO_NAME__" (unreplaced)
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: rendered),
+            (id: "test-pack", content: rendered),
         ])
         try writeProjectState(at: tmpDir, packs: ["test-pack"], resolvedValues: resolvedValues)
 
@@ -494,7 +494,7 @@ struct CLAUDEMDFreshnessCheckTests {
         // Only section-a was written (user skipped section-b due to unresolved placeholder)
         let renderedA = TemplateEngine.substitute(template: templateA, values: resolvedValues, emitWarnings: false)
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack.section-a", version: MCSVersion.current, content: renderedA),
+            (id: "test-pack.section-a", content: renderedA),
         ])
 
         // Artifact record tracks only section-a (section-b was skipped)
@@ -532,7 +532,7 @@ struct CLAUDEMDFreshnessCheckTests {
 
         // Write section-a with drifted content to trigger a fix
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack.section-a", version: MCSVersion.current, content: "Tampered content"),
+            (id: "test-pack.section-a", content: "Tampered content"),
         ])
 
         // Artifact record tracks only section-a
@@ -572,7 +572,7 @@ struct CLAUDEMDFreshnessCheckTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: "Some content"),
+            (id: "test-pack", content: "Some content"),
         ])
 
         // Write corrupt (non-JSON) data to .mcs-project
@@ -598,7 +598,7 @@ struct CLAUDEMDFreshnessCheckTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try writeClaudeLocal(at: tmpDir, sections: [
-            (id: "test-pack", version: MCSVersion.current, content: "Some content"),
+            (id: "test-pack", content: "Some content"),
         ])
 
         let claudeDir = tmpDir.appendingPathComponent(Constants.FileNames.claudeDirectory)

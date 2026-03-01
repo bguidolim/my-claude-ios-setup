@@ -14,16 +14,14 @@ struct PackRegistryFileTests {
     }
 
     private func sampleEntry(
-        identifier: String = "test-pack",
-        version: String = "1.0.0"
+        identifier: String = "test-pack"
     ) -> PackRegistryFile.PackEntry {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: "Test Pack",
             author: nil,
-            version: version,
             sourceURL: "https://github.com/user/\(identifier).git",
-            ref: "v\(version)",
+            ref: "v1.0.0",
             commitSHA: "abc123def456",
             localPath: identifier,
             addedAt: "2026-02-22T00:00:00Z",
@@ -40,7 +38,6 @@ struct PackRegistryFileTests {
             identifier: identifier,
             displayName: "Local Pack",
             author: nil,
-            version: "1.0.0",
             sourceURL: localPath,
             ref: nil,
             commitSHA: "local",
@@ -94,7 +91,6 @@ struct PackRegistryFileTests {
         let loaded = try registry.load()
         #expect(loaded.packs.count == 1)
         #expect(loaded.packs[0].identifier == "test-pack")
-        #expect(loaded.packs[0].version == "1.0.0")
         #expect(loaded.packs[0].sourceURL == "https://github.com/user/test-pack.git")
         #expect(loaded.packs[0].trustedScriptHashes["scripts/setup.sh"] == "sha256hash")
     }
@@ -135,11 +131,10 @@ struct PackRegistryFileTests {
         let registry = PackRegistryFile(path: URL(fileURLWithPath: "/tmp/unused"))
         var data = PackRegistryFile.RegistryData()
 
-        registry.register(sampleEntry(identifier: "pack-a", version: "1.0.0"), in: &data)
-        registry.register(sampleEntry(identifier: "pack-a", version: "2.0.0"), in: &data)
+        registry.register(sampleEntry(identifier: "pack-a"), in: &data)
+        registry.register(sampleEntry(identifier: "pack-a"), in: &data)
 
         #expect(data.packs.count == 1)
-        #expect(data.packs[0].version == "2.0.0")
     }
 
     // MARK: - Remove
@@ -339,7 +334,6 @@ struct PackRegistryFileTests {
             identifier: "authored-pack",
             displayName: "Authored Pack",
             author: "Jane Doe",
-            version: "1.0.0",
             sourceURL: "https://github.com/user/authored-pack.git",
             ref: nil,
             commitSHA: "abc123",

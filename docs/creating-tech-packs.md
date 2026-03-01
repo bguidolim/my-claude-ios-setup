@@ -24,7 +24,6 @@ schemaVersion: 1
 identifier: my-first-pack
 displayName: My First Pack
 description: A simple pack that adds an MCP server
-version: "1.0.0"
 author: "Your Name"
 
 components:
@@ -315,7 +314,7 @@ Never run `xcodebuild` directly — use XcodeBuildMCP tools instead.
 When a user runs `mcs sync`, the template content is inserted into `CLAUDE.local.md` between section markers:
 
 ```markdown
-<!-- mcs:begin my-pack.instructions v1.0.0 -->
+<!-- mcs:begin my-pack.instructions -->
 ## Build & Test
 
 Always use MyApp.xcworkspace as the project file.

@@ -30,7 +30,7 @@ struct SectionValidatorTests {
 
         let result = SectionValidator.validate(
             fileURL: file,
-            expectedSections: ["ios": (version: "1.0.0", content: "iOS instructions")]
+            expectedSections: ["ios": "iOS instructions"]
         )
 
         #expect(result.sections.count == 1)
@@ -56,7 +56,7 @@ struct SectionValidatorTests {
 
         let result = SectionValidator.validate(
             fileURL: file,
-            expectedSections: ["ios": (version: "2.0.0", content: "New content")]
+            expectedSections: ["ios": "New content"]
         )
 
         #expect(result.sections.count == 1)
@@ -81,15 +81,15 @@ struct SectionValidatorTests {
         let result = SectionValidator.validate(
             fileURL: file,
             expectedSections: [
-                "ios": (version: "1.0.0", content: "iOS only"),
-                "web": (version: "1.0.0", content: "Web stuff"),
+                "ios": "iOS only",
+                "web": "Web stuff",
             ]
         )
 
         let webStatus = result.sections.first { $0.identifier == "web" }
         #expect(webStatus != nil)
         #expect(webStatus?.isOutdated == true)
-        #expect(webStatus?.installedVersion == "(missing)")
+        #expect(webStatus?.detail == "section not found in file")
     }
 
     // MARK: - Preserve user content outside markers
@@ -111,7 +111,7 @@ struct SectionValidatorTests {
 
         let updated = try SectionValidator.fix(
             fileURL: file,
-            expectedSections: ["ios": (version: "2.0.0", content: "Updated iOS content")]
+            expectedSections: ["ios": "Updated iOS content"]
         )
 
         #expect(updated == true)
@@ -125,7 +125,7 @@ struct SectionValidatorTests {
 
     // MARK: - Re-render section preserving surrounding content
 
-    @Test("Fix re-renders outdated section and updates version marker")
+    @Test("Fix re-renders outdated section")
     func fixReRendersSection() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -140,17 +140,16 @@ struct SectionValidatorTests {
 
         let updated = try SectionValidator.fix(
             fileURL: file,
-            expectedSections: ["ios": (version: "2.0.0", content: "Fresh content")]
+            expectedSections: ["ios": "Fresh content"]
         )
 
         #expect(updated == true)
 
         let result = try String(contentsOf: file, encoding: .utf8)
-        #expect(result.contains("<!-- mcs:begin ios v2.0.0 -->"))
+        #expect(result.contains("<!-- mcs:begin ios -->"))
         #expect(result.contains("Fresh content"))
         #expect(result.contains("<!-- mcs:end ios -->"))
         #expect(!result.contains("Stale content"))
-        #expect(!result.contains("v1.0.0"))
     }
 
     @Test("Fix returns false when nothing is outdated")
@@ -168,7 +167,7 @@ struct SectionValidatorTests {
 
         let updated = try SectionValidator.fix(
             fileURL: file,
-            expectedSections: ["ios": (version: "1.0.0", content: "Current content")]
+            expectedSections: ["ios": "Current content"]
         )
 
         #expect(updated == false)
@@ -200,7 +199,7 @@ struct SectionValidatorTests {
 
         let result = SectionValidator.validate(
             fileURL: missing,
-            expectedSections: ["ios": (version: "1.0.0", content: "stuff")]
+            expectedSections: ["ios": "stuff"]
         )
 
         #expect(result.sections.isEmpty)
@@ -228,8 +227,8 @@ struct SectionValidatorTests {
         let result = SectionValidator.validate(
             fileURL: file,
             expectedSections: [
-                "ios": (version: "1.0.0", content: "iOS content"),
-                "web": (version: "1.0.0", content: "Web content"),
+                "ios": "iOS content",
+                "web": "Web content",
             ]
         )
 
@@ -262,19 +261,18 @@ struct SectionValidatorTests {
         let updated = try SectionValidator.fix(
             fileURL: file,
             expectedSections: [
-                "ios": (version: "1.0.0", content: "iOS content"),
-                "web": (version: "2.0.0", content: "New Web"),
+                "ios": "iOS content",
+                "web": "New Web",
             ]
         )
 
         #expect(updated == true)
 
         let result = try String(contentsOf: file, encoding: .utf8)
-        // iOS unchanged
-        #expect(result.contains("<!-- mcs:begin ios v1.0.0 -->"))
+        // iOS unchanged (content matches, so legacy marker preserved)
         #expect(result.contains("iOS content"))
         // Web updated
-        #expect(result.contains("<!-- mcs:begin web v2.0.0 -->"))
+        #expect(result.contains("<!-- mcs:begin web -->"))
         #expect(result.contains("New Web"))
         #expect(!result.contains("Old Web"))
     }
@@ -300,7 +298,7 @@ struct SectionValidatorTests {
 
         let result = SectionValidator.validate(
             fileURL: file,
-            expectedSections: ["ios": (version: "1.0.0", content: "iOS")]
+            expectedSections: ["ios": "iOS"]
         )
 
         #expect(result.sections.count == 2)

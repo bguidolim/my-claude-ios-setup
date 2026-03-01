@@ -145,7 +145,7 @@ mcs sync
 
 ### CLAUDE.local.md sections outdated
 
-**Symptom**: `mcs doctor` shows "outdated sections" with version mismatches.
+**Symptom**: `mcs doctor` shows "outdated sections."
 
 **Fix**: Re-run sync to update sections:
 ```bash

@@ -217,7 +217,6 @@ cat > techpack.yaml << 'EOF'
 schemaVersion: 1
 identifier: my-pack
 displayName: My Pack
-version: "1.0.0"
 author: "Your Name"
 
 components:
@@ -248,7 +247,7 @@ git add -A && git commit -m "Initial pack"
 | 📌 **Non-Destructive** | Your content in `CLAUDE.local.md` is preserved via section markers |
 | 🔄 **Convergent** | Deselected packs are fully cleaned up — no orphaned artifacts |
 | 🔐 **Trust Verification** | Pack scripts SHA-256 hashed at add-time, verified at load-time |
-| 📎 **Lockfile** | `mcs.lock.yaml` pins pack versions for reproducible environments |
+| 📎 **Lockfile** | `mcs.lock.yaml` pins pack commits for reproducible environments |
 
 ---
 

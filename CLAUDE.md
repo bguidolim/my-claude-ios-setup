@@ -60,7 +60,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - `GitignoreManager.swift` — global gitignore management, core entry list
 - `ClaudeIntegration.swift` — `claude mcp add/remove` (with scope support), `claude plugin install/remove`
 - `Homebrew.swift` — brew detection, package install/uninstall
-- `Lockfile.swift` — `mcs.lock.yaml` model for pinning pack versions
+- `Lockfile.swift` — `mcs.lock.yaml` model for pinning pack commits
 - `ProjectDetector.swift` — walk-up project root detection (`.git/` or `CLAUDE.local.md`)
 - `ProjectState.swift` — per-project `.claude/.mcs-project` JSON state (configured packs, per-pack `PackArtifactRecord` with ownership tracking, version)
 - `ProjectIndex.swift` — cross-project index (`~/.mcs/projects.yaml`) mapping project paths to pack IDs for reference counting
@@ -111,7 +111,7 @@ mcs cleanup --force              # Delete backups without confirmation
 
 ### Templates (`Sources/mcs/Templates/`)
 - `TemplateEngine.swift` — `__PLACEHOLDER__` substitution
-- `TemplateComposer.swift` — section markers for composed files (`<!-- mcs:begin core v2.0.0 -->`), section parsing, user content preservation
+- `TemplateComposer.swift` — section markers for composed files (`<!-- mcs:begin/end -->`), section parsing, user content preservation
 
 ## Testing
 
@@ -133,7 +133,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - **Backup for mixed-ownership files**: timestamped backup before modifying files with user content (CLAUDE.local.md); tool-managed files are not backed up since they can be regenerated
 - **Component-derived doctor checks**: `ComponentDefinition` is the single source of truth — `deriveDoctorCheck()` auto-generates verification from `installAction`, supplementary checks handle extras
 - **Project awareness**: doctor detects project root (walk-up for `.git/`), resolves packs from `.claude/.mcs-project` before falling back to section marker inference, then to global manifest
-- **Lockfile support**: `mcs.lock.yaml` pins pack versions for reproducible builds; `--lock` checks out pinned versions, `--update` fetches latest
+- **Lockfile support**: `mcs.lock.yaml` pins pack commits for reproducible builds; `--lock` checks out pinned commits, `--update` fetches latest
 - **Local packs**: `mcs pack add /path` registers a pack read in-place — no git clone, no `mcs pack update`, no directory deletion on remove. Uses `isLocal: Bool?` on `PackEntry` (backward-compatible) and `commitSHA: "local"` sentinel. Trust verification is skipped since scripts change during development
 - **GitHub shorthand**: `mcs pack add user/repo` expands to `https://github.com/user/repo.git`. Filesystem paths are checked before shorthand regex to prevent ambiguity with relative paths like `org/pack`
 - **Cross-project reference counting**: `ProjectIndex` (`~/.mcs/projects.yaml`) tracks which projects use which packs; `ResourceRefCounter` checks all scopes before removing shared brew packages or plugins. Conservative by default — if state is unreadable, assume resource is still needed. MCP servers are project-independent (scoped via `-s local`) and skip ref counting

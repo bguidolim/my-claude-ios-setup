@@ -14,14 +14,12 @@ struct LockfileTests {
 
     private func makeEntry(
         identifier: String,
-        version: String = "1.0.0",
         commitSHA: String = "abc123def456"
     ) -> PackRegistryFile.PackEntry {
         PackRegistryFile.PackEntry(
             identifier: identifier,
             displayName: identifier,
             author: nil,
-            version: version,
             sourceURL: "https://example.com/\(identifier)",
             ref: nil,
             commitSHA: commitSHA,
@@ -40,7 +38,6 @@ struct LockfileTests {
             identifier: identifier,
             displayName: identifier,
             author: nil,
-            version: "1.0.0",
             sourceURL: localPath,
             ref: nil,
             commitSHA: "local",
@@ -56,9 +53,9 @@ struct LockfileTests {
     @Test("Generate lockfile from registry entries and selected packs")
     func generateLockfile() {
         let entries = [
-            makeEntry(identifier: "ios", version: "1.2.0", commitSHA: "sha-ios"),
-            makeEntry(identifier: "web", version: "2.0.0", commitSHA: "sha-web"),
-            makeEntry(identifier: "unselected", version: "1.0.0", commitSHA: "sha-unused"),
+            makeEntry(identifier: "ios", commitSHA: "sha-ios"),
+            makeEntry(identifier: "web", commitSHA: "sha-web"),
+            makeEntry(identifier: "unselected", commitSHA: "sha-unused"),
         ]
 
         let lockfile = Lockfile.generate(
@@ -99,7 +96,7 @@ struct LockfileTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let lockfile = Lockfile.generate(
-            registryEntries: [makeEntry(identifier: "ios", version: "1.0.0", commitSHA: "sha123")],
+            registryEntries: [makeEntry(identifier: "ios", commitSHA: "sha123")],
             selectedPackIDs: ["ios"]
         )
         try lockfile.save(projectRoot: tmpDir)
@@ -109,7 +106,6 @@ struct LockfileTests {
         #expect(loaded?.packs.count == 1)
         #expect(loaded?.packs[0].identifier == "ios")
         #expect(loaded?.packs[0].commitSHA == "sha123")
-        #expect(loaded?.packs[0].version == "1.0.0")
         #expect(loaded?.lockVersion == 1)
     }
 

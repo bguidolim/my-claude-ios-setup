@@ -16,7 +16,6 @@ struct ExternalPackLoaderTests {
     /// Create a minimal valid techpack.yaml content.
     private func minimalManifestYAML(
         identifier: String = "test-pack",
-        version: String = "1.0.0",
         minMCSVersion: String? = nil
     ) -> String {
         var yaml = """
@@ -24,7 +23,6 @@ struct ExternalPackLoaderTests {
             identifier: \(identifier)
             displayName: Test Pack
             description: A test pack
-            version: "\(version)"
             """
         if let minVer = minMCSVersion {
             yaml += "\nminMCSVersion: \"\(minVer)\""
@@ -55,7 +53,6 @@ struct ExternalPackLoaderTests {
             identifier: identifier,
             displayName: "Local Pack",
             author: nil,
-            version: "1.0.0",
             sourceURL: localPath,
             ref: nil,
             commitSHA: "local",
@@ -95,7 +92,6 @@ struct ExternalPackLoaderTests {
 
         let manifest = try loader.validate(at: packDir)
         #expect(manifest.identifier == "test-pack")
-        #expect(manifest.version == "1.0.0")
     }
 
     @Test("Validate throws when techpack.yaml is missing")
@@ -298,7 +294,6 @@ struct ExternalPackLoaderTests {
                 identifier: "my-pack",
                 displayName: "My Pack",
                 author: nil,
-                version: "1.0.0",
                 sourceURL: "https://github.com/user/my-pack.git",
                 ref: "v1.0.0",
                 commitSHA: "abc123",
@@ -332,7 +327,6 @@ struct ExternalPackLoaderTests {
                 identifier: "ghost-pack",
                 displayName: "Ghost",
                 author: nil,
-                version: "1.0.0",
                 sourceURL: "https://github.com/user/ghost.git",
                 ref: nil,
                 commitSHA: "def456",
@@ -391,7 +385,6 @@ struct ExternalPackLoaderTests {
                     identifier: id,
                     displayName: id,
                     author: nil,
-                    version: "1.0.0",
                     sourceURL: "https://github.com/user/\(id).git",
                     ref: nil,
                     commitSHA: "abc",
@@ -437,7 +430,6 @@ struct ExternalPackLoaderTests {
                 identifier: "target-pack",
                 displayName: "Target",
                 author: nil,
-                version: "1.0.0",
                 sourceURL: "https://github.com/user/target.git",
                 ref: nil,
                 commitSHA: "abc",
@@ -525,235 +517,71 @@ struct ExternalPackLoaderTests {
         }
     }
 
-    // MARK: - SemVer
+    // MARK: - VersionCompare
 
-    @Test("SemVer.isCompatible with equal versions")
+    @Test("VersionCompare.isCompatible with equal versions")
     func semverEqual() {
-        #expect(SemVer.isCompatible(current: "2.0.1", required: "2.0.1"))
+        #expect(VersionCompare.isCompatible(current: "2.0.1", required: "2.0.1"))
     }
 
-    @Test("SemVer.isCompatible with current higher patch")
+    @Test("VersionCompare.isCompatible with current higher patch")
     func semverHigherPatch() {
-        #expect(SemVer.isCompatible(current: "2.0.2", required: "2.0.1"))
+        #expect(VersionCompare.isCompatible(current: "2.0.2", required: "2.0.1"))
     }
 
-    @Test("SemVer.isCompatible with current higher minor")
+    @Test("VersionCompare.isCompatible with current higher minor")
     func semverHigherMinor() {
-        #expect(SemVer.isCompatible(current: "2.1.0", required: "2.0.1"))
+        #expect(VersionCompare.isCompatible(current: "2.1.0", required: "2.0.1"))
     }
 
-    @Test("SemVer.isCompatible with current higher major")
+    @Test("VersionCompare.isCompatible with current higher major")
     func semverHigherMajor() {
-        #expect(SemVer.isCompatible(current: "3.0.0", required: "2.0.1"))
+        #expect(VersionCompare.isCompatible(current: "3.0.0", required: "2.0.1"))
     }
 
-    @Test("SemVer.isCompatible returns false when current is lower")
+    @Test("VersionCompare.isCompatible returns false when current is lower")
     func semverIncompatible() {
-        #expect(!SemVer.isCompatible(current: "1.9.9", required: "2.0.0"))
+        #expect(!VersionCompare.isCompatible(current: "1.9.9", required: "2.0.0"))
     }
 
-    @Test("SemVer.isCompatible returns false when current patch is lower")
+    @Test("VersionCompare.isCompatible returns false when current patch is lower")
     func semverLowerPatch() {
-        #expect(!SemVer.isCompatible(current: "2.0.0", required: "2.0.1"))
+        #expect(!VersionCompare.isCompatible(current: "2.0.0", required: "2.0.1"))
     }
 
-    @Test("SemVer.parse extracts components correctly")
+    @Test("VersionCompare.parse extracts components correctly")
     func semverParse() {
-        let v = SemVer.parse("3.14.159")
+        let v = VersionCompare.parse("3.14.159")
         #expect(v != nil)
         #expect(v?.major == 3)
         #expect(v?.minor == 14)
         #expect(v?.patch == 159)
     }
 
-    @Test("SemVer.parse handles invalid input gracefully")
+    @Test("VersionCompare.parse handles invalid input gracefully")
     func semverParseInvalid() {
-        let v = SemVer.parse("invalid")
+        let v = VersionCompare.parse("invalid")
         #expect(v == nil)
     }
 
-    @Test("SemVer.parse strips pre-release suffix")
+    @Test("VersionCompare.parse strips pre-release suffix")
     func semverParsePreRelease() {
-        let v = SemVer.parse("2.1.0-alpha")
+        let v = VersionCompare.parse("2.1.0-alpha")
         #expect(v != nil)
         #expect(v?.major == 2)
         #expect(v?.minor == 1)
         #expect(v?.patch == 0)
     }
 
-    @Test("SemVer.isCompatible with pre-release current version")
+    @Test("VersionCompare.isCompatible with pre-release current version")
     func semverPreReleaseCompatible() {
-        #expect(SemVer.isCompatible(current: "2.1.0-alpha", required: "2.1.0"))
-        #expect(SemVer.isCompatible(current: "2.1.0-alpha", required: "2.0.0"))
-        #expect(!SemVer.isCompatible(current: "2.1.0-alpha", required: "2.2.0"))
+        #expect(VersionCompare.isCompatible(current: "2.1.0-alpha", required: "2.1.0"))
+        #expect(VersionCompare.isCompatible(current: "2.1.0-alpha", required: "2.0.0"))
+        #expect(!VersionCompare.isCompatible(current: "2.1.0-alpha", required: "2.2.0"))
     }
 
-    @Test("SemVer.isCompatible with pre-release required version")
+    @Test("VersionCompare.isCompatible with pre-release required version")
     func semverPreReleaseRequired() {
-        #expect(SemVer.isCompatible(current: "2.1.0", required: "2.1.0-beta"))
-    }
-}
-
-// MARK: - Peer Dependency Validation Tests
-
-@Suite("PeerDependencyValidator")
-struct PeerDependencyValidatorTests {
-
-    private func makeManifest(
-        identifier: String,
-        version: String = "1.0.0",
-        peers: [PeerDependency] = []
-    ) -> ExternalPackManifest {
-        ExternalPackManifest(
-            schemaVersion: 1,
-            identifier: identifier,
-            displayName: identifier,
-            description: "Test",
-            version: version,
-            author: nil,
-            minMCSVersion: nil,
-            peerDependencies: peers.isEmpty ? nil : peers,
-            components: nil,
-            templates: nil,
-            gitignoreEntries: nil,
-            prompts: nil,
-            configureProject: nil,
-            supplementaryDoctorChecks: nil
-        )
-    }
-
-    private func makeEntry(
-        identifier: String,
-        version: String = "1.0.0"
-    ) -> PackRegistryFile.PackEntry {
-        PackRegistryFile.PackEntry(
-            identifier: identifier,
-            displayName: identifier,
-            author: nil,
-            version: version,
-            sourceURL: "https://example.com/\(identifier)",
-            ref: nil,
-            commitSHA: "abc123",
-            localPath: identifier,
-            addedAt: "2026-01-01T00:00:00Z",
-            trustedScriptHashes: [:],
-            isLocal: nil
-        )
-    }
-
-    @Test("No peer dependencies returns empty results")
-    func noPeers() {
-        let manifest = makeManifest(identifier: "test")
-        let results = PeerDependencyValidator.validate(
-            manifest: manifest,
-            registeredPacks: []
-        )
-        #expect(results.isEmpty)
-    }
-
-    @Test("Missing peer pack is detected")
-    func missingPeer() {
-        let manifest = makeManifest(
-            identifier: "ios-testing",
-            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
-        )
-        let results = PeerDependencyValidator.validate(
-            manifest: manifest,
-            registeredPacks: []
-        )
-        #expect(results.count == 1)
-        #expect(results[0].status == .missing)
-        #expect(results[0].peerPack == "ios")
-    }
-
-    @Test("Peer pack with sufficient version is satisfied")
-    func satisfiedPeer() {
-        let manifest = makeManifest(
-            identifier: "ios-testing",
-            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
-        )
-        let results = PeerDependencyValidator.validate(
-            manifest: manifest,
-            registeredPacks: [makeEntry(identifier: "ios", version: "1.2.0")]
-        )
-        #expect(results.count == 1)
-        #expect(results[0].status == .satisfied)
-    }
-
-    @Test("Peer pack with exact minimum version is satisfied")
-    func exactVersion() {
-        let manifest = makeManifest(
-            identifier: "ios-testing",
-            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
-        )
-        let results = PeerDependencyValidator.validate(
-            manifest: manifest,
-            registeredPacks: [makeEntry(identifier: "ios", version: "1.0.0")]
-        )
-        #expect(results.count == 1)
-        #expect(results[0].status == .satisfied)
-    }
-
-    @Test("Peer pack with version too low is detected")
-    func versionTooLow() {
-        let manifest = makeManifest(
-            identifier: "ios-testing",
-            peers: [PeerDependency(pack: "ios", minVersion: "2.0.0")]
-        )
-        let results = PeerDependencyValidator.validate(
-            manifest: manifest,
-            registeredPacks: [makeEntry(identifier: "ios", version: "1.5.0")]
-        )
-        #expect(results.count == 1)
-        #expect(results[0].status == .versionTooLow(actual: "1.5.0"))
-    }
-
-    @Test("Selection validation catches missing peer in selected set")
-    func selectionMissingPeer() {
-        let manifest = makeManifest(
-            identifier: "ios-testing",
-            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
-        )
-        let adapter = ExternalPackAdapter(
-            manifest: manifest,
-            packPath: URL(fileURLWithPath: "/tmp/fake"),
-            shell: ShellRunner(environment: Environment()),
-            output: CLIOutput(colorsEnabled: false)
-        )
-        let results = PeerDependencyValidator.validateSelection(
-            packs: [adapter],
-            registeredPacks: [makeEntry(identifier: "ios-testing")]
-        )
-        #expect(results.count == 1)
-        #expect(results[0].status == .missing)
-        #expect(results[0].peerPack == "ios")
-    }
-
-    @Test("Selection validation passes when peer is selected")
-    func selectionWithPeer() {
-        let testingManifest = makeManifest(
-            identifier: "ios-testing",
-            peers: [PeerDependency(pack: "ios", minVersion: "1.0.0")]
-        )
-        let iosManifest = makeManifest(identifier: "ios", version: "1.0.0")
-        let shell = ShellRunner(environment: Environment())
-        let output = CLIOutput(colorsEnabled: false)
-        let fakePath = URL(fileURLWithPath: "/tmp/fake")
-
-        let testingAdapter = ExternalPackAdapter(
-            manifest: testingManifest, packPath: fakePath, shell: shell, output: output
-        )
-        let iosAdapter = ExternalPackAdapter(
-            manifest: iosManifest, packPath: fakePath, shell: shell, output: output
-        )
-
-        let results = PeerDependencyValidator.validateSelection(
-            packs: [testingAdapter, iosAdapter],
-            registeredPacks: [
-                makeEntry(identifier: "ios-testing"),
-                makeEntry(identifier: "ios", version: "1.0.0"),
-            ]
-        )
-        #expect(results.isEmpty)
+        #expect(VersionCompare.isCompatible(current: "2.1.0", required: "2.1.0-beta"))
     }
 }

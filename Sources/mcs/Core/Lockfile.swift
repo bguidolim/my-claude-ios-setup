@@ -1,7 +1,7 @@
 import Foundation
 import Yams
 
-/// Codable model for `mcs.lock.yaml` — pins exact pack versions for reproducible setups.
+/// Codable model for `mcs.lock.yaml` — pins exact pack commits for reproducible setups.
 /// This file is committed to git so teammates get identical configurations.
 struct Lockfile: Codable, Equatable, Sendable {
     let lockVersion: Int
@@ -12,7 +12,6 @@ struct Lockfile: Codable, Equatable, Sendable {
     /// A single pack entry in the lockfile.
     struct LockedPack: Codable, Equatable, Sendable {
         let identifier: String
-        let version: String
         let sourceURL: String
         let commitSHA: String
     }
@@ -27,7 +26,6 @@ struct Lockfile: Codable, Equatable, Sendable {
             .map { entry in
                 LockedPack(
                     identifier: entry.identifier,
-                    version: entry.version,
                     sourceURL: entry.sourceURL,
                     commitSHA: entry.commitSHA
                 )
@@ -85,18 +83,14 @@ struct Lockfile: Codable, Equatable, Sendable {
                     mismatches.append(Mismatch(
                         identifier: locked.identifier,
                         lockedSHA: locked.commitSHA,
-                        currentSHA: entry.commitSHA,
-                        lockedVersion: locked.version,
-                        currentVersion: entry.version
+                        currentSHA: entry.commitSHA
                     ))
                 }
             } else {
                 mismatches.append(Mismatch(
                     identifier: locked.identifier,
                     lockedSHA: locked.commitSHA,
-                    currentSHA: nil,
-                    lockedVersion: locked.version,
-                    currentVersion: nil
+                    currentSHA: nil
                 ))
             }
         }
@@ -109,7 +103,5 @@ struct Lockfile: Codable, Equatable, Sendable {
         let identifier: String
         let lockedSHA: String
         let currentSHA: String?    // nil if pack not registered
-        let lockedVersion: String
-        let currentVersion: String?
     }
 }

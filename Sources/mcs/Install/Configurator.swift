@@ -121,23 +121,6 @@ struct Configurator {
         let removals = previousIDs.subtracting(selectedIDs)
         let additions = selectedIDs.subtracting(previousIDs)
 
-        // 0. Validate peer dependencies before making any changes
-        let peerIssues = ConfiguratorSupport.validatePeerDependencies(
-            packs: packs, environment: environment, output: output
-        )
-        if ConfiguratorSupport.reportPeerDependencyIssues(
-            peerIssues,
-            output: output,
-            severity: .error,
-            missingSuggestion: { packID, peerPack in
-                "Either select '\(peerPack)' or deselect '\(packID)'."
-            }
-        ) {
-            throw MCSError.configurationFailed(
-                reason: "Unresolved peer dependencies. Fix the issues above and re-run \(scope.syncHint)."
-            )
-        }
-
         // 1. Confirm and unconfigure removed packs
         if confirmRemovals && !removals.isEmpty {
             output.plain("")

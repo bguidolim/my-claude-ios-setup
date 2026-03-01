@@ -7,22 +7,22 @@ struct LockfileOperations {
     let output: CLIOutput
     let shell: ShellRunner
 
-    /// Checkout exact pack versions from the lockfile.
+    /// Checkout exact pack commits from the lockfile.
     /// Aborts if any checkout fails, since `--lock` guarantees reproducibility for git packs.
-    /// Local packs are skipped (their content is not version-pinned).
+    /// Local packs are skipped (their content is not commit-pinned).
     func checkoutLockedVersions(at projectPath: URL) throws {
         guard let lockfile = try Lockfile.load(projectRoot: projectPath) else {
             output.error("No mcs.lock.yaml found. Run 'mcs sync' first to create one.")
             throw ExitCode.failure
         }
 
-        output.info("Checking out locked pack versions...")
+        output.info("Checking out locked pack commits...")
 
         var failedPacks: [String] = []
         for locked in lockfile.packs {
             // Local packs have no git commit to pin — skip
             if locked.commitSHA == Constants.ExternalPacks.localCommitSentinel {
-                output.dimmed("  \(locked.identifier): local pack (version not pinned)")
+                output.dimmed("  \(locked.identifier): local pack (not pinned)")
                 continue
             }
 
@@ -74,13 +74,13 @@ struct LockfileOperations {
         }
 
         if !failedPacks.isEmpty {
-            output.error("Failed to checkout locked versions for: \(failedPacks.joined(separator: ", "))")
+            output.error("Failed to checkout locked commits for: \(failedPacks.joined(separator: ", "))")
             output.error("Sync aborted to prevent inconsistent configuration.")
             throw ExitCode.failure
         }
     }
 
-    /// Fetch latest versions for all registered git packs. Local packs are skipped.
+    /// Fetch latest commits for all registered git packs. Local packs are skipped.
     /// Re-validates trust when scripts change (mirrors `mcs pack update` behavior).
     func updatePacks() throws {
         let registryFile = PackRegistryFile(path: environment.packsRegistry)
@@ -91,7 +91,7 @@ struct LockfileOperations {
             return
         }
 
-        output.info("Fetching latest pack versions...")
+        output.info("Fetching latest pack commits...")
         let updater = PackUpdater(
             fetcher: PackFetcher(shell: shell, output: output, packsDirectory: environment.packsDirectory),
             trustManager: PackTrustManager(output: output),
@@ -117,7 +117,7 @@ struct LockfileOperations {
                 output.dimmed("  \(entry.identifier): already up to date")
             case .updated(let updatedEntry):
                 registryFile.register(updatedEntry, in: &updatedData)
-                output.success("  \(entry.identifier): updated to v\(updatedEntry.version) (\(String(updatedEntry.commitSHA.prefix(7))))")
+                output.success("  \(entry.identifier): updated (\(String(updatedEntry.commitSHA.prefix(7))))")
             case .skipped(let reason):
                 output.warn("  \(entry.identifier): \(reason)")
             }

@@ -10,8 +10,6 @@ struct SectionValidator: Sendable {
     /// Describes a single section that was checked.
     struct SectionStatus: Sendable {
         let identifier: String
-        let installedVersion: String
-        let currentVersion: String?
         let isOutdated: Bool
         let detail: String
     }
@@ -36,11 +34,11 @@ struct SectionValidator: Sendable {
     ///
     /// - Parameters:
     ///   - fileURL: Path to the composed file on disk.
-    ///   - expectedSections: Dictionary of section identifier to (version, rendered content).
+    ///   - expectedSections: Dictionary of section identifier to rendered content.
     /// - Returns: Validation result with per-section status.
     static func validate(
         fileURL: URL,
-        expectedSections: [String: (version: String, content: String)]
+        expectedSections: [String: String]
     ) -> ValidationResult {
         guard let fileContent = try? String(contentsOf: fileURL, encoding: .utf8) else {
             return ValidationResult(filePath: fileURL, sections: [])
@@ -50,27 +48,21 @@ struct SectionValidator: Sendable {
         var statuses: [SectionStatus] = []
 
         for installed in installedSections {
-            if let expected = expectedSections[installed.identifier] {
+            if let expectedContent = expectedSections[installed.identifier] {
                 let installedHash = contentHash(installed.content)
-                let expectedHash = contentHash(expected.content)
+                let expectedHash = contentHash(expectedContent)
                 let isOutdated = installedHash != expectedHash
 
                 statuses.append(SectionStatus(
                     identifier: installed.identifier,
-                    installedVersion: installed.version,
-                    currentVersion: expected.version,
                     isOutdated: isOutdated,
-                    detail: isOutdated
-                        ? "v\(installed.version) -> v\(expected.version)"
-                        : "v\(installed.version) up to date"
+                    detail: isOutdated ? "content outdated" : "up to date"
                 ))
             } else {
                 // Section exists in file but has no expected template --
                 // could be from an unregistered pack; skip it.
                 statuses.append(SectionStatus(
                     identifier: installed.identifier,
-                    installedVersion: installed.version,
-                    currentVersion: nil,
                     isOutdated: false,
                     detail: "unmanaged section, skipped"
                 ))
@@ -78,12 +70,10 @@ struct SectionValidator: Sendable {
         }
 
         // Check for expected sections that are missing from the file
-        for (identifier, expected) in expectedSections {
+        for (identifier, _) in expectedSections {
             if !installedSections.contains(where: { $0.identifier == identifier }) {
                 statuses.append(SectionStatus(
                     identifier: identifier,
-                    installedVersion: "(missing)",
-                    currentVersion: expected.version,
                     isOutdated: true,
                     detail: "section not found in file"
                 ))
@@ -102,12 +92,12 @@ struct SectionValidator: Sendable {
     ///
     /// - Parameters:
     ///   - fileURL: Path to the composed file.
-    ///   - expectedSections: Dictionary of section identifier to (version, rendered content).
+    ///   - expectedSections: Dictionary of section identifier to rendered content.
     /// - Returns: `true` if the file was updated, `false` if no changes were needed or the file could not be read.
     @discardableResult
     static func fix(
         fileURL: URL,
-        expectedSections: [String: (version: String, content: String)]
+        expectedSections: [String: String]
     ) throws -> Bool {
         guard let fileContent = try? String(contentsOf: fileURL, encoding: .utf8) else {
             return false
@@ -119,13 +109,12 @@ struct SectionValidator: Sendable {
         var updatedContent = fileContent
 
         for section in result.outdatedSections {
-            guard let expected = expectedSections[section.identifier] else { continue }
+            guard let expectedContent = expectedSections[section.identifier] else { continue }
 
             updatedContent = TemplateComposer.replaceSection(
                 in: updatedContent,
                 sectionIdentifier: section.identifier,
-                newContent: expected.content,
-                newVersion: expected.version
+                newContent: expectedContent
             )
         }
 
@@ -265,8 +254,8 @@ struct CLAUDEMDFreshnessCheck: DoctorCheck, Sendable {
     private func buildExpectedSections(
         state: ProjectState,
         values: [String: String]
-    ) -> (sections: [String: (version: String, content: String)], errors: [String]) {
-        var expected: [String: (version: String, content: String)] = [:]
+    ) -> (sections: [String: String], errors: [String]) {
+        var expected: [String: String] = [:]
         var errors: [String] = []
 
         for packID in state.configuredPacks {
@@ -295,10 +284,7 @@ struct CLAUDEMDFreshnessCheck: DoctorCheck, Sendable {
                     values: values,
                     emitWarnings: false
                 )
-                expected[contribution.sectionIdentifier] = (
-                    version: MCSVersion.current,
-                    content: rendered
-                )
+                expected[contribution.sectionIdentifier] = rendered
             }
         }
 

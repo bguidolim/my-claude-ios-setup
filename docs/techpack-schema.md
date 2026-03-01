@@ -10,31 +10,14 @@ Complete field-by-field reference for `techpack.yaml`. For a tutorial-style intr
 | `identifier` | `String` | Yes | Unique pack ID. Lowercase alphanumeric + hyphens, e.g. `my-pack` |
 | `displayName` | `String` | Yes | Human-readable name shown in CLI output |
 | `description` | `String` | Yes | One-line description of what the pack provides |
-| `version` | `String` | Yes | Semantic version, e.g. `"1.0.0"` |
 | `author` | `String` | No | Pack author name (shown in `mcs pack list` and `mcs pack add`) |
 | `minMCSVersion` | `String` | No | Minimum `mcs` version required, e.g. `"2.1.0"` |
-| `peerDependencies` | `[PeerDependency]` | No | Other packs this pack requires |
 | `components` | `[Component]` | No | Installable components (see below) |
 | `templates` | `[Template]` | No | CLAUDE.local.md section contributions |
 | `prompts` | `[Prompt]` | No | Interactive prompts for `mcs sync` |
 | `configureProject` | `ConfigureProject` | No | Script to run after project configuration |
 | `supplementaryDoctorChecks` | `[DoctorCheck]` | No | Pack-level health checks |
 | `gitignoreEntries` | `[String]` | No | Legacy gitignore entries (prefer `gitignore:` component) |
-
-### PeerDependency
-
-```yaml
-peerDependencies:
-  - pack: other-pack
-    minVersion: "1.0.0"
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `pack` | `String` | Yes | Pack identifier |
-| `minVersion` | `String` | Yes | Minimum version required |
-
----
 
 ## Components
 
@@ -306,7 +289,7 @@ templates:
 Templates are wrapped in HTML comment markers in `CLAUDE.local.md`:
 
 ```markdown
-<!-- mcs:begin my-pack.instructions v1.0.0 -->
+<!-- mcs:begin my-pack.instructions -->
 (template content here)
 <!-- mcs:end my-pack.instructions -->
 ```
@@ -464,7 +447,6 @@ schemaVersion: 1
 identifier: web-dev
 displayName: Web Development
 description: Node.js development environment for Claude Code
-version: "1.0.0"
 author: "Your Name"
 
 prompts:
