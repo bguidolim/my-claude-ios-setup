@@ -2,6 +2,9 @@ import Foundation
 
 /// Manages Homebrew package installation and service management.
 struct Homebrew: Sendable {
+    /// Both Homebrew prefix paths — arm64 and x86_64.
+    static let allPrefixes = ["/opt/homebrew", "/usr/local"]
+
     let shell: ShellRunner
     let environment: Environment
 
@@ -31,29 +34,33 @@ struct Homebrew: Sendable {
         shell.run(environment.brewPath, arguments: ["uninstall", name])
     }
 
-    /// Start a Homebrew service.
-    @discardableResult
-    func startService(_ name: String) -> ShellResult {
-        shell.run(environment.brewPath, arguments: ["services", "start", name])
-    }
+    /// Detects the Homebrew formula that provides a command by reading the immediate
+    /// symlink target in the Homebrew bin directory. Returns nil if the command isn't
+    /// brew-installed.
+    ///
+    /// Uses single-hop symlink reading (`destinationOfSymbolicLink`) instead of full
+    /// resolution because some commands chain through multiple symlinks where the final
+    /// target leaves the Cellar path (e.g. npx → Cellar/node/.../npx → lib/node_modules/...).
+    static func detectFormula(for command: String) -> String? {
+        let fm = FileManager.default
+        let basename = URL(fileURLWithPath: command).lastPathComponent
+        for prefix in allPrefixes {
+            let binPath = "\(prefix)/bin/\(basename)"
+            guard let dest = try? fm.destinationOfSymbolicLink(atPath: binPath) else { continue }
 
-    /// Stop a Homebrew service.
-    @discardableResult
-    func stopService(_ name: String) -> ShellResult {
-        shell.run(environment.brewPath, arguments: ["services", "stop", name])
-    }
+            let resolved: String
+            if dest.hasPrefix("/") {
+                resolved = dest
+            } else {
+                resolved = URL(fileURLWithPath: "\(prefix)/bin")
+                    .appendingPathComponent(dest).standardized.path
+            }
 
-    /// Check if a Homebrew service is running.
-    func isServiceRunning(_ name: String) -> Bool {
-        let result = shell.run(
-            environment.brewPath,
-            arguments: ["services", "list"]
-        )
-        guard result.succeeded else { return false }
-        return result.stdout.contains("\(name)") &&
-               result.stdout.split(separator: "\n")
-                   .contains { line in
-                       line.contains(name) && line.contains("started")
-                   }
+            let components = resolved.split(separator: "/").map(String.init)
+            if let idx = components.firstIndex(of: "Cellar"), idx + 1 < components.count {
+                return components[idx + 1]
+            }
+        }
+        return nil
     }
 }

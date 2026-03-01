@@ -123,7 +123,7 @@ struct ManifestBuilder {
             let id = "mcp-\(server.name)"
 
             // Detect brew dependency hint via Homebrew symlink resolution
-            if let command = server.command, let formula = detectBrewFormula(for: command) {
+            if let command = server.command, let formula = Homebrew.detectFormula(for: command) {
                 brewHints[id] = formula
             }
 
@@ -519,40 +519,6 @@ struct ManifestBuilder {
         }
 
         yaml.blank()
-    }
-
-    // MARK: - Brew Dependency Hints
-
-    /// Detects the Homebrew formula that provides a command by reading the immediate
-    /// symlink target in the Homebrew bin directory. Returns nil if the command isn't
-    /// brew-installed.
-    ///
-    /// Uses single-hop symlink reading (`destinationOfSymbolicLink`) instead of full
-    /// resolution because some commands chain through multiple symlinks where the final
-    /// target leaves the Cellar path (e.g. npx → Cellar/node/.../npx → lib/node_modules/...).
-    ///
-    /// Example: `/opt/homebrew/bin/uvx` → `../Cellar/uv/0.10.7/bin/uvx` → `"uv"`
-    private func detectBrewFormula(for command: String) -> String? {
-        let fm = FileManager.default
-        let basename = URL(fileURLWithPath: command).lastPathComponent
-        for prefix in ["/opt/homebrew", "/usr/local"] {
-            let binPath = "\(prefix)/bin/\(basename)"
-            guard let dest = try? fm.destinationOfSymbolicLink(atPath: binPath) else { continue }
-
-            let resolved: String
-            if dest.hasPrefix("/") {
-                resolved = dest
-            } else {
-                resolved = URL(fileURLWithPath: "\(prefix)/bin")
-                    .appendingPathComponent(dest).standardized.path
-            }
-
-            let components = resolved.split(separator: "/").map(String.init)
-            if let idx = components.firstIndex(of: "Cellar"), idx + 1 < components.count {
-                return components[idx + 1]
-            }
-        }
-        return nil
     }
 
     // MARK: - Helpers

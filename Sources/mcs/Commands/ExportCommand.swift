@@ -372,18 +372,13 @@ struct ExportCommand: ParsableCommand {
     ) {
         var hints: [String] = []
 
-        // Check for MCP servers that might need brew
-        let mcpCommands = config.mcpServers.compactMap(\.command)
-        let brewHints = Set(mcpCommands.compactMap { cmd -> String? in
-            let basename = URL(fileURLWithPath: cmd).lastPathComponent
-            let brewPackages: [String: String] = [
-                "node": "node", "npx": "node", "npm": "node",
-                "python3": "python3", "uvx": "uv", "uv": "uv",
-            ]
-            return brewPackages[basename]
+        // Check for MCP servers that might need brew (dynamic symlink resolution)
+        let detectedFormulas = Set(config.mcpServers.compactMap { server -> String? in
+            guard let command = server.command else { return nil }
+            return Homebrew.detectFormula(for: command)
         })
-        if !brewHints.isEmpty {
-            hints.append("Some MCP servers may need brew packages: \(brewHints.sorted().joined(separator: ", "))")
+        if !detectedFormulas.isEmpty {
+            hints.append("Some MCP servers may need brew packages: \(detectedFormulas.sorted().joined(separator: ", "))")
             hints.append("Add `brew: <package>` components to your techpack.yaml if needed")
         }
 
