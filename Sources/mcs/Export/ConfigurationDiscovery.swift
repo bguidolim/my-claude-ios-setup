@@ -56,7 +56,6 @@ struct ConfigurationDiscovery: Sendable {
 
     struct DiscoveredClaudeSection: Sendable {
         let sectionIdentifier: String
-        let version: String
         let content: String
     }
 
@@ -286,7 +285,6 @@ struct ConfigurationDiscovery: Sendable {
         for section in sections {
             config.claudeSections.append(DiscoveredClaudeSection(
                 sectionIdentifier: section.identifier,
-                version: section.version,
                 content: section.content
             ))
         }

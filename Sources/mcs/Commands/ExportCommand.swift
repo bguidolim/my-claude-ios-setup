@@ -71,7 +71,6 @@ struct ExportCommand: ParsableCommand {
                 identifier: identifier ?? "exported-pack",
                 displayName: identifier?.replacingOccurrences(of: "-", with: " ").capitalized ?? "Exported Pack",
                 description: "Exported Claude Code configuration",
-                version: "1.0.0",
                 author: gitAuthorName()
             )
         } else {
@@ -282,7 +281,7 @@ struct ExportCommand: ParsableCommand {
             claudeItems.append(SelectableItem(
                 number: itemCounter,
                 name: section.sectionIdentifier,
-                description: "Managed section (v\(section.version))",
+                description: "Managed section",
                 isSelected: true
             ))
             sectionMapping[itemCounter] = section.sectionIdentifier
@@ -352,7 +351,6 @@ struct ExportCommand: ParsableCommand {
         let id = output.promptInline("Pack identifier", default: defaultID)
         let name = output.promptInline("Display name", default: id.replacingOccurrences(of: "-", with: " ").capitalized)
         let desc = output.promptInline("Description", default: "Exported Claude Code configuration")
-        let version = output.promptInline("Version", default: "1.0.0")
         let defaultAuthor = gitAuthorName()
         let author = output.promptInline("Author", default: defaultAuthor)
 
@@ -362,7 +360,6 @@ struct ExportCommand: ParsableCommand {
             identifier: id,
             displayName: name,
             description: desc,
-            version: version,
             author: author.isEmpty ? nil : author
         )
     }

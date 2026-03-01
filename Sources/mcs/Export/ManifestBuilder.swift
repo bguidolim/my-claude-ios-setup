@@ -12,7 +12,6 @@ struct ManifestBuilder {
         let identifier: String
         let displayName: String
         let description: String
-        let version: String
         let author: String?
     }
 
@@ -299,10 +298,8 @@ struct ManifestBuilder {
             identifier: metadata.identifier,
             displayName: metadata.displayName,
             description: metadata.description,
-            version: metadata.version,
             author: metadata.author,
             minMCSVersion: nil,
-            peerDependencies: nil,
             components: components.isEmpty ? nil : components,
             templates: templates.isEmpty ? nil : templates,
             gitignoreEntries: nil,
@@ -336,7 +333,6 @@ struct ManifestBuilder {
         yaml.keyValue("identifier", manifest.identifier)
         yaml.keyValue("displayName", manifest.displayName, quoted: true)
         yaml.keyValue("description", manifest.description)
-        yaml.keyValue("version", manifest.version, quoted: true)
         if let author = manifest.author {
             yaml.keyValue("author", author)
         }

@@ -75,7 +75,6 @@ struct ManifestBuilderTests {
         config.claudeSections = [
             ConfigurationDiscovery.DiscoveredClaudeSection(
                 sectionIdentifier: "test-pack.instructions",
-                version: "1.0.0",
                 content: "## Build & Test\nAlways use the build tool."
             ),
         ]
@@ -91,7 +90,6 @@ struct ManifestBuilderTests {
             identifier: "test-pack",
             displayName: "Test Pack",
             description: "A test tech pack for round-trip validation",
-            version: "1.0.0",
             author: "Test Author"
         )
 
@@ -114,7 +112,6 @@ struct ManifestBuilderTests {
         #expect(manifest.schemaVersion == 1)
         #expect(manifest.identifier == "test-pack")
         #expect(manifest.displayName == "Test Pack")
-        #expect(manifest.version == "1.0.0")
         #expect(manifest.author == "Test Author")
 
         // 2. Write YAML to file, parse back, normalize, validate
@@ -230,7 +227,6 @@ struct ManifestBuilderTests {
             identifier: "empty-pack",
             displayName: "Empty Pack",
             description: "No artifacts",
-            version: "0.1.0",
             author: nil
         )
 
@@ -256,7 +252,6 @@ struct ManifestBuilderTests {
         try normalized.validate()
 
         #expect(normalized.identifier == "empty-pack")
-        #expect(normalized.version == "0.1.0")
     }
 
     // MARK: - Typed manifest direct assertion
@@ -278,7 +273,6 @@ struct ManifestBuilderTests {
             identifier: "direct-test",
             displayName: "Direct Test",
             description: "Test typed manifest",
-            version: "2.0.0",
             author: "Tester"
         )
 
