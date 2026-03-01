@@ -76,10 +76,11 @@ You've spent hours getting Claude Code just right — MCP servers, plugins, hook
 brew install bguidolim/tap/managed-claude-stack
 ```
 
-### 2. Add a tech pack
+### 2. Add tech packs
 
 ```bash
-mcs pack add bguidolim/mcs-personal-setup
+mcs pack add bguidolim/mcs-core-pack
+mcs pack add bguidolim/mcs-ios-pack
 ```
 
 ### 3. Sync a project
@@ -140,11 +141,17 @@ Want to try a different set of MCP servers? Add a new pack, sync. Don't like it?
 
 ---
 
-## 🔍 Real-World Example
+## 🔍 Real-World Examples
 
-A single tech pack can configure your entire Claude Code environment — brew dependencies, MCP servers, plugins, hooks, skills, slash commands, settings, and templates. For a working example, see [**mcs-personal-setup**](https://github.com/bguidolim/mcs-personal-setup): an iOS development pack with 24 components that sets up everything from XcodeBuildMCP to git conventions in one `mcs sync`.
+Packs are modular — mix and match what you need instead of one monolith:
 
-> 💡 Fork it as a starting point for your own pack, or use it as a reference when building from scratch.
+| Pack | Description | Highlights |
+|------|-------------|------------|
+| [**mcs-core-pack**](https://github.com/bguidolim/mcs-core-pack) | Foundational settings, plugins, git workflows, and code navigation | Serena (LSP), plan mode, `/commit`, PR review agents, session-start git status |
+| [**mcs-continuous-learning**](https://github.com/bguidolim/mcs-continuous-learning) | Persistent memory and knowledge management across sessions | Ollama embeddings, semantic search via docs-mcp-server, auto-extracted learnings |
+| [**mcs-ios-pack**](https://github.com/bguidolim/mcs-ios-pack) | Xcode integration, simulator management, and Apple documentation | XcodeBuildMCP, Sosumi docs, auto-detected project config, simulator hooks |
+
+> 💡 Use these as a starting point — fork one to build your own, or combine all three with `mcs pack add` for a complete setup.
 
 ---
 
