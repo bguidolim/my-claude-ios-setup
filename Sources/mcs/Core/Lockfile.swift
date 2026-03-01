@@ -1,7 +1,7 @@
 import Foundation
 import Yams
 
-/// Codable model for `mcs.lock.yaml` — pins exact pack versions for reproducible setups.
+/// Codable model for `mcs.lock.yaml` — pins exact pack commits for reproducible setups.
 /// This file is committed to git so teammates get identical configurations.
 struct Lockfile: Codable, Equatable, Sendable {
     let lockVersion: Int
