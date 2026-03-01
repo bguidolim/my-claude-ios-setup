@@ -2,6 +2,8 @@
 
 Complete field-by-field reference for `techpack.yaml`. For a tutorial-style introduction, see [Creating Tech Packs](creating-tech-packs.md).
 
+> **Tip**: Already have Claude Code configured? Run `mcs export ./my-pack` to auto-generate a `techpack.yaml` from your existing setup. See [Quick Start with `mcs export`](creating-tech-packs.md#quick-start-with-mcs-export).
+
 ## Top-Level Fields
 
 | Field | Type | Required | Description |
