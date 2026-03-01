@@ -107,7 +107,7 @@ Every file write goes through the backup system. Before overwriting a file, a ti
 
 ### Lockfile (`Core/Lockfile.swift`)
 
-`mcs.lock.yaml` pins pack commits for reproducible builds. Created/updated by `mcs sync` after successful project sync. Used with `--lock` to checkout pinned versions or `--update` to fetch latest and refresh the lockfile.
+`mcs.lock.yaml` pins pack commits for reproducible builds. Created/updated by `mcs sync` after successful project sync. Used with `--lock` to checkout pinned commits or `--update` to fetch latest and refresh the lockfile.
 
 ### ClaudeIntegration (`Core/ClaudeIntegration.swift`)
 

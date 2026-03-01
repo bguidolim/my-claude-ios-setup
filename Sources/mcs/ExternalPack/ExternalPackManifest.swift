@@ -17,7 +17,6 @@ struct ExternalPackManifest: Codable, Sendable {
     let prompts: [ExternalPromptDefinition]?
     let configureProject: ExternalConfigureProject?
     let supplementaryDoctorChecks: [ExternalDoctorCheckDefinition]?
-
 }
 
 // MARK: - Loading
