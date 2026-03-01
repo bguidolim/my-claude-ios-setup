@@ -490,15 +490,17 @@ struct Configurator {
         // Remove gitignore entries
         if !artifacts.gitignoreEntries.isEmpty {
             let gitignoreManager = GitignoreManager(shell: shell)
+            var removedEntries: Set<String> = []
             for entry in artifacts.gitignoreEntries {
                 do {
                     try gitignoreManager.removeEntry(entry)
+                    removedEntries.insert(entry)
                     output.dimmed("  Removed gitignore entry: \(entry)")
                 } catch {
                     output.warn("Could not remove gitignore entry '\(entry)': \(error.localizedDescription)")
                 }
             }
-            remaining.gitignoreEntries = []
+            remaining.gitignoreEntries.removeAll { removedEntries.contains($0) }
         }
 
         if remaining.isEmpty {
