@@ -169,11 +169,28 @@ struct Configurator {
         }
 
         // 3. Resolve all template/placeholder values upfront (single pass)
+        // 3a. Built-in values (REPO_NAME, PROJECT_DIR_NAME in project scope)
         var allValues = strategy.resolveBuiltInValues(shell: shell, output: output)
+
+        // 3b–3c. Detect shared prompts across packs and resolve them once.
+        // `initialContext` uses partial resolvedValues (built-ins only) — groupSharedPrompts
+        // only reads `isGlobalScope` from the context, not resolvedValues.
+        let initialContext = strategy.makeConfigContext(output: output, resolvedValues: allValues)
+        let sharedPrompts = CrossPackPromptResolver.groupSharedPrompts(
+            packs: packs, context: initialContext
+        )
+        if !sharedPrompts.isEmpty {
+            let sharedValues = CrossPackPromptResolver.resolveSharedPrompts(sharedPrompts, output: output)
+            allValues.merge(sharedValues) { existing, _ in existing }
+        }
+
+        // 3d. Execute remaining per-pack prompts. templateValues() skips prompts whose key
+        // already exists in context.resolvedValues (pre-resolved by shared prompt resolution).
+        // Merge uses "first wins" — shared values and built-ins take precedence.
         let context = strategy.makeConfigContext(output: output, resolvedValues: allValues)
         for pack in packs {
             let packValues = try pack.templateValues(context: context)
-            allValues.merge(packValues) { _, new in new }
+            allValues.merge(packValues) { existing, _ in existing }
         }
 
         // 4. Auto-prompt for undeclared placeholders in pack files
@@ -229,7 +246,8 @@ struct Configurator {
 
         // 6. Compose settings file from ALL selected packs
         let contributedKeys = try strategy.composeSettings(
-            packs: packs, excludedComponents: excludedComponents, output: output
+            packs: packs, excludedComponents: excludedComponents,
+            resolvedValues: allValues, output: output
         )
 
         // 6b. Record contributed settings keys in artifact records

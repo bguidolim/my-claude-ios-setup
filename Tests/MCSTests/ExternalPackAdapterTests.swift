@@ -516,6 +516,103 @@ struct ExternalPackAdapterTests {
         #expect(validTemplates[0].templateContent == "## Valid Content")
     }
 
+    // MARK: - Prompt Deduplication
+
+    @Test("templateValues skips prompts whose keys are already in context.resolvedValues")
+    func templateValuesSkipsPreResolved() throws {
+        let manifest = ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            description: "A test pack",
+            version: "1.0.0",
+            author: nil,
+            minMCSVersion: nil,
+            peerDependencies: nil,
+            components: nil,
+            templates: nil,
+            gitignoreEntries: nil,
+            prompts: [
+                ExternalPromptDefinition(
+                    key: "ALREADY_RESOLVED", type: .input,
+                    label: "This should be skipped", defaultValue: "default",
+                    options: nil, detectPatterns: nil, scriptCommand: nil
+                ),
+            ],
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+        let (adapter, tmpDir) = try makeAdapter(manifest: manifest)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let context = ProjectConfigContext(
+            projectPath: tmpDir,
+            repoName: "test",
+            output: CLIOutput(colorsEnabled: false),
+            resolvedValues: ["ALREADY_RESOLVED": "pre-set-value"],
+            isGlobalScope: false
+        )
+
+        // templateValues should return empty since all prompts are pre-resolved
+        let values = try adapter.templateValues(context: context)
+        #expect(values.isEmpty)
+    }
+
+    @Test("declaredPrompts returns manifest prompts")
+    func declaredPromptsReturnsPrompts() throws {
+        let manifest = ExternalPackManifest(
+            schemaVersion: 1,
+            identifier: "test-pack",
+            displayName: "Test Pack",
+            description: "A test pack",
+            version: "1.0.0",
+            author: nil,
+            minMCSVersion: nil,
+            peerDependencies: nil,
+            components: nil,
+            templates: nil,
+            gitignoreEntries: nil,
+            prompts: [
+                ExternalPromptDefinition(
+                    key: "PREFIX", type: .input,
+                    label: "Branch prefix", defaultValue: "feature",
+                    options: nil, detectPatterns: nil, scriptCommand: nil
+                ),
+                ExternalPromptDefinition(
+                    key: "PROJECT", type: .fileDetect,
+                    label: "Xcode project", defaultValue: nil,
+                    options: nil, detectPatterns: ["*.xcodeproj"], scriptCommand: nil
+                ),
+            ],
+            configureProject: nil,
+            supplementaryDoctorChecks: nil
+        )
+        let (adapter, tmpDir) = try makeAdapter(manifest: manifest)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let context = ProjectConfigContext(
+            projectPath: tmpDir,
+            repoName: "test",
+            output: CLIOutput(colorsEnabled: false),
+            isGlobalScope: false
+        )
+        let prompts = adapter.declaredPrompts(context: context)
+        #expect(prompts.count == 2)
+        #expect(prompts[0].key == "PREFIX")
+        #expect(prompts[1].key == "PROJECT")
+
+        // Global scope filters out fileDetect
+        let globalContext = ProjectConfigContext(
+            projectPath: tmpDir,
+            repoName: "test",
+            output: CLIOutput(colorsEnabled: false),
+            isGlobalScope: true
+        )
+        let globalPrompts = adapter.declaredPrompts(context: globalContext)
+        #expect(globalPrompts.count == 1)
+        #expect(globalPrompts[0].key == "PREFIX")
+    }
+
     // MARK: - Helpers
 
     private func minimalManifest() -> ExternalPackManifest {

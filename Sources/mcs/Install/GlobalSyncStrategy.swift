@@ -69,16 +69,17 @@ struct GlobalSyncStrategy: SyncStrategy {
                 }
 
             case .mcpServer(let config):
+                let resolved = config.substituting(resolvedValues)
                 let globalConfig = MCPServerConfig(
-                    name: config.name,
-                    command: config.command,
-                    args: config.args,
-                    env: config.env,
+                    name: resolved.name,
+                    command: resolved.command,
+                    args: resolved.args,
+                    env: resolved.env,
                     scope: "user"
                 )
                 if executor.installMCPServer(globalConfig) {
                     artifacts.mcpServers.append(MCPServerRef(
-                        name: config.name,
+                        name: resolved.name,
                         scope: "user"
                     ))
                     output.success("  \(component.displayName) registered (scope: user)")
@@ -152,6 +153,7 @@ struct GlobalSyncStrategy: SyncStrategy {
     func composeSettings(
         packs: [any TechPack],
         excludedComponents: [String: Set<String>],
+        resolvedValues: [String: String],
         output: CLIOutput
     ) throws -> [String: [String]] {
         var settings: Settings
@@ -183,6 +185,7 @@ struct GlobalSyncStrategy: SyncStrategy {
             excludedComponents: excludedComponents,
             settings: &settings,
             hookCommandPrefix: scope.hookCommandPrefix,
+            resolvedValues: resolvedValues,
             output: output
         )
 

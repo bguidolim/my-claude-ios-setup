@@ -256,6 +256,7 @@ enum ConfiguratorSupport {
         excludedComponents: [String: Set<String>],
         settings: inout Settings,
         hookCommandPrefix: String,
+        resolvedValues: [String: String],
         output: CLIOutput
     ) -> (hasContent: Bool, contributedKeys: [String: [String]]) {
         var hasContent = false
@@ -288,7 +289,7 @@ enum ConfiguratorSupport {
 
                 if case .settingsMerge(let source) = component.installAction, let source {
                     do {
-                        let packSettings = try Settings.load(from: source)
+                        let packSettings = try Settings.load(from: source, substituting: resolvedValues)
                         if !packSettings.extraJSON.isEmpty {
                             contributedKeys[pack.identifier, default: []].append(contentsOf: packSettings.extraJSON.keys)
                         }
@@ -392,13 +393,38 @@ enum ConfiguratorSupport {
 
         for pack in packs {
             for component in pack.components {
-                if case .copyPackFile(let source, _, _) = component.installAction {
+                switch component.installAction {
+                case .copyPackFile(let source, _, _):
                     for placeholder in findPlaceholdersInSource(source) {
                         let key = stripPlaceholderDelimiters(placeholder)
                         if !resolvedKeys.contains(key) {
                             undeclared.insert(key)
                         }
                     }
+
+                case .settingsMerge(let source):
+                    if let source {
+                        for placeholder in findPlaceholdersInSource(source) {
+                            let key = stripPlaceholderDelimiters(placeholder)
+                            if !resolvedKeys.contains(key) {
+                                undeclared.insert(key)
+                            }
+                        }
+                    }
+
+                case .mcpServer(let config):
+                    let textsToScan = Array(config.env.values) + [config.command] + config.args
+                    for text in textsToScan {
+                        for placeholder in TemplateEngine.findUnreplacedPlaceholders(in: text) {
+                            let key = stripPlaceholderDelimiters(placeholder)
+                            if !resolvedKeys.contains(key) {
+                                undeclared.insert(key)
+                            }
+                        }
+                    }
+
+                default:
+                    break
                 }
             }
 

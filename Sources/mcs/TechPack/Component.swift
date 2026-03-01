@@ -141,4 +141,18 @@ struct MCPServerConfig: Sendable {
     var resolvedScope: String {
         scope ?? "local"
     }
+
+    /// Return a new config with `__KEY__` placeholders substituted in env values, command, and args.
+    /// Name is preserved (used as lookup key in artifact tracking).
+    func substituting(_ values: [String: String]) -> MCPServerConfig {
+        guard !values.isEmpty else { return self }
+        let sub = { (text: String) in TemplateEngine.substitute(template: text, values: values, emitWarnings: false) }
+        return MCPServerConfig(
+            name: name,
+            command: sub(command),
+            args: args.map(sub),
+            env: env.mapValues(sub),
+            scope: scope
+        )
+    }
 }

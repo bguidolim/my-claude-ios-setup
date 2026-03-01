@@ -53,6 +53,10 @@ protocol TechPack: Sendable {
     /// Resolve pack-specific placeholder values for CLAUDE.local.md templates.
     /// Called before template substitution so packs can supply values like `__PROJECT__`.
     func templateValues(context: ProjectConfigContext) throws -> [String: String]
+
+    /// Return prompt definitions without executing them.
+    /// Used by `CrossPackPromptResolver` to detect duplicate keys across packs.
+    func declaredPrompts(context: ProjectConfigContext) -> [ExternalPromptDefinition]
 }
 
 extension TechPack {
@@ -63,6 +67,7 @@ extension TechPack {
         (try? templates)?.map(\.sectionIdentifier) ?? []
     }
     func templateValues(context: ProjectConfigContext) -> [String: String] { [:] }
+    func declaredPrompts(context: ProjectConfigContext) -> [ExternalPromptDefinition] { [] }
 }
 
 /// Protocol for doctor checks (used by both core and packs)

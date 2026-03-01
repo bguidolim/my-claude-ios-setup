@@ -46,6 +46,7 @@ protocol SyncStrategy {
     func composeSettings(
         packs: [any TechPack],
         excludedComponents: [String: Set<String>],
+        resolvedValues: [String: String],
         output: CLIOutput
     ) throws -> [String: [String]]
 

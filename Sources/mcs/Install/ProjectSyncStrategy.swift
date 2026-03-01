@@ -63,10 +63,11 @@ struct ProjectSyncStrategy: SyncStrategy {
 
             switch component.installAction {
             case .mcpServer(let config):
-                if executor.installMCPServer(config) {
+                let resolved = config.substituting(resolvedValues)
+                if executor.installMCPServer(resolved) {
                     artifacts.mcpServers.append(MCPServerRef(
-                        name: config.name,
-                        scope: config.resolvedScope
+                        name: resolved.name,
+                        scope: resolved.resolvedScope
                     ))
                     output.success("  \(component.displayName) registered")
                 }
@@ -120,6 +121,7 @@ struct ProjectSyncStrategy: SyncStrategy {
     func composeSettings(
         packs: [any TechPack],
         excludedComponents: [String: Set<String>],
+        resolvedValues: [String: String],
         output: CLIOutput
     ) throws -> [String: [String]] {
         var settings = Settings()
@@ -129,6 +131,7 @@ struct ProjectSyncStrategy: SyncStrategy {
             excludedComponents: excludedComponents,
             settings: &settings,
             hookCommandPrefix: scope.hookCommandPrefix,
+            resolvedValues: resolvedValues,
             output: output
         )
 

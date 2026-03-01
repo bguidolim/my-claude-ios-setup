@@ -200,6 +200,31 @@ struct Settings: Codable, Sendable {
         return settings
     }
 
+    /// Load settings from a JSON file, applying placeholder substitution before parsing.
+    /// Reads the file as text, replaces `__KEY__` tokens using `TemplateEngine.substitute`,
+    /// then parses the substituted text as JSON.
+    static func load(from url: URL, substituting values: [String: String]) throws -> Settings {
+        guard !values.isEmpty else { return try load(from: url) }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else {
+            return Settings()
+        }
+        let rawText = try String(contentsOf: url, encoding: .utf8)
+        let substituted = TemplateEngine.substitute(template: rawText, values: values, emitWarnings: false)
+        let data = Data(substituted.utf8)
+        var settings = try JSONDecoder().decode(Settings.self, from: data)
+
+        if let rawJSON = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for (key, value) in rawJSON where !knownTopLevelKeys.contains(key) {
+                settings.extraJSON[key] = try JSONSerialization.data(
+                    withJSONObject: value, options: .fragmentsAllowed
+                )
+            }
+        }
+
+        return settings
+    }
+
     /// Save settings to a JSON file, creating parent directories as needed.
     ///
     /// Three-layer priority:

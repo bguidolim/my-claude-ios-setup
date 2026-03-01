@@ -76,19 +76,25 @@ struct ExternalPackAdapter: TechPack {
         }
     }
 
-    // MARK: - Template Values (Prompt Execution)
+    // MARK: - Prompt Declaration & Execution
 
-    func templateValues(context: ProjectConfigContext) throws -> [String: String] {
-        guard let prompts = manifest.prompts, !prompts.isEmpty else { return [:] }
-        // In global scope, skip project-scoped prompt types (fileDetect scans
-        // project directories for files like *.xcodeproj which makes no sense globally).
-        let filtered = context.isGlobalScope
+    func declaredPrompts(context: ProjectConfigContext) -> [ExternalPromptDefinition] {
+        guard let prompts = manifest.prompts, !prompts.isEmpty else { return [] }
+        return context.isGlobalScope
             ? prompts.filter { $0.type != .fileDetect }
             : prompts
-        guard !filtered.isEmpty else { return [:] }
+    }
+
+    /// Execute prompts and return resolved values, skipping keys already in `context.resolvedValues`.
+    /// Returns only newly resolved values — callers must merge with previously resolved values.
+    func templateValues(context: ProjectConfigContext) throws -> [String: String] {
+        let prompts = declaredPrompts(context: context)
+        guard !prompts.isEmpty else { return [:] }
+        let remaining = prompts.filter { context.resolvedValues[$0.key] == nil }
+        guard !remaining.isEmpty else { return [:] }
         let executor = PromptExecutor(output: context.output, scriptRunner: scriptRunner)
         return try executor.executeAll(
-            prompts: filtered,
+            prompts: remaining,
             packPath: packPath,
             projectPath: context.projectPath
         )
