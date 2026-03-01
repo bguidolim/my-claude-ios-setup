@@ -23,7 +23,7 @@ jobs:
             .build/checkouts
             .build/repositories
             .build/workspace-state.json
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Resolve packages
@@ -42,7 +42,7 @@ jobs:
             .build/checkouts
             .build/repositories
             .build/workspace-state.json
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Test
@@ -61,7 +61,7 @@ jobs:
             .build/checkouts
             .build/repositories
             .build/workspace-state.json
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Build universal binary

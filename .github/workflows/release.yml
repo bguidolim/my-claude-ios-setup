@@ -31,6 +31,7 @@ jobs:
 
   resolve:
     name: Resolve Dependencies
+    needs: verify-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -41,7 +42,7 @@ jobs:
             .build/checkouts
             .build/repositories
             .build/workspace-state.json
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Resolve packages
@@ -60,7 +61,7 @@ jobs:
             .build/checkouts
             .build/repositories
             .build/workspace-state.json
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Test
@@ -68,7 +69,7 @@ jobs:
 
   build-and-release:
     name: Build and Release
-    needs: [verify-version, resolve, test]
+    needs: [test]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -79,7 +80,7 @@ jobs:
             .build/checkouts
             .build/repositories
             .build/workspace-state.json
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Build universal binary
