@@ -97,14 +97,13 @@ mcs cleanup --force              # Delete backups without confirmation
 - `PackCommand.swift` — `mcs pack add/remove/list/update` subcommands; uses `PackSourceResolver` for 3-tier input detection (URL schemes → filesystem paths → GitHub shorthand)
 
 ### Install (`Sources/mcs/Install/`)
-- `Configurator.swift` — unified multi-pack convergence engine parameterized by `SyncStrategy` (artifact tracking, settings composition, CLAUDE file writing, gitignore)
+- `Configurator.swift` — unified multi-pack convergence engine parameterized by `SyncStrategy` (artifact tracking, settings composition, CLAUDE file writing, gitignore). `unconfigurePack()` handles removal for both `mcs sync` (deselection) and `mcs pack remove` (federated across all affected scopes)
 - `SyncScope.swift` — pure data struct capturing path-level differences between project and global scopes
 - `SyncStrategy.swift` — protocol isolating scope-specific behavior (artifact installation, settings/CLAUDE composition, file removal)
 - `ProjectSyncStrategy.swift` — project-scope strategy (settings.local.json, CLAUDE.local.md, repo name resolution)
 - `GlobalSyncStrategy.swift` — global-scope strategy (settings.json preservation, brew/plugin ownership, MCP scope override to "user")
 - `ComponentExecutor.swift` — dispatches install actions (brew, MCP servers, plugins, gitignore, project-scoped file copy/removal)
 - `PackInstaller.swift` — auto-installs missing pack components
-- `PackUninstaller.swift` — removes pack components (MCP servers, plugins, brew packages, settings keys) with reference-counted removal for shared resources
 - `PackUpdater.swift` — shared fetch → validate → trust cycle for updating a single git pack (used by `UpdatePack` and `LockfileOperations`)
 - `ResourceRefCounter.swift` — two-tier reference counting (global artifacts + project index manifests) for safe brew/plugin removal
 - `LockfileOperations.swift` — reads/writes `mcs.lock.yaml`, checks out locked versions, updates lockfile
@@ -126,7 +125,7 @@ mcs cleanup --force              # Delete backups without confirmation
 - **`mcs sync` is the primary command**: per-project multi-select of registered packs, fully idempotent convergence (add/remove/update), per-project artifact placement. `--global` flag handles global-scope install
 - **Per-project artifacts**: skills, hooks, commands, and `settings.local.json` go to `<project>/.claude/`; only brew packages and plugins are global
 - **MCP scope defaults to `local`**: per-user, per-project isolation via `claude mcp add -s local` (stored in `~/.claude.json` keyed by project path)
-- **Convergent sync**: `ProjectState` records per-pack `PackArtifactRecord` (MCP servers, files, template sections); re-running converges to desired state by diffing previous vs. selected packs
+- **Convergent sync**: `ProjectState` records per-pack `PackArtifactRecord` (MCP servers, files, template sections, hook commands, settings keys, brew packages, plugins, gitignore entries); re-running converges to desired state by diffing previous vs. selected packs. `mcs pack remove` discovers all scopes via `ProjectIndex` and runs the same `unconfigurePack()` convergence for each
 - **External pack protocol**: `TechPack` protocol with `ExternalPackAdapter` bridging YAML manifests (`techpack.yaml`) to the same install/doctor/sync flows
 - **Section markers**: composed files use `<!-- mcs:begin/end -->` HTML comments to separate tool-managed content from user content
 - **Settings composition**: each pack's hook entries compose into `<project>/.claude/settings.local.json` as individual `HookGroup` entries

@@ -117,7 +117,9 @@ struct GlobalSyncStrategy: SyncStrategy {
                 }
 
             case .gitignoreEntries(let entries):
-                _ = executor.addGitignoreEntries(entries)
+                if executor.addGitignoreEntries(entries) {
+                    artifacts.gitignoreEntries.append(contentsOf: entries)
+                }
 
             case .shellCommand(let command):
                 output.dimmed("  Running \(component.displayName)...")

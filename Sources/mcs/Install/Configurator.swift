@@ -292,6 +292,13 @@ struct Configurator {
         let gitignoreExec = makeExecutor()
         for pack in packs {
             gitignoreExec.addPackGitignoreEntries(from: pack)
+            // Merge legacy top-level gitignore entries with any component-recorded ones
+            if !pack.gitignoreEntries.isEmpty, var artifacts = state.artifacts(for: pack.identifier) {
+                let existing = Set(artifacts.gitignoreEntries)
+                let newEntries = pack.gitignoreEntries.filter { !existing.contains($0) }
+                artifacts.gitignoreEntries.append(contentsOf: newEntries)
+                state.setArtifacts(artifacts, for: pack.identifier)
+            }
         }
 
         // 10. Final state save
@@ -326,9 +333,18 @@ struct Configurator {
     // MARK: - Pack Unconfiguration
 
     /// Remove all artifacts installed by a pack.
-    private func unconfigurePack(
+    ///
+    /// - Parameters:
+    ///   - packID: Identifier of the pack to remove.
+    ///   - state: Project state to update (caller must save after return).
+    ///   - refCountScope: Override scope identifier for reference counting.
+    ///     Pass `ProjectIndex.packRemoveSentinel` when removing a pack from
+    ///     all scopes (e.g. `mcs pack remove`) so the ref counter excludes
+    ///     every scope. Defaults to `nil` (uses `scope.scopeIdentifier`).
+    func unconfigurePack(
         _ packID: String,
-        state: inout ProjectState
+        state: inout ProjectState,
+        refCountScope: String? = nil
     ) {
         let suffix = scope.labelSuffix
         output.info("Removing \(packID)\(suffix)...")
@@ -344,6 +360,7 @@ struct Configurator {
         var removedServers: Set<MCPServerRef> = []
 
         // Remove MCS-owned brew packages and plugins (with reference counting)
+        let excludeScope = refCountScope ?? scope.scopeIdentifier
         let refCounter = ResourceRefCounter(
             environment: environment,
             output: output,
@@ -352,7 +369,7 @@ struct Configurator {
         for package in artifacts.brewPackages {
             if refCounter.isStillNeeded(
                 .brewPackage(package),
-                excludingScope: scope.scopeIdentifier,
+                excludingScope: excludeScope,
                 excludingPack: packID
             ) {
                 output.dimmed("  Keeping brew package '\(package)' — still needed by another scope")
@@ -367,7 +384,7 @@ struct Configurator {
         for pluginName in artifacts.plugins {
             if refCounter.isStillNeeded(
                 .plugin(pluginName),
-                excludingScope: scope.scopeIdentifier,
+                excludingScope: excludeScope,
                 excludingPack: packID
             ) {
                 output.dimmed("  Keeping plugin '\(PluginRef(pluginName).bareName)' — still needed by another scope")
@@ -469,6 +486,22 @@ struct Configurator {
                     output.warn("Could not update \(claudePath.lastPathComponent): \(error.localizedDescription)")
                 }
             }
+        }
+
+        // Remove gitignore entries
+        if !artifacts.gitignoreEntries.isEmpty {
+            let gitignoreManager = GitignoreManager(shell: shell)
+            var removedEntries: Set<String> = []
+            for entry in artifacts.gitignoreEntries {
+                do {
+                    try gitignoreManager.removeEntry(entry)
+                    removedEntries.insert(entry)
+                    output.dimmed("  Removed gitignore entry: \(entry)")
+                } catch {
+                    output.warn("Could not remove gitignore entry '\(entry)': \(error.localizedDescription)")
+                }
+            }
+            remaining.gitignoreEntries.removeAll { removedEntries.contains($0) }
         }
 
         if remaining.isEmpty {

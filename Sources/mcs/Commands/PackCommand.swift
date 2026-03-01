@@ -478,27 +478,7 @@ struct RemovePack: LockedCommand {
             throw ExitCode.failure
         }
 
-        // 2. Load manifest from checkout (if available) to know what to reverse
-        let manifest: ExternalPackManifest?
-        if FileManager.default.fileExists(atPath: packPath.path) {
-            let loader = ExternalPackLoader(
-                environment: env,
-                registry: registry
-            )
-            do {
-                manifest = try loader.validate(at: packPath)
-            } catch {
-                output.warn("Could not read pack manifest: \(error.localizedDescription)")
-                output.warn("Artifacts will not be cleaned up.")
-                manifest = nil
-            }
-        } else {
-            output.warn("Pack checkout missing at \(packPath.path)")
-            output.warn("Artifacts will not be cleaned up.")
-            manifest = nil
-        }
-
-        // 3. Show removal plan
+        // 2. Show pack info
         output.info("Pack: \(entry.displayName) v\(entry.version)")
         if let author = entry.author {
             output.plain("  Author: \(author)")
@@ -509,18 +489,54 @@ struct RemovePack: LockedCommand {
             output.plain("  Source: \(entry.sourceURL)")
             output.plain("  Local:  ~/.mcs/packs/\(entry.localPath)")
         }
-        if let manifest {
-            let componentCount = manifest.components?.count ?? 0
-            let gitignoreCount = manifest.gitignoreEntries?.count ?? 0
-            if componentCount + gitignoreCount > 0 {
-                output.plain("")
-                output.plain("  Will remove:")
-                if componentCount > 0 {
-                    output.plain("    \(componentCount) component(s)")
-                }
-                if gitignoreCount > 0 {
-                    output.plain("    \(gitignoreCount) gitignore entry/entries")
-                }
+
+        // 3. Discover affected scopes
+        let techPackRegistry = TechPackRegistry.loadWithExternalPacks(environment: env, output: output)
+
+        let indexFile = ProjectIndex(path: env.projectsIndexFile)
+        let indexData: ProjectIndex.IndexData
+        do {
+            indexData = try indexFile.load()
+        } catch {
+            output.warn("Could not read project index — per-project cleanup may be incomplete.")
+            indexData = ProjectIndex.IndexData()
+        }
+        let affectedEntries = indexFile.projects(withPack: identifier, in: indexData)
+
+        let isGloballyConfigured: Bool
+        do {
+            let globalState = try ProjectState(stateFile: env.globalStateFile)
+            isGloballyConfigured = globalState.configuredPacks.contains(identifier)
+        } catch {
+            output.warn("Could not read global state — global cleanup may be incomplete.")
+            isGloballyConfigured = false
+        }
+
+        var liveProjectPaths: [String] = []
+        var staleProjectPaths: [String] = []
+        for projectEntry in affectedEntries {
+            guard projectEntry.path != ProjectIndex.globalSentinel else { continue }
+            if FileManager.default.fileExists(atPath: projectEntry.path) {
+                liveProjectPaths.append(projectEntry.path)
+            } else {
+                staleProjectPaths.append(projectEntry.path)
+            }
+        }
+
+        if isGloballyConfigured || !liveProjectPaths.isEmpty {
+            output.plain("")
+            output.plain("  Affected scopes:")
+            if isGloballyConfigured {
+                output.plain("    Global (~/.claude/)")
+            }
+            for path in liveProjectPaths {
+                output.plain("    \(path)")
+            }
+        }
+        if !staleProjectPaths.isEmpty {
+            output.plain("  Stale references (will be pruned):")
+            for path in staleProjectPaths {
+                output.dimmed("    \(path)")
             }
         }
         output.plain("")
@@ -533,48 +549,64 @@ struct RemovePack: LockedCommand {
             }
         }
 
-        // 5. Uninstall artifacts BEFORE deleting checkout (ref counter needs full index)
-        let techPackRegistry = TechPackRegistry.loadWithExternalPacks(environment: env, output: output)
-        if let manifest {
-            var uninstaller = PackUninstaller(
-                environment: env,
-                output: output,
-                shell: shell,
-                registry: techPackRegistry
-            )
-            let summary = uninstaller.uninstall(manifest: manifest, packPath: packPath)
-            if summary.totalRemoved > 0 {
-                output.info("Cleaned up \(summary.totalRemoved) artifact(s)")
-            }
-            for err in summary.errors {
-                output.warn(err)
-            }
-        }
-
-        // 5b. Clean pack from global state artifacts
-        do {
-            var globalState = try ProjectState(stateFile: env.globalStateFile)
-            if globalState.configuredPacks.contains(identifier) {
-                globalState.removePack(identifier)
+        // 5. Federated unconfigure — remove artifacts from all affected scopes
+        if isGloballyConfigured {
+            do {
+                var globalState = try ProjectState(stateFile: env.globalStateFile)
+                let configurator = Configurator(
+                    environment: env,
+                    output: output,
+                    shell: shell,
+                    registry: techPackRegistry,
+                    strategy: GlobalSyncStrategy(environment: env)
+                )
+                configurator.unconfigurePack(
+                    identifier,
+                    state: &globalState,
+                    refCountScope: ProjectIndex.packRemoveSentinel
+                )
                 try globalState.save()
+            } catch {
+                output.warn("Global cleanup failed: \(error.localizedDescription)")
             }
-        } catch {
-            output.error("Could not update global state: \(error.localizedDescription)")
-            output.error("Run 'mcs sync --global' to reconcile, or manually edit ~/.mcs/global-state.json")
         }
 
-        // 5c. Remove pack from project index entries
+        for projectPath in liveProjectPaths {
+            do {
+                let projectURL = URL(fileURLWithPath: projectPath)
+                var projectState = try ProjectState(projectRoot: projectURL)
+                let configurator = Configurator(
+                    environment: env,
+                    output: output,
+                    shell: shell,
+                    registry: techPackRegistry,
+                    strategy: ProjectSyncStrategy(projectPath: projectURL, environment: env)
+                )
+                configurator.unconfigurePack(
+                    identifier,
+                    state: &projectState,
+                    refCountScope: ProjectIndex.packRemoveSentinel
+                )
+                try projectState.save()
+            } catch {
+                output.warn("Cleanup for \(projectPath) failed: \(error.localizedDescription)")
+            }
+        }
+
+        // 6. Update project index
         do {
-            let indexFile = ProjectIndex(path: env.projectsIndexFile)
-            var indexData = try indexFile.load()
-            indexFile.removePack(identifier, from: &indexData)
-            try indexFile.save(indexData)
+            var updatedIndex = try indexFile.load()
+            indexFile.removePack(identifier, from: &updatedIndex)
+            for stalePath in staleProjectPaths {
+                indexFile.remove(projectPath: stalePath, from: &updatedIndex)
+            }
+            try indexFile.save(updatedIndex)
         } catch {
             output.error("Could not update project index: \(error.localizedDescription)")
             output.error("Run 'mcs sync' to reconcile, or manually edit ~/.mcs/projects.yaml")
         }
 
-        // 6. Remove from registry
+        // 7. Remove from registry
         do {
             var data = registryData
             registry.remove(identifier: identifier, from: &data)
@@ -584,7 +616,7 @@ struct RemovePack: LockedCommand {
             throw ExitCode.failure
         }
 
-        // 7. Delete local checkout (skip for local packs — don't delete user's source directory)
+        // 8. Delete local checkout (skip for local packs — don't delete user's source directory)
         if !entry.isLocalPack {
             do {
                 try fetcher.remove(packPath: packPath)
@@ -594,7 +626,6 @@ struct RemovePack: LockedCommand {
         }
 
         output.success("Pack '\(entry.displayName)' removed.")
-        output.info("Note: Project-level CLAUDE.local.md may still reference this pack. Run 'mcs sync' to update.")
     }
 }
 

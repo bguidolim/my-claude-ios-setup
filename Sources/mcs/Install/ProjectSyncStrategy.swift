@@ -91,7 +91,9 @@ struct ProjectSyncStrategy: SyncStrategy {
                 }
 
             case .gitignoreEntries(let entries):
-                _ = executor.addGitignoreEntries(entries)
+                if executor.addGitignoreEntries(entries) {
+                    artifacts.gitignoreEntries.append(contentsOf: entries)
+                }
 
             case .brewInstall, .plugin:
                 break

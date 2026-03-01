@@ -107,6 +107,8 @@ struct ResourceRefCounter {
 
             // Check each pack in this scope
             for otherPackID in entry.packs {
+                // When removing a pack entirely, skip that pack in every scope
+                if scopePath == ProjectIndex.packRemoveSentinel && otherPackID == packID { continue }
                 if packDeclaresResource(packID: otherPackID, resource: resource) {
                     // Clean up stale entries we found along the way before returning
                     pruneStaleEntries(stalePaths, in: &indexData, indexFile: indexFile)
